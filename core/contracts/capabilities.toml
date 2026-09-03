@@ -1,0 +1,17 @@
+schema_version = 1
+
+[capabilities."artifact.render"]
+required = true
+format = "markdown-fragment"
+
+[capabilities."artifact.html-render"]
+required = true
+format = "markdown-fragment"
+
+[capabilities."session.control"]
+required = true
+format = "markdown-fragment"
+
+[capabilities."kit.delivery"]
+required = true
+format = "markdown-fragment"

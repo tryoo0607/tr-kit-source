@@ -1,0 +1,73 @@
+schema_version = 1
+
+[[artifacts]]
+id = "skills"
+source = "skills"
+destination = "skills"
+scope = "payload"
+
+[[artifacts]]
+id = "diagram-references"
+source = "core/skills/diagram/references"
+destination = "skills/diagram/references"
+scope = "payload"
+
+[[artifacts]]
+id = "analysis-references"
+source = "core/skills/analysis/references"
+destination = "skills/analysis/references"
+scope = "payload"
+
+[[artifacts]]
+id = "prototype-references"
+source = "core/skills/prototype/references"
+destination = "skills/prototype/references"
+scope = "payload"
+
+[[artifacts]]
+id = "session-references"
+source = "core/skills/session/references"
+destination = "skills/session/references"
+scope = "payload"
+
+[[artifacts]]
+id = "kit-references"
+source = "core/skills/kit/references"
+destination = "skills/kit/references"
+scope = "payload"
+
+[[artifacts]]
+id = "lifecycle-decision"
+source = "core/lifecycle/decision.py"
+destination = "hooks/core/decision.py"
+scope = "payload"
+
+[[artifacts]]
+id = "runtime-profile"
+source = "core/profile"
+destination = "profile"
+scope = "payload"
+
+[[artifacts]]
+id = "shared"
+source = "shared"
+destination = "."
+scope = "payload"
+
+[[artifacts]]
+id = "changelog"
+source = "CHANGELOG.md"
+destination = "CHANGELOG.md"
+scope = "payload"
+
+[[artifacts]]
+id = "agent-document"
+source = "agents-doc/DOC.md"
+destination = "{{AGENT_FILE}}"
+scope = "payload"
+
+[[generators]]
+id = "readme"
+kind = "skill-readme"
+destination = "README.md"
+scope = "payload"

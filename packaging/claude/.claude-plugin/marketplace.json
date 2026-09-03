@@ -1,0 +1,13 @@
+{
+  "name": "{{KIT_REPO}}",
+  "owner": {
+    "name": "tryoo0607"
+  },
+  "plugins": [
+    {
+      "name": "{{KIT_REPO}}",
+      "source": "./plugins/{{KIT_REPO}}",
+      "description": "개발 워크플로를 위한 백본·스킬·수명주기 hook kit"
+    }
+  ]
+}

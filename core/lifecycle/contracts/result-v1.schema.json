@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tr-kit:lifecycle:result:v1",
+  "title": "Normalized lifecycle result",
+  "type": "object",
+  "required": ["schema_version", "action", "data"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "action": {
+      "enum": [
+        "none",
+        "rollover.prepare",
+        "rollover.handoff",
+        "change.mark",
+        "record.pass",
+        "record.block",
+        "record.fallback",
+        "compact.pass",
+        "compact.block",
+        "compact.warn",
+        "resume.inject"
+      ]
+    },
+    "data": {"type": "object"}
+  },
+  "additionalProperties": false
+}

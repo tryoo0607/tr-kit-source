@@ -1,0 +1,26 @@
+schema_version = 1
+recipe_keys = [
+  "schema_version",
+  "target",
+  "extends",
+  "glossary",
+  "output",
+  "imports",
+  "artifacts",
+  "compositions",
+  "generators",
+  "delivery",
+]
+output_keys = ["payload"]
+import_keys = ["id", "export", "destination", "scope"]
+import_scopes = ["payload", "target"]
+artifact_keys = ["id", "source", "destination", "scope"]
+artifact_scopes = ["payload", "target"]
+composition_keys = ["id", "kind", "source", "destination", "scope", "slots"]
+composition_kinds = ["skill"]
+composition_scopes = ["payload", "target"]
+generator_keys = ["id", "kind", "destination", "scope"]
+generator_kinds = ["skill-readme"]
+generator_scopes = ["payload", "target"]
+delivery_keys = ["repository", "mode", "generated", "prepare", "checks", "sync"]
+delivery_sync_keys = ["source", "destination"]

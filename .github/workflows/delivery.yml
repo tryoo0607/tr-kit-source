@@ -1,0 +1,69 @@
+name: delivery
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tr-kit-delivery
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TR_KIT_CLAUDE_REPOSITORY_URL: git@github-tr-claude:${{ github.repository_owner }}/tr-claude.git
+      TR_KIT_CODEX_REPOSITORY_URL: git@github-tr-codex:${{ github.repository_owner }}/tr-codex.git
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure repository-scoped deploy keys
+        env:
+          TR_CLAUDE_DEPLOY_KEY: ${{ secrets.TR_CLAUDE_DEPLOY_KEY }}
+          TR_CODEX_DEPLOY_KEY: ${{ secrets.TR_CODEX_DEPLOY_KEY }}
+        run: |
+          test -n "$TR_CLAUDE_DEPLOY_KEY"
+          test -n "$TR_CODEX_DEPLOY_KEY"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$TR_CLAUDE_DEPLOY_KEY" > "$HOME/.ssh/tr-claude"
+          printf '%s\n' "$TR_CODEX_DEPLOY_KEY" > "$HOME/.ssh/tr-codex"
+          chmod 600 "$HOME/.ssh/tr-claude" "$HOME/.ssh/tr-codex"
+          ssh-keyscan github.com > "$HOME/.ssh/known_hosts"
+          cat > "$HOME/.ssh/config" <<'EOF'
+          Host github-tr-claude
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/tr-claude
+            IdentitiesOnly yes
+          Host github-tr-codex
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/tr-codex
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config" "$HOME/.ssh/known_hosts"
+
+      - name: Test and build source
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          ./build.sh
+          bash tests/hooks/lifecycle-smoke.sh
+
+      - name: Verify generated public boundary
+        run: python3 -m unittest -v tests.test_public_boundary
+
+      - name: Deploy complete target repositories
+        env:
+          TR_KIT_ALLOW_PUSH: "1"
+        run: |
+          python3 -m tools.delivery \
+            --clone-root "$RUNNER_TEMP/delivery-targets" \
+            --push \
+            --source-revision "$GITHUB_SHA"

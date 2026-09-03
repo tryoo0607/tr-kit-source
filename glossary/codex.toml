@@ -1,0 +1,8 @@
+AGENT_FILE = "AGENTS.md"
+PRODUCT = "Codex"
+AGENT = "Codex"
+KIT_REPO = "tr-codex"
+HOST_SETTINGS = "config.toml"
+VIZ = "로컬 HTML 발행"
+VENDOR = "OpenAI"
+SKILL_DIR = ".agents/skills"

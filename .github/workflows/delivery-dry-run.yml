@@ -1,0 +1,53 @@
+name: delivery dry-run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivery-dry-run
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.KIT_DELIVERY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: require cross-repository read token
+        run: test -n "$GH_TOKEN"
+
+      - name: test and build source
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          ./build.sh
+          bash tests/hooks/lifecycle-smoke.sh
+
+      - name: verify no unresolved tokens
+        run: |
+          if grep -rlE '\{\{[A-Z]' out/; then
+            echo "::error::미치환 토큰이 산출물에 남았다"; exit 1
+          fi
+
+      - name: syntax-check built hooks
+        run: |
+          fail=0
+          while IFS= read -r f; do bash -n "$f" || fail=1; done < <(find out -name '*.sh')
+          [ "$fail" = 0 ] || { echo "::error::훅 문법 오류"; exit 1; }
+
+      - name: codex leak check
+        run: |
+          if grep -rniE 'claude|anthropic|클로드' out/codex \
+             | grep -viE 'CLAUDE_PLUGIN_ROOT|claude-council|claude-devils|claude-personas|artifact-pattern|k-skill은 Claude|CLAUDE\.md 래퍼'; then
+            echo "::error::codex 산출물에 Claude 어휘 누출"; exit 1
+          fi
+
+      - name: verify recipe delivery without push
+        run: python3 -m tools.delivery --clone-root "$RUNNER_TEMP/delivery-targets"

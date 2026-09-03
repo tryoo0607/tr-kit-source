@@ -1,0 +1,23 @@
+{
+  "name": "{{KIT_REPO}}",
+  "version": "0.5.0",
+  "license": "Apache-2.0",
+  "description": "개발 워크플로를 위한 {{PRODUCT}} kit",
+  "author": {
+    "name": "tryoo0607"
+  },
+  "interface": {
+    "displayName": "{{KIT_REPO}}",
+    "shortDescription": "개발 워크플로 kit",
+    "longDescription": "공통 정책·스킬·hook을 {{PRODUCT}}에 제공하는 개발 워크플로 kit.",
+    "developerName": "tryoo0607",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Skills",
+      "Hooks"
+    ],
+    "defaultPrompt": [
+      "프로젝트 규약을 적용해 이 작업을 진행해줘."
+    ]
+  }
+}

@@ -1,0 +1,97 @@
+schema_version = 1
+target = "claude"
+extends = "_base.toml"
+glossary = "glossary/claude.toml"
+
+[output]
+payload = "plugins/{{KIT_REPO}}"
+
+[delivery]
+repository = "tryoo0607/tr-claude"
+mode = "managed-root"
+generated = []
+prepare = []
+checks = []
+sync = []
+
+[[artifacts]]
+id = "claude-repository-packaging"
+source = "packaging/claude"
+destination = "."
+scope = "target"
+
+[[artifacts]]
+id = "claude-repository-license"
+source = "LICENSE"
+destination = "LICENSE"
+scope = "target"
+
+[[artifacts]]
+id = "claude-commands"
+source = "adapters/claude/commands"
+destination = "commands"
+scope = "payload"
+
+[[artifacts]]
+id = "claude-hooks"
+source = "adapters/claude/hooks"
+destination = "hooks"
+scope = "payload"
+
+[[artifacts]]
+id = "claude-manifest"
+source = "adapters/claude/.claude-plugin"
+destination = ".claude-plugin"
+scope = "payload"
+
+[[artifacts]]
+id = "claude-session-host-control"
+source = "adapters/claude/capabilities/references/session-host-control.md"
+destination = "skills/session/references/host-control.md"
+scope = "payload"
+
+[[artifacts]]
+id = "claude-kit-delivery"
+source = "adapters/claude/capabilities/references/kit-delivery.md"
+destination = "skills/kit/references/delivery.md"
+scope = "payload"
+
+[[compositions]]
+id = "diagram-skill"
+kind = "skill"
+source = "core/skills/diagram/SKILL.md"
+destination = "skills/diagram/SKILL.md"
+scope = "payload"
+slots = { "artifact.render" = "adapters/claude/capabilities/artifact-render.md" }
+
+[[compositions]]
+id = "analysis-skill"
+kind = "skill"
+source = "core/skills/analysis/SKILL.md"
+destination = "skills/analysis/SKILL.md"
+scope = "payload"
+slots = { "artifact.html-render" = "adapters/claude/capabilities/artifact-html-render.md" }
+
+[[compositions]]
+id = "prototype-skill"
+kind = "skill"
+source = "core/skills/prototype/SKILL.md"
+destination = "skills/prototype/SKILL.md"
+scope = "payload"
+slots = { "artifact.html-render" = "adapters/claude/capabilities/artifact-html-render.md" }
+
+[[compositions]]
+id = "session-skill"
+kind = "skill"
+source = "core/skills/session/SKILL.md"
+destination = "skills/session/SKILL.md"
+scope = "payload"
+slots = { "session.control" = "adapters/claude/capabilities/session-control.md" }
+
+[[compositions]]
+id = "kit-skill"
+kind = "skill"
+source = "core/skills/kit/SKILL.md"
+destination = "skills/kit/SKILL.md"
+scope = "payload"
+slots = { "kit.delivery" = "adapters/claude/capabilities/kit-delivery.md" }

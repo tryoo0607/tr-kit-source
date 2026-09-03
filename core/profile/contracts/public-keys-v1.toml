@@ -1,0 +1,46 @@
+schema_version = 1
+
+[[keys]]
+name = "public.repositories.career"
+type = "path"
+required_by = ["career"]
+must_exist = true
+must_be_git_worktree = true
+required_files = ["README.md"]
+required_directories = []
+
+[[keys]]
+name = "public.repositories.knowledge"
+type = "path"
+required_by = ["knowledge", "dive"]
+must_exist = true
+must_be_git_worktree = true
+required_files = ["index.md"]
+required_directories = []
+
+[[keys]]
+name = "public.repositories.handoffs"
+type = "path"
+required_by = ["session", "capture"]
+must_exist = true
+must_be_git_worktree = true
+required_files = ["README.md"]
+required_directories = []
+
+[[keys]]
+name = "public.handoff.inbox"
+type = "relative_path"
+required_by = ["session"]
+
+[[keys]]
+name = "public.features.dive_ambient"
+type = "boolean"
+required_by = ["dive"]
+default = false
+
+[[keys]]
+name = "public.scope.default"
+type = "enum"
+required_by = ["scope"]
+values = ["personal", "work", "unknown"]
+default = "unknown"

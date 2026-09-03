@@ -1,0 +1,1 @@
+Codex kit은 recipe가 생성한 plugin tree와 marketplace packaging을 대상으로 한다. validator·cachebuster·marketplace 재설치와 새 thread 검증 절차는 `references/delivery.md`를 읽는다. 설치 cache 변경·재설치·세션 전환·외부 push는 결과와 diff를 먼저 보고하고 승인 후 수행한다.

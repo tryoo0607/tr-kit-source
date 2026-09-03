@@ -1,0 +1,91 @@
+schema_version = 1
+target = "codex"
+extends = "_base.toml"
+glossary = "glossary/codex.toml"
+
+[output]
+payload = "plugins/{{KIT_REPO}}"
+
+[delivery]
+repository = "tryoo0607/tr-codex"
+mode = "managed-root"
+generated = []
+prepare = []
+checks = []
+sync = []
+
+[[artifacts]]
+id = "codex-hooks"
+source = "adapters/codex/hooks"
+destination = "hooks"
+scope = "payload"
+
+[[artifacts]]
+id = "codex-manifest"
+source = "adapters/codex/.codex-plugin"
+destination = ".codex-plugin"
+scope = "payload"
+
+[[artifacts]]
+id = "codex-session-host-control"
+source = "adapters/codex/capabilities/references/session-host-control.md"
+destination = "skills/session/references/host-control.md"
+scope = "payload"
+
+[[artifacts]]
+id = "codex-kit-delivery"
+source = "adapters/codex/capabilities/references/kit-delivery.md"
+destination = "skills/kit/references/delivery.md"
+scope = "payload"
+
+[[compositions]]
+id = "diagram-skill"
+kind = "skill"
+source = "core/skills/diagram/SKILL.md"
+destination = "skills/diagram/SKILL.md"
+scope = "payload"
+slots = { "artifact.render" = "adapters/codex/capabilities/artifact-render.md" }
+
+[[compositions]]
+id = "analysis-skill"
+kind = "skill"
+source = "core/skills/analysis/SKILL.md"
+destination = "skills/analysis/SKILL.md"
+scope = "payload"
+slots = { "artifact.html-render" = "adapters/codex/capabilities/artifact-html-render.md" }
+
+[[compositions]]
+id = "prototype-skill"
+kind = "skill"
+source = "core/skills/prototype/SKILL.md"
+destination = "skills/prototype/SKILL.md"
+scope = "payload"
+slots = { "artifact.html-render" = "adapters/codex/capabilities/artifact-html-render.md" }
+
+[[compositions]]
+id = "session-skill"
+kind = "skill"
+source = "core/skills/session/SKILL.md"
+destination = "skills/session/SKILL.md"
+scope = "payload"
+slots = { "session.control" = "adapters/codex/capabilities/session-control.md" }
+
+[[compositions]]
+id = "kit-skill"
+kind = "skill"
+source = "core/skills/kit/SKILL.md"
+destination = "skills/kit/SKILL.md"
+scope = "payload"
+slots = { "kit.delivery" = "adapters/codex/capabilities/kit-delivery.md" }
+
+[[artifacts]]
+id = "codex-packaging"
+source = "packaging/codex"
+destination = "."
+scope = "target"
+
+[[artifacts]]
+id = "codex-repository-license"
+source = "LICENSE"
+destination = "LICENSE"
+scope = "target"

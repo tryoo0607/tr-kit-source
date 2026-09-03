@@ -1,0 +1,26 @@
+# 토큰 정본 — 모든 타깃 glossary(<target>.toml)가 이 키를 전부 채워야 한다.
+# 빠지면 build 실패(fail-closed). 여기 없는 토큰을 타깃파일이 선언해도 실패.
+
+[tokens.AGENT_FILE]
+desc = "호스트가 자동 로드하는 지침 파일명"
+
+[tokens.PRODUCT]
+desc = "호스트 제품명 (Claude Code / Codex)"
+
+[tokens.AGENT]
+desc = "에이전트/모델 자기참조 (Claude / Codex) — PRODUCT와 구분(삼중 의미)"
+
+[tokens.KIT_REPO]
+desc = "이 kit의 타깃별 repo 이름"
+
+[tokens.HOST_SETTINGS]
+desc = "호스트 설정 파일 (훅/권한 등록처)"
+
+[tokens.VIZ]
+desc = "도식·front 발행 표면"
+
+[tokens.VENDOR]
+desc = "제공사 (Anthropic / OpenAI)"
+
+[tokens.SKILL_DIR]
+desc = "repo 스킬 디렉토리 (.claude/skills / .agents/skills)"

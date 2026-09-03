@@ -1,0 +1,8 @@
+AGENT_FILE = "CLAUDE.md"
+PRODUCT = "Claude Code"
+AGENT = "Claude"
+KIT_REPO = "tr-claude"
+HOST_SETTINGS = "settings.json"
+VIZ = "Artifact"
+VENDOR = "Anthropic"
+SKILL_DIR = ".claude/skills"

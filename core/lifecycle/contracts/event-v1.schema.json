@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tr-kit:lifecycle:event:v1",
+  "title": "Normalized lifecycle event",
+  "type": "object",
+  "required": ["schema_version", "event", "session"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event": {
+      "enum": [
+        "context.observed",
+        "tool.completed",
+        "response.stopping",
+        "context.compacting",
+        "session.started"
+      ]
+    },
+    "session": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {"id": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    },
+    "context": {"type": "object"},
+    "policy": {"type": "object"},
+    "memory": {"type": "object"},
+    "tool": {"type": "object"},
+    "record": {"type": "object"},
+    "compact": {"type": "object"},
+    "resume": {"type": "object"}
+  },
+  "additionalProperties": false
+}
