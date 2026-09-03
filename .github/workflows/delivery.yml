@@ -20,7 +20,7 @@ jobs:
       TR_KIT_CODEX_REPOSITORY_URL: git@github-tr-codex:${{ github.repository_owner }}/tr-codex.git
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
