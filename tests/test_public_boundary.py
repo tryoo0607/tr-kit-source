@@ -87,6 +87,7 @@ class PublicBoundaryTest(unittest.TestCase):
 
     def test_public_author_handle_is_limited_to_release_metadata(self):
         allowed = {
+            Path("README.md"),
             Path(".github/CODEOWNERS"),
             Path("adapters/claude/.claude-plugin/plugin.json"),
             Path("adapters/codex/.codex-plugin/plugin.json"),
