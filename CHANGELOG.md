@@ -2,6 +2,11 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
+## 0.5.1 — 2026-09-03
+
+- 공개 구조와 target 산출 흐름을 README에서 표와 단일 축 도표로 명확히 설명했다.
+- GitHub Actions의 checkout과 Python setup action을 최신 major로 갱신했다.
+
 ## 0.5.0 — 2026-09-03
 
 - 공통 core, target adapter, recipe 기반 정적 합성 구조를 도입했다.
