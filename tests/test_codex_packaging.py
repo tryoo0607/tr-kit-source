@@ -19,8 +19,8 @@ class CodexPackagingTest(unittest.TestCase):
             (ROOT / "adapters/codex/.codex-plugin/plugin.json").read_text()
         )
 
-        self.assertEqual(claude["version"], "0.5.2")
-        self.assertEqual(codex["version"], "0.5.2")
+        self.assertEqual(claude["version"], "0.5.3")
+        self.assertEqual(codex["version"], "0.5.3")
         self.assertEqual(claude["author"]["name"], "tryoo0607")
         self.assertNotIn("개인", claude["description"] + codex["description"])
         self.assertEqual(claude["license"], "Apache-2.0")
