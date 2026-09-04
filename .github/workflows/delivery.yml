@@ -50,14 +50,8 @@ jobs:
           EOF
           chmod 600 "$HOME/.ssh/config" "$HOME/.ssh/known_hosts"
 
-      - name: Test and build source
-        run: |
-          python3 -m unittest discover -s tests -p 'test_*.py'
-          ./build.sh
-          bash tests/hooks/lifecycle-smoke.sh
-
-      - name: Verify generated public boundary
-        run: python3 -m unittest -v tests.test_public_boundary
+      - name: Validate source and all targets
+        run: python3 tools/validate.py full
 
       - name: Deploy complete target repositories
         env:
