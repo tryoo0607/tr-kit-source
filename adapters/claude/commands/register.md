@@ -11,6 +11,8 @@ d="${XDG_STATE_HOME:-$HOME/.local/state}/claude-remote/register"
 mkdir -p "$d" && printf '%s' "$ARGUMENTS" > "$d/$key"
 ```
 
+`claude-remote`는 기존 세션 flag를 보존하기 위한 역사적 state 디렉터리 이름일 뿐, 같은 이름의 host binary를 요구하지 않는다.
+
 | 값 | 무엇 |
 |---|---|
 | `default` | 지금 것 — 단계 블록 · 알림 · 첨언 · 여백 전문 |

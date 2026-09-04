@@ -99,6 +99,54 @@ class AdapterTest(unittest.TestCase):
         )
         self.assertEqual(decide(after_ack)["action"], "none")
 
+    def test_codex_happy_reconnect_id_isolated_handoff_survives_stale_pid(self):
+        self.env.pop("TR_CONTINUITY_KEY")
+        self.env["HAPPY_RECONNECT_SESSION_ID"] = "happy-reconnect-a"
+        sessions = self.home / ".happy" / "sessions.json"
+        sessions.parent.mkdir()
+        sessions.write_text(
+            json.dumps(
+                {
+                    "sessions": {
+                        "happy-reconnect-a": {"metadata": {"hostPid": 999_999_999}},
+                    }
+                }
+            )
+        )
+
+        observed = json.loads(
+            self.run_adapter(
+                "codex", "context-event", self.codex_payload("codex-context-75.jsonl", "old")
+            ).stdout
+        )
+        result = decide(observed)
+        self.assertEqual(result["action"], "rollover.handoff")
+        self.run_adapter("codex", "render-context", result)
+
+        same = json.loads(
+            self.run_adapter("codex", "resume-event", {"session_id": "old"}).stdout
+        )
+        self.assertEqual(decide(same)["action"], "none")
+
+        self.env["TR_STATE_AVAILABLE"] = "1"
+        self.env["HAPPY_RECONNECT_SESSION_ID"] = "happy-reconnect-b"
+        isolated = json.loads(
+            self.run_adapter("codex", "resume-event", {"session_id": "new"}).stdout
+        )
+        self.assertEqual(decide(isolated)["action"], "none")
+
+        self.env["HAPPY_RECONNECT_SESSION_ID"] = "happy-reconnect-a"
+        resumed = json.loads(
+            self.run_adapter("codex", "resume-event", {"session_id": "new"}).stdout
+        )
+        self.assertEqual(decide(resumed)["action"], "resume.inject")
+        self.assertEqual(decide(resumed)["data"]["project"], "demo")
+        self.run_adapter("codex", "ack-resume", {"session_id": "new"})
+        repeated = json.loads(
+            self.run_adapter("codex", "resume-event", {"session_id": "newer"}).stdout
+        )
+        self.assertEqual(decide(repeated)["action"], "none")
+
     def test_codex_below_prepare_threshold_is_silent(self):
         event_proc = self.run_adapter(
             "codex", "context-event", self.codex_payload("codex-context-59.jsonl")

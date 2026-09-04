@@ -12,13 +12,11 @@
 #    가드는 죽는다(컨텍스트 넛지가 겪은 병과 같다). 그래서 3층으로 나눈다:
 #
 #   ⛔ deny  **정당한 용도가 아예 없는 것.** 실제 사고 이력이 있는 것만 여기 온다
-#   ⚠️ ask   되돌리기 어려운 것 — **항상** 묻는다 (force push · rm -rf · cycle)
+#   ⚠️ ask   되돌리기 어려운 것 — **항상** 묻는다 (force push · rm -rf)
 #   ⚠️ ask   그냥 외부로 나가는 것 — **세션·repo 당 한 번만** 묻는다
 #
-# ⛔ **deny 를 함부로 늘리지 마라.** 2026-08-08 에 `claude-remote cycle` 을 deny 로 넣었다가
-#    같은 날 내렸다 — 유저는 **remote-control 세션**이라 셸을 직접 칠 길이 없어서
-#    "사람이 직접"이 곧 "아무도 못 함"이 됐다. **가드가 정상 작업을 막으면 고장이다.**
-#    판별: *"유저가 승인해도 하면 안 되나?"* 에 예여야 deny. 아니면 ask.
+# ⛔ **deny 를 함부로 늘리지 마라.** 판별은 *"유저가 승인해도 하면 안 되나?"* 다.
+#    아니라면 deny가 아니라 ask다. 가드가 정상 작업을 막으면 고장이다.
 #
 # 세션당 1회로 줄인 근거: 정책에 *"이미 승인·지시된 건 진행"* 이 있다. 훅은 승인 여부를
 #   모르지만 **PostToolUse 가 도는 건 도구가 실제로 실행됐다는 뜻**(= 유저가 승인) 이다.
@@ -32,7 +30,6 @@ command -v jq >/dev/null 2>&1 || exit 0   # 판정할 수 없으면 막지 않�
 ev="$(printf '%s' "$input"  | jq -r '.hook_event_name // ""' 2>/dev/null || true)"
 tool="$(printf '%s' "$input"| jq -r '.tool_name // ""'       2>/dev/null || true)"
 cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // ""'   2>/dev/null || true)"
-fp="$(printf '%s' "$input"  | jq -r '.tool_input.file_path // ""' 2>/dev/null || true)"
 mode="$(printf '%s' "$input"| jq -r '.permission_mode // ""'  2>/dev/null || true)"
 sid="$(printf '%s' "$input" | jq -r '.session_id // ""'       2>/dev/null || true)"
 
@@ -60,79 +57,8 @@ emit() {  # $1=allow|deny|ask  $2=사유
   exit 0
 }
 
-# ══ 1층 ⛔ deny — 부활 좌표를 손으로 건드리지 않는다 ═══════════════════════════
-#
-# `sessions.log`·`snapshot` 은 `claude-remote restore` 가 대화를 되살리는 좌표다.
-# 2026-08-06 에 훅을 손으로 테스트하다 `session_id=t` 가 박혀 **스냅샷까지 오염**됐다
-# (cases/hooks/sessions-log-poisoned.md). 쓰레기 한 줄이 세션을 잃게 만든다.
-# 읽기는 자유다. **쓰기만** 막는다 — 갱신은 훅과 `claude-remote` 가 한다.
-guard_state_write() {
-  local target="$1"
-  case "$target" in
-    *claude-remote/sessions.log*|*claude-remote/snapshot*) ;;
-    *) return 0 ;;
-  esac
-  emit deny '⛔ `claude-remote` 부활 좌표(sessions.log·snapshot)를 직접 쓰려 했다. 훅이 막았다.
-
-여기가 오염되면 `restore` 가 **없는 대화를 되살리려다 세션을 잃는다** (2026-08-06 실측, cases/hooks/sessions-log-poisoned.md).
-갱신은 `session-check` 훅과 `claude-remote snapshot` 이 한다 — 손으로 쓰지 마라.
-훅 동작을 확인하려면 `setup/tools/hook-test` 를 써라(샌드박스라 안전하다).
-
-**유저에게 이 사실을 알리고**, 정말 필요하면 유저가 직접 하도록 둬라.'
-}
-
-case "$tool" in
-  Write|Edit|NotebookEdit) [ -n "$fp" ] && guard_state_write "$fp" ;;
-esac
-
 [ "$tool" = "Bash" ] || exit 0
 [ -n "$cmd" ] || exit 0
-
-# Bash 로 우회하는 경로도 같이 막는다 — 단, 읽기(grep·cat·tail·stat)는 통과시킨다.
-#
-# 🔑 **변경 동사는 경로와 같은 구간에 있어야 한다** (파이프·세미콜론·개행 앞까지).
-#    2026-08-10 실측 오탐: `mkdir -p "$SB/bin"; …; stat -c %y …/claude-remote/snapshot`
-#    처럼 **읽기만 하는 복합 명령**이 막혔다 — 명령 **전체**에서 동사를 찾았기 때문이다.
-#    방금 만든 규칙("가드가 정상 작업을 막으면 고장이다")에 내가 먼저 걸렸다.
-#
-# ⚠️ 남는 한계: **heredoc 안의 문자열도 명령문으로 보인다.** 이 훅의 테스트 픽스처처럼
-#    `> …/sessions.log` 라는 **텍스트**를 파일에 쓰려 하면 막힌다. 파싱으로 풀 문제가 아니라
-#    **Write/Edit 도구를 쓰면 통과한다**(경로로 판정하므로). 그게 탈출구다.
-_P='claude-remote/(sessions\.log|snapshot)'
-_S='[^|;&[:cntrl:]]*'
-case "$cmd" in
-  *claude-remote/sessions.log*|*claude-remote/snapshot*)
-    if printf '%s' "$cmd" | grep -qE \
-        ">>?[[:space:]]*${_S}${_P}|(tee|rm|mv|cp|truncate|dd|ln|install)[[:space:]]${_S}${_P}|sed[[:space:]]+(-i|--in-place)${_S}${_P}"
-    then
-      guard_state_write "claude-remote/sessions.log"
-    fi ;;
-esac
-
-# ══ 2층 ⚠️ ask — cycle/restart 는 남의 세션을 끊을 수 있다 ═════════════════════
-#
-# ⚠️ **처음엔 `deny` 로 넣었다가 같은 날 내렸다.** 근거가 인계 요청서의
-#    *"권한 분류기에 막힐 수 있다 → 사람이 직접"* 이었는데, 그건 **분류기 동작 관찰**이지
-#    유저가 정한 정책이 아니었다. 관찰을 규칙으로 승격시킨 게 잘못이다.
-#
-# 🔑 결정적으로: 유저는 **remote-control 세션**으로 일한다(Termux·mosh). 거기엔
-#    `!` 로 셸을 치는 길이 없다 → `deny` 는 "사람이 직접"이 아니라 **아무도 못 돌림**이 된다.
-#    가드가 유저의 정상 작업을 못 하게 만들면 그건 가드가 아니라 고장이다.
-#
-# 진짜 위험은 *"모델이 하면 안 됨"* 이 아니라 **"busy 세션이 있는데 돌리면 남의 작업이 끊김"** 이다.
-# 그건 물어보면 되는 종류다 — 대신 **사전 점검 결과를 먼저 내놓게** 사유문에 박는다.
-case "$cmd" in
-  *"claude-remote cycle"*|*"claude-remote restart"*|*"claude-remote kill"*)
-    emit ask '⚠️ **전 세션을 재시작한다 — 지금 이 세션도 포함이다.**
-
-`busy` 세션이 하나라도 있으면 **하던 작업이 끊긴다.** 그리고 너는 죽는 순간 결과를 확인할 수 없다.
-
-**아직 안 했으면 사전 점검 2종을 먼저 돌려 결과를 유저에게 보여주고 나서 다시 시도해라:**
-  ① 살아있는 세션 중 `busy` 가 이 세션뿐인지 (`~/.claude/sessions/*.json` + `/proc`)
-  ② `claude-remote snapshot` 후 부활 좌표가 전부 실재하는지 (**FAIL 0**)
-
-점검을 이미 통과했으면 그 결과를 요약해 보여주고 진행해라.' ;;
-esac
 
 # ══ 2층 ⚠️ ask (항상) — force push 는 남의 작업을 덮는다 ════════════════════════
 #
@@ -213,7 +139,7 @@ if printf '%s' "$cmd" | grep -qE '(^|[|;&[:space:]])rm[[:space:]]+(-[a-zA-Z]*[rR
   ② `ls -d <대상>` 으로 **무엇이 몇 개 지워지는지** 세어 유저에게 보여라
   ③ 그러고 나서 확인받아라
 
-특히 `~/projects/_docs`(작업 기록 전부) · `~/.claude`(세션·플러그인) · `claude-remote` 상태는 **백업이 로컬뿐이거나 아예 없다.**'
+특히 `~/projects/_docs`(작업 기록 전부) · `~/.claude`(세션·플러그인) 같은 사용자 상태는 **백업이 로컬뿐이거나 아예 없다.**'
   fi
 fi
 

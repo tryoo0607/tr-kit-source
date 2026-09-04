@@ -1,3 +1,2 @@
 - Mermaid 텍스트 정본과 확대 가능한 Artifact를 함께 제공한다.
 - 민감한 도식은 Artifact로 발행하지 않고 로컬에서만 렌더한다.
-- 세션의 skill 호출 흐름은 수동으로 추측하지 않고 `claude-skillflow`를 사용한다.

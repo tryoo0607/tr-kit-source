@@ -46,5 +46,5 @@ python3 <project-skill>/scripts/local_docs_migrate.py --apply <project-docs>
 ## 끝나고
 
 - `_local-docs` 심링크가 살아있는지 확인 (`ls -l`).
-- `local-docs-backup` 한 번 돌려 실제로 백업에 들어가는지 본다 — **v0에서 `{{KIT_REPO}}`가 조용히 빠져 있었다**(`backup.md`).
+- `_docs` Git 작업 트리에서 변경이 추적되는지 확인하고, 개인 저장소라면 commit·push까지 검증한다 — **v0에서 `{{KIT_REPO}}` 기록이 조용히 빠져 있었다**(`backup.md`).
 - lazy가 기본이라 **손 안 댄 프로젝트는 그냥 둬도 된다.** 섞여 있는 게 정상이다.

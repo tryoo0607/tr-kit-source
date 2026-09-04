@@ -55,7 +55,7 @@ case "$PWD/" in
          && ! git -C "$kit_repo" diff --quiet "$cache_sha" HEAD -- plugins/tr-claude 2>/dev/null; then
         printf '⚠️ **플러그인 캐시가 뒤처졌다** — 캐시 `%s` ≠ repo `%s`. 유저에게 알려라.\n' \
           "${cache_sha:0:7}" "${head_sha:0:7}"
-        printf '고친 훅·스킬이 아직 안 돈다. `plugin update` 후 `claude-remote cycle -y`.\n'
+        printf '고친 훅·스킬이 아직 안 돈다. `plugin update` 후 현재 host에서 해당 세션을 재시작한다.\n'
         printf '(이번 턴에 또 고칠 거면 **한 번에 묶어서** 배포하라 — 사이클은 전 세션을 재시작한다)\n\n'
       fi
     fi

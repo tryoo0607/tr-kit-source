@@ -1,5 +1,7 @@
 # Codex 세션 제어
 
+> **임시 Happy 호환 (`TEMPORARY_HAPPY_COMPAT`)**: Happy를 사용하는 전환 기간에만 유지한다. PolyGarden이 세션 host를 대체하면 Happy 전용 갱신·연속성 경로를 제거하며, 여기에 새 기능을 확장하지 않는다.
+
 ## 롤오버
 
 ```text
