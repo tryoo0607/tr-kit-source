@@ -37,6 +37,12 @@ destination = "skills/kit/references"
 scope = "payload"
 
 [[artifacts]]
+id = "llm-wiki-core"
+source = "core/llm-wiki"
+destination = "core/llm-wiki"
+scope = "payload"
+
+[[artifacts]]
 id = "lifecycle-decision"
 source = "core/lifecycle/decision.py"
 destination = "hooks/core/decision.py"

@@ -19,8 +19,8 @@ class CodexPackagingTest(unittest.TestCase):
             (ROOT / "adapters/codex/.codex-plugin/plugin.json").read_text()
         )
 
-        self.assertEqual(claude["version"], "0.5.1")
-        self.assertEqual(codex["version"], "0.5.1")
+        self.assertEqual(claude["version"], "0.5.2")
+        self.assertEqual(codex["version"], "0.5.2")
         self.assertEqual(claude["author"]["name"], "tryoo0607")
         self.assertNotIn("개인", claude["description"] + codex["description"])
         self.assertEqual(claude["license"], "Apache-2.0")
@@ -67,6 +67,11 @@ class CodexPackagingTest(unittest.TestCase):
             self.assertTrue((root / ".tr-kit-generated").is_file())
             self.assertTrue((root / marketplace).is_file())
             self.assertTrue((root / "LICENSE").is_file())
+            self.assertTrue((root / "NOTICE").is_file())
+            self.assertEqual(
+                (root / "NOTICE").read_bytes(),
+                (ROOT / "NOTICE").read_bytes(),
+            )
             self.assertTrue((root / "README.md").is_file())
             self.assertTrue((root / f"plugins/tr-{target}/README.md").is_file())
             self.assertFalse((root / "setup").exists())

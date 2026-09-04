@@ -1,4 +1,4 @@
-# `_local-docs` 스키마 — v1
+# `_local-docs` 스키마 — v2
 
 작업 기록이 사는 곳의 구조와 각 파일의 형식. **버전 이력은 맨 아래.**
 
@@ -24,29 +24,40 @@
 
 | | 어디 | 예 |
 |---|---|---|
-| 문서에 딸린 도식 | `_docs/<project>/design/<주제>/assets/` | png·svg·mmd (수백 KB) |
+| 문서에 딸린 도식 | `_docs/<project>/wiki/design/<주제>/assets/` | png·svg·mmd (수백 KB) |
 | 🔑 대용량 원본 | **`_assets/<project>/`** | 로그 덤프 · 화면 녹화 · 데이터셋 |
 
 **경계는 숫자가 아니라 질문이다** — ***"이게 git 이력에 영원히 남아도 되나?"*** 도식 300KB는 남아도 된다. 로그 덤프 500MB는 안 된다. 한번 커밋되면 되돌릴 수 없다.
 
 > `out/<slug>/`도 `_docs/` 안이라 같은 판단을 받는다 — 보고서는 여기, 그 보고서가 참조하는 원본 덤프는 `_assets/`.
 
-## 구조 — 축은 **"누가 읽나"**
+## 구조 — LLM Wiki + 작업 생명주기
 
 ```
 _docs/<project>/
-├─ README.md          👤🤖  진입점(현재 초점·다음) + | 스키마 | v1 |
-├─ decisions.md       🤖    작업을 넘는 결정 (D-nnn)
+├─ README.md          👤🤖  안정적인 목적·경계 + | 스키마 | v2 |
+├─ index.md           👤🤖  Wiki + active state 라우터(자동생성)
+├─ log.md             🤖    ingest·synthesize·migrate 이력
+├─ sources/           🤖    외부 근거 record·payload manifest
+├─ wiki/              👤🤖  현재 project 지식
+│  ├─ decisions.md    🤖    작업을 넘는 결정 (D-nnn)
+│  ├─ design/         👤🤖  작업을 넘는 설계
+│  └─ index.md        👤🤖  자동생성 MOC
 ├─ state/<slug>.md    🤖    진행 중 ← 훅이 매 턴 주입
 ├─ exec/<slug>.md     🤖    완료 기록 ← 자기확장이 grep. 항상 단일 파일
 ├─ out/<slug>/        👤    산출물 — 형식 자유
-├─ design/<주제>/     👤🤖  작업을 넘는 설계
-│   └─ assets/        👤    그 문서에 딸린 도식
 └─ cases/             🤖    검증 케이스 원장
 ```
 
+`sources/`와 `wiki/`의 공통 schema·ingest·query·lint는 plugin root `core/llm-wiki/`가 정본이다.
+project Wiki만 `work_refs`로 `state/`·`exec/` 근거를 연결할 수 있다. 모든 exec를 Wiki로
+복제하지 않고 여러 작업에서 재사용할 구조·결정·운영 지식만 합성한다.
+
+🔑 `state/`, `exec/`, `cases/`, `out/`는 v1 경로를 유지한다. lifecycle hook과 Stop 기록
+가드가 이 위치를 직접 계산하기 때문이다.
+
 `INBOX.md`를 사용할 경우 configured handoff repository가 있으면 그곳을 단일 입구로 삼고,
-없으면 프로젝트 local-docs에 둘 수 있다. 정제해서 실제 작업이 되면 이 트리(`state`·`exec`·`decisions`)로 내린다.
+없으면 프로젝트 local-docs에 둘 수 있다. 정제해서 실제 작업이 되면 이 트리(`state`·`exec`·`wiki/decisions.md`)로 내린다.
 
 **AI가 읽는 곳에 큰 바이너리를 섞지 않는다** — grep과 훅 주입이 오염된다.
 
@@ -115,7 +126,7 @@ _docs/<project>/
 
 **분류 태그가 3건 쌓이면 넛지**한다 — *"비슷한 게 3건이다, 스킬로 만들까?"* (알림이지 게이트가 아니다)
 
-## `decisions.md`
+## `wiki/decisions.md`
 
 **작업을 넘는 결정**만. 작업 안의 결정은 `state`/`exec`의 `## 결정`에 있다.
 
@@ -123,15 +134,23 @@ _docs/<project>/
 
 ## `README.md`
 
-진입점. **스키마 버전은 여기에 프로젝트당 한 번.**
+안정적인 project 경계. **스키마 버전은 여기에 프로젝트당 한 번.** 현재 초점과 다음 작업은
+`state/`와 생성 `index.md`가 정본이므로 README에 복제하지 않는다.
 
 ```markdown
 # {{KIT_REPO}}
 
-| 스키마 | v1 |
-| 현재 초점 | … |
-| 다음 | … |
+| 스키마 | v2 |
+| 목적 | 이 기록 공간이 다루는 project 경계 |
+| 저장소 | 선택: 대응 repository 또는 workspace |
 ```
+
+## `index.md`와 `log.md`
+
+- `index.md`는 LLM Wiki 내용과 active state 제목·단계·갱신만 보여주는 자동생성 라우터다.
+- `log.md`는 `capture`, `ingest`, `synthesize`, `query`, `lint`, `migrate` 중 실제 지식
+  유지보수 이력만 append한다. 읽기만 한 query는 강제하지 않는다.
+- 과거 작업은 index에 모두 복제하지 않고 `rg`로 `exec/` 후보를 좁힌 뒤 직접 읽는다.
 
 ## `out/<slug>/`
 
@@ -158,20 +177,32 @@ _docs/<project>/
 | 기본 전략 | **lazy** — 옛 버전을 읽고, **손댈 때 최신으로 갱신**. 섞여 있는 게 정상 |
 | 마이그레이션이 필요한 경우 | **이름·위치·의미 변경**만 (내용 추가는 lazy로 충분) |
 
-**파일마다 버전을 붙이지 않는다** — 그 줄은 99% 안 읽히는데 기록 부담은 매번 든다. v0/v1은 **형식 자체로 구분**된다.
+**파일마다 버전을 붙이지 않는다** — 그 줄은 99% 안 읽히는데 기록 부담은 매번 든다. 버전은 project README 한 곳에서 판별한다.
 
-### 마이그레이션은 **스크립트 + 스킬** 둘로 나눈다
+### 마이그레이션은 **공통 core + project 스킬** 둘로 나눈다
 
 | | 무엇 | 왜 거기 |
 |---|---|---|
-| 🤖 **`setup/tools/local-docs-migrate`** | 기계적인 것 — 디렉토리 생성 · `git mv` · `.gitignore` 교체 · 심링크 · 개명 | **멱등**(두 번 돌려도 안전)하고 반복 가능. 프롬프트로 매번 지시하면 조금씩 다르게 실행된다 |
-| 👤 **`project` 스킬의 활동** | 판단이 필요한 것 — 이 문서가 `exec`냐 `design`이냐 · 살릴 내용이 있나 | 스크립트가 못 한다 |
+| 🤖 `project/scripts/local_docs_migrate.py` | 한 project의 v2 디렉터리·README·index 생성과 legacy 후보 보고. 기본 dry-run | **멱등**이고 실제 배포되는 경로다 |
+| 👤 `project` 스킬의 활동 | 기존 design·decision의 장기 Wiki 가치 판단과 schema 변환 | 스크립트가 못 한다 |
 
-**한 번 쓰고 버리는 게 아니다** — v1→v2에도 같은 자리를 쓴다. 그리고 🔑 **회사 머신에서 따로 돌려야 한다**(`_local-docs`는 push 금지 → 동기화가 없다) → **kit에 담겨 같이 깔리는** 위치여야 한다.
+project별 opt-in이다. 28개 project를 한 번에 자동 순회하지 않는다. 그리고 🔑 **회사 머신에서 따로 돌려야 한다**(`_local-docs`는 push 금지 → 동기화가 없다) → **kit에 담겨 같이 깔리는** 위치여야 한다.
 
 > 패턴은 `audit`과 같다 — `tools/kit-audit`이 검사하고 스킬이 해석한다.
 
 ## 버전 이력
+
+### v2 (2026-09-04)
+
+| v1 | v2 |
+|---|---|
+| `design/` | 검토 후 선별적으로 `wiki/design/`에 합성 |
+| `decisions.md` | 검토 후 `wiki/decisions.md`에 합성 |
+| README의 수동 현재 초점·다음 | 제거 — `state/`와 자동 index에서 계산 |
+| project 지식 계층 없음 | 공통 `sources/`, `wiki/`, `index.md`, `log.md` 추가 |
+
+`state/`, `exec/`, `cases/`, `out/`는 이동하지 않는다. 개인/NAS의 private backup push와
+회사 local-only no-push 정책도 바뀌지 않는다.
 
 ### v1 (2026-08-06)
 

@@ -5,15 +5,16 @@ import argparse
 import re
 from pathlib import Path
 
-from _knowledge_common import markdown_targets, records, string_list
-from knowledge_index import update_indexes
+from _llm_wiki_common import markdown_targets, records, string_list, work_metadata
+from llm_wiki_index import update_indexes
 
 
 SOURCE_REQUIRED = {"kind", "title", "source_type", "storage", "captured"}
 WIKI_REQUIRED = {"kind", "title", "summary", "tags", "links", "sources", "status", "created", "updated"}
 STORAGE = {"inline", "repository", "external", "remote"}
 STATUS = {"seed", "evergreen", "archived"}
-LOG_HEADER = re.compile(r"^## \[\d{4}-\d{2}-\d{2}\] (capture|ingest|query|lint|migrate) \| .+")
+LOG_HEADER = re.compile(r"^## \[\d{4}-\d{2}-\d{2}\] (capture|ingest|synthesize|query|lint|migrate) \| .+")
+COMPLETED_STAGE = re.compile(r"^[\s*_`]*(?:마무리\b|완료\b|✅)")
 
 
 def _safe_relative(raw: object) -> bool:
@@ -21,7 +22,7 @@ def _safe_relative(raw: object) -> bool:
     return bool(str(raw)) and not path.is_absolute() and ".." not in path.parts
 
 
-def lint(root: Path) -> tuple[list[str], list[str]]:
+def lint(root: Path, project: bool = False) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -92,6 +93,17 @@ def lint(root: Path) -> tuple[list[str], list[str]]:
             if reference not in wiki_paths:
                 errors.append(f"{label}: missing wiki link: {reference}")
 
+        work_refs = string_list(item.metadata.get("work_refs"))
+        if work_refs and not project:
+            errors.append(f"{label}: work_refs require project mode")
+        for reference in work_refs:
+            if not _safe_relative(reference) or Path(reference).parts[0] not in {"state", "exec"}:
+                errors.append(f"{label}: invalid work reference: {reference}")
+            elif not (root / reference).is_file():
+                errors.append(f"{label}: missing work reference: {reference}")
+            elif status == "evergreen" and Path(reference).parts[0] == "state":
+                warnings.append(f"{label}: evergreen note references mutable state: {reference}")
+
         for reference in markdown_targets(item.body):
             target = (item.path.parent / reference).resolve()
             try:
@@ -113,22 +125,52 @@ def lint(root: Path) -> tuple[list[str], list[str]]:
             if line.startswith("## ") and not LOG_HEADER.fullmatch(line):
                 errors.append(f"log.md:{number}: invalid operation header")
 
-    for path in update_indexes(root, check=True):
+    if project:
+        readme = root / "README.md"
+        if readme.is_file():
+            text = readme.read_text(encoding="utf-8")
+            if "| 스키마 | v2 |" not in text:
+                warnings.append("README.md: project schema is not v2")
+            if not re.search(r"^\|\s*목적\s*\|", text, re.MULTILINE):
+                warnings.append("README.md: missing stable purpose")
+            for field in ("현재 초점", "다음"):
+                if f"| {field} |" in text:
+                    warnings.append(f"README.md: deprecated dynamic field: {field}")
+        state_dir = root / "state"
+        if state_dir.is_dir():
+            for path in sorted(state_dir.glob("*.md")):
+                label = path.relative_to(root).as_posix()
+                if path.name == "_unrecorded.md":
+                    warnings.append(f"{label}: hook fallback requires human review")
+                    continue
+                metadata = work_metadata(path)
+                for field in ("title", "단계", "갱신"):
+                    if not metadata.get(field):
+                        warnings.append(f"{label}: missing work metadata: {field}")
+                if COMPLETED_STAGE.search(metadata.get("단계", "")):
+                    warnings.append(f"{label}: completed-looking record remains in state")
+        if (root / "design").exists():
+            warnings.append("design/: legacy content requires selective Wiki synthesis")
+        if (root / "decisions.md").exists():
+            warnings.append("decisions.md: legacy content requires Wiki synthesis")
+
+    for path in update_indexes(root, check=True, project=project):
         errors.append(f"{path.relative_to(root)}: generated index drift")
 
     return sorted(set(errors)), sorted(set(warnings))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Lint an LLM Wiki knowledge repository.")
+    parser = argparse.ArgumentParser(description="Lint an LLM Wiki repository.")
     parser.add_argument("repository", type=Path)
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures.")
+    parser.add_argument("--project", action="store_true", help="Validate project work extensions.")
     args = parser.parse_args()
     root = args.repository.resolve()
     if not root.is_dir():
         parser.error(f"repository does not exist: {root}")
 
-    errors, warnings = lint(root)
+    errors, warnings = lint(root, project=args.project)
     for message in errors:
         print(f"ERROR {message}")
     for message in warnings:

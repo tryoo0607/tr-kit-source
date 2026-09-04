@@ -8,8 +8,9 @@ from tools.build import build_target
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills/knowledge"
-INDEX = SKILL / "scripts/knowledge_index.py"
-LINT = SKILL / "scripts/knowledge_lint.py"
+CORE = ROOT / "core/llm-wiki"
+INDEX = CORE / "scripts/llm_wiki_index.py"
+LINT = CORE / "scripts/llm_wiki_lint.py"
 
 
 class KnowledgeToolsTest(unittest.TestCase):
@@ -140,12 +141,13 @@ Related synthesis.
     def test_skill_resources_survive_both_target_builds(self):
         for target in ("claude", "codex"):
             build_target(ROOT, target)
-            skill = ROOT / f"out/{target}/plugins/tr-{target}/skills/knowledge"
-            self.assertTrue((skill / "references/schema.md").is_file())
-            self.assertTrue((skill / "references/operations.md").is_file())
-            self.assertTrue((skill / "references/retrieval.md").is_file())
-            self.assertTrue((skill / "scripts/knowledge_index.py").is_file())
-            self.assertTrue((skill / "scripts/knowledge_lint.py").is_file())
+            plugin = ROOT / f"out/{target}/plugins/tr-{target}"
+            common = plugin / "core/llm-wiki"
+            self.assertTrue((common / "schema.md").is_file())
+            self.assertTrue((common / "operations.md").is_file())
+            self.assertTrue((common / "retrieval.md").is_file())
+            self.assertTrue((common / "scripts/llm_wiki_index.py").is_file())
+            self.assertTrue((common / "scripts/llm_wiki_lint.py").is_file())
 
 
 if __name__ == "__main__":

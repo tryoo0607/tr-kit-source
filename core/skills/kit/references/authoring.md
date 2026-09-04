@@ -7,7 +7,8 @@
 | 담을 것 | 어디 | 왜 |
 |---|---|---|
 | **매번 참인 짧은 규칙** | `{{AGENT_FILE}}` | 스킬로 만들면 소환돼야만 먹는다 |
-| **절차·순서** | 🔑 `backbone/` (단계) 또는 `backbone/profiles/` | **절차는 스킬에 없다.** *"1단계 2단계"*가 스킬 본문에 있으면 잘못 남은 것 |
+| **모든 작업에 공통인 생명주기** | 🔑 `backbone/` (단계) 또는 `backbone/profiles/` | 전역 진행 순서를 도메인 스킬마다 복제하지 않는다 |
+| **특정 user job의 반복 절차** | 기존 스킬 또는 ✅ 새 스킬 | 입력·판단·완료조건이 그 작업에만 속한다 |
 | **좋은 결과의 기준** | `doctrine/global.md` 또는 profile의 독트린 | 정책(하면 안 되는 것)과 다르다 |
 | **어디서만 참인 규칙** | `scopes/` | 회사·오픈소스·개인 |
 | **기존 스킬과 트리거가 겹침** | 그 스킬의 `references/` | 아래 P1 |
@@ -59,9 +60,56 @@ kit 전체에서 쓰는 기호다. **아무 데나 붙이면 아무 데도 안 �
 |---|---|
 | **P1** | **스킬 = 소환 단위.** *"이럴 때 이걸 읽는다"*의 그 단위다. **트리거가 같으면 한 스킬** — 도메인이 같다는 이유로 묶지 않는다 |
 | **P2** | 🔑 **크기는 쪼개서가 아니라 `references/`로 조절한다.** `SKILL.md` = 트리거 + 분기 지도. 깊이는 references에 |
-| **P3** | **이름 = 무엇을 아는가.** 접두어 없이 **명사 하나** (`code-` 같은 접두어는 정보를 주지 않는다) |
-| **P4** | 🔑 **절차는 스킬에 없다** (위 표) |
-| **P5** | **도메인 하나 = 스킬 하나** |
+| **P3** | **이름 = user job을 찾는 손잡이.** 짧은 kebab-case로 짓고, 동작이 핵심이면 action-oriented 이름을 허용한다 |
+| **P4** | 🔑 **전역 lifecycle은 backbone, domain-specific procedure는 skill.** 같은 단계를 양쪽에 복제하지 않는다 |
+| **P5** | **한 user job = 한 owner.** 주제보다 trigger·입력·결과·절차가 같은지를 보고 합치거나 나눈다 |
+
+## 발동 계약과 두 load
+
+`description`은 skill 내용이 로드되기 전에 모델이 보는 **context pointer**다. 기능을 한 구절로
+말하고 실제로 다른 요청 branch만 trigger로 적는다. 같은 branch의 동의어를 나열하거나 본문
+정체성을 반복하지 않는다.
+
+| 비용 | 의미 | 선택 |
+|---|---|---|
+| context load | description·전역 문서처럼 매 요청에 노출되는 비용 | 자동 발견 가치가 있을 때만 지불 |
+| cognitive load | 사용자가 skill 이름과 호출 시점을 기억하는 비용 | 명시 호출 전용일 때 지불 |
+
+- 모델이 스스로 찾아야 하거나 다른 workflow가 호출해야 하면 자동 발견 가능 상태를 유지한다.
+- 사람이 이름을 직접 입력할 때만 필요한 skill은 명시 호출 전용을 고려한다.
+- 이 선택의 표현 방식은 host별 manifest·invocation 계약이 소유한다. 공통 source에 한 host의
+  field를 보편 규칙처럼 넣지 않는다.
+- 발동이 불안정하면 본문을 상시 로드하기 전에 description의 기능·branch·가까운 비대상 경계를
+  먼저 고친다.
+
+## 저작 흐름
+
+1. 변경을 create·port·refactor·merge·split으로 분류하고 user job, 입력, 관찰 가능한 결과,
+   권한 경계와 비목표를 적는다. 하나의 operation으로 닫히지 않으면 새 skill을 만들지 않는다.
+2. 기존 skill을 trigger·결과·방법으로 검색한다. 같은 job의 owner가 있으면 새 디렉터리보다 그
+   owner를 보강한다.
+3. repository 규약, 강한 이웃 skill 하나, 대상의 inbound·outbound route와 recipe registration을
+   읽는다. 이웃의 domain 문구를 형식처럼 복사하지 않는다.
+4. 외부 skill을 port하면 pinned revision과 license를 먼저 읽는다. portable method와 제품명,
+   host syntax, 낡은 경로를 분리하고 canonical NOTICE에 필요한 attribution을 남긴다.
+5. 본문보다 routing contract를 먼저 쓴다. name·description, 입력, 결과, authority, non-goal,
+   completion condition이 같은 job을 가리켜야 한다.
+6. domain procedure는 입력 검증부터 완료조건까지 시간순으로 쓴다. 모델이 추측할 갈림선과
+   안전상 필요한 금지는 명시하되, 기본 능력을 되풀이하는 의례 문장은 제거한다.
+7. 모든 branch가 필요한 절차와 치명적 제약은 `SKILL.md`에 둔다. branch 전용 schema·catalog·
+   예시는 load 조건이 선명할 때만 `references/`로 내린다.
+8. split은 독립 trigger가 실제로 필요하거나 branch별 load를 줄이거나, 관찰된 조기 종료를
+   실제 context 경계로 차단할 때만 한다. 줄 수만으로 나누지 않는다.
+9. 반복 parsing·validation처럼 결정성이 필요한 일만 `scripts/`로 만들고, 출력 형태 자체가
+   계약일 때만 `assets/`를 둔다. 빈 디렉터리는 만들지 않는다.
+10. rename·merge·split이면 live route, recipe, manifest, catalog와 obsolete alias를 같은 변경에서
+    이관한다.
+11. source와 양 target 생성물을 검증한 뒤 실제 발동 probe를 수행한다. 최소 positive 2개와
+    nearest-negative 2개를 쓰고, host에서 model routing을 실행하지 못했다면 정적 검증과 구분해
+    **미검증**으로 보고한다.
+
+각 중요한 단계의 완료조건은 관찰 가능하고 그 단계가 맡은 범위를 충분히 요구해야 한다.
+다만 모든 문장 뒤에 같은 완료 문구를 붙이지 말고, 조기 종료 가능성이 있는 경계에만 둔다.
 
 ## 스캐폴딩
 
@@ -70,29 +118,36 @@ kit 전체에서 쓰는 기호다. **아무 데나 붙이면 아무 데도 안 �
 ```markdown
 ---
 name: <폴더명과 동일. 소문자-하이픈>
-description: <발동 키워드·조건. 이게 라우팅의 유일한 근거다>
+description: <기능 + 실제 trigger branch + 가까운 비대상 경계>
 ---
 ```
 
-- **`description`이 전부다** — 본문은 소환된 뒤에야 읽힌다. *"~할 때 발동 — 「실제로 유저가 칠 법한 말」"* 형태로, 예시 문구를 넣는다.
+- **`description`은 항상 로드되는 발동 pointer다** — 본문은 소환된 뒤에야 읽힌다. 기능을 앞에 두고 실제 요청 branch를 짧게 적는다.
 - 본문 첫 블록은 **갈림선**을 세운다 — *"먼저, X냐 Y냐"*. 읽는 쪽이 어디로 갈지 한 문장으로 알게.
 - 긴 것은 `references/<주제>.md`로.
 
 ## 체크리스트
 
 - [ ] 위 배제 표를 통과했나? (진짜 새 스킬이 맞나)
-- [ ] **트리거**가 기존 스킬과 안 겹치나? 겹치면 references로
-- [ ] `description`이 **유저가 칠 법한 말**을 담고 있나
-- [ ] 본문이 **지도**인가, 아니면 다 쏟아부었나
-- [ ] 이름이 접두어 없는 명사인가
+- [ ] 기존 owner와 trigger·결과·방법이 겹치지 않나? 겹치면 보강·merge
+- [ ] `description`이 기능·실제 branch·가까운 비대상 경계를 구분하나
+- [ ] name·입력·결과·authority·완료조건이 하나의 user job으로 닫히나
+- [ ] 공통 경로와 branch 전용 reference의 load 조건이 선명한가
+- [ ] 이름이 user job을 드러내는 짧은 kebab-case인가
+- [ ] 중요한 단계의 완료조건이 관찰 가능하고 충분한가
+- [ ] positive 2개·nearest-negative 2개 routing probe 결과가 있는가
 - [ ] 특정 repo가 대상이면 **`## 대상 repo`**를 적었나 (경로 · 참조해결: 로컬 → clone → 신설)
 - [ ] 외부(odin 등) 참조는 **소프트의존 + fallback**인가 — *"있으면 우선, 없으면 …"*
 - [ ] 외부 플러그인을 새로 들였으면 **`INTEGRATIONS.md`에 등록**했나
+- [ ] port라면 pinned source·license·canonical attribution을 기록했나
+- [ ] rename·merge·split의 live route와 registration을 함께 이관했나
 - [ ] **최소로 시작**했나 (훅·서브에이전트 과설계 아님)
 
 ## 검증
 
-`tools/validate` — 하드 규칙(`name`==폴더명 · `description` 존재 · 참조 파일 존재 · secret 없음)을 강제한다. **통과 후 커밋.**
+`tools/validate` — 하드 규칙(`name`==폴더명 · `description` 존재 · 참조 파일 존재 · secret 없음)을 강제한다.
+양 target build·생성물 validator와 routing probe 결과까지 분리해서 보고한다. 정적 validator는
+metadata와 구조를 증명할 뿐 실제 model 발동을 증명하지 않는다. **모든 적용 가능한 gate 통과 후 커밋.**
 
 🔑 커밋했다고 설치본에 반영되는 게 아니다. target별 version·cache·재설치 규칙은 `SKILL.md`의 delivery capability를 따른다.
 

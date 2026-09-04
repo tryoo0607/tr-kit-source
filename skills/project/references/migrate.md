@@ -1,11 +1,19 @@
 # `_local-docs` 스키마 마이그레이션
 
+v2는 plugin root의 LLM Wiki common core에 기존 top-level `state/`, `exec/`, `cases/`,
+`out/` 작업 계층을 결합한다. 한 project씩 기본 dry-run으로 적용한다.
+
+```sh
+python3 <project-skill>/scripts/local_docs_migrate.py <project-docs>
+python3 <project-skill>/scripts/local_docs_migrate.py --apply <project-docs>
+```
+
 **기계가 할 수 있는 건 스크립트가, 판단은 사람이.** 섞으면 둘 다 나빠진다 — 기계적인 걸 프롬프트로 매번 지시하면 조금씩 다르게 실행되고, 판단분을 스크립트에 욱여넣으면 틀린 자동화가 된다.
 
 | | 무엇 |
 |---|---|
-| 🤖 `setup/tools/local-docs-migrate` | 디렉토리 생성 · `git mv` · `.gitignore` 교체 · 심링크 · 개명. **멱등** |
-| 👤 여기 | 스크립트를 돌리고 **판단분을 묻는다** |
+| 🤖 `project/scripts/local_docs_migrate.py` | v2 sources/wiki/log/index 생성 · README 보정 · legacy 후보 보고. **dry-run 기본·멱등** |
+| 👤 여기 | `design/`·`decisions.md`를 선별해 frontmatter를 갖춘 Wiki로 합성 |
 
 🔑 **회사 머신에서 따로 돌려야 한다** — `_local-docs`는 push하지 않으므로 동기화가 없다. 각 머신에서 한 번씩.
 

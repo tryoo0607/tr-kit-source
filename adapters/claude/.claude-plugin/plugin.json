@@ -1,7 +1,7 @@
 {
   "name": "{{KIT_REPO}}",
   "description": "개발 워크플로를 위한 백본·스킬·수명주기 hook kit",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "license": "Apache-2.0",
   "author": {
     "name": "tryoo0607"

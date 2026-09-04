@@ -58,8 +58,8 @@ flowchart LR
 
 | target | 로컬 snapshot | 공개 배포 저장소 | 릴리스 |
 |---|---|---|---|
-| Claude Code | `out/claude/` | [`tr-claude`](https://github.com/tryoo0607/tr-claude) | [`v0.5.1`](https://github.com/tryoo0607/tr-claude/releases/tag/v0.5.1) |
-| Codex | `out/codex/` | [`tr-codex`](https://github.com/tryoo0607/tr-codex) | [`v0.5.1`](https://github.com/tryoo0607/tr-codex/releases/tag/v0.5.1) |
+| Claude Code | `out/claude/` | [`tr-claude`](https://github.com/tryoo0607/tr-claude) | [`v0.5.2`](https://github.com/tryoo0607/tr-claude/releases/tag/v0.5.2) |
+| Codex | `out/codex/` | [`tr-codex`](https://github.com/tryoo0607/tr-codex) | [`v0.5.2`](https://github.com/tryoo0607/tr-codex/releases/tag/v0.5.2) |
 
 - **소유권**: 두 배포 저장소는 사람이 payload를 직접 관리하는 별도 source가 아니다.
 - **생성 방식**: `tr-kit-source`가 repository 전체 tree를 만드는 managed-root mirror다.

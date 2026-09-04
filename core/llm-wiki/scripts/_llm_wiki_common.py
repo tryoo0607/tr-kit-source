@@ -9,6 +9,7 @@ from typing import Any
 
 FRONTMATTER_BOUNDARY = "---"
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+TABLE_ROW = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(.*?)\s*\|$")
 
 
 @dataclass(frozen=True)
@@ -123,3 +124,15 @@ def relative_link(from_file: Path, to_file: Path) -> str:
 
 def table_cell(value: Any) -> str:
     return str(value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def work_metadata(path: Path) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# ") and "title" not in metadata:
+            metadata["title"] = line[2:].strip()
+        match = TABLE_ROW.match(line)
+        if match:
+            key, value = match.groups()
+            metadata[key.strip()] = value.strip()
+    return metadata

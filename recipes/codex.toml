@@ -89,3 +89,9 @@ id = "codex-repository-license"
 source = "LICENSE"
 destination = "LICENSE"
 scope = "target"
+
+[[artifacts]]
+id = "codex-repository-notice"
+source = "NOTICE"
+destination = "NOTICE"
+scope = "target"

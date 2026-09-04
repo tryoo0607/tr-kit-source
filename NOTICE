@@ -1,0 +1,16 @@
+tr-kit-source
+
+Skill-authoring guidance in this distribution adapts concepts from:
+
+OutlineDriven/odin-claude-plugin, writing-skills
+Revision: c5260cfa20a297e29270e6a3191c4b375ad471f5
+License: Apache License 2.0
+https://github.com/OutlineDriven/odin-claude-plugin
+
+That work identifies writing-skills as a local adaptation of:
+
+mattpocock/skills
+Revision: 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
+License: MIT License
+Copyright (c) 2026 Matt Pocock
+https://github.com/mattpocock/skills
