@@ -2,6 +2,13 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
+## 0.5.5 — 2026-09-04
+
+- Happy가 제공하는 reconnect session ID를 우선 사용해 Codex `/clear` 후 state 인계를 복원한다.
+- `/dev/null`·fd 간 redirection을 파일 변경으로 오인하던 Stop 훅 판정을 수정한다.
+- 더 이상 배치하지 않는 legacy host binary 의존과 설치 안내를 제거하고 local-docs 백업을 일반 Git 흐름으로 맞춘다.
+- Happy Agent SDK 설정은 PolyGarden 전환 전까지만 유지하는 임시 호환 경로로 명시한다.
+
 ## 0.5.4 — 2026-09-04
 
 - Codex 컨텍스트 60%에서 인계 state를 준비하고 75%에서 `/clear` 가능 시점을 안내한다.
