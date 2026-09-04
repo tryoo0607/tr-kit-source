@@ -1,6 +1,6 @@
 ---
 name: secrets
-description: secret(자격증명·키·토큰)을 관리하거나 코드/커밋에 들어갔는지 검사할 때 발동 — "secret 어떻게 관리해", "이거 커밋해도 되나", "secret 검사해줘", "git-crypt 셋업", pre-commit 훅. **탐지와 처리는 한 몸이다.**
+description: secret·credential·token 관리와 코드·commit 유출 검사에 사용한다. "secret 검사", "키 관리", "git-crypt 설정".
 ---
 
 # secrets

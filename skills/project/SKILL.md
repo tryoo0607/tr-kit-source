@@ -1,6 +1,6 @@
 ---
 name: project
-description: '`~/projects` 아래 프로젝트의 **공간과 기록 인프라**를 다룰 때 발동 — "프로젝트 새로 만들어줘", "worktree 따줘/정리해줘", "AGENTS.md 배치", "fork remote 구성", "백업 왜 안 돼/이 머신에 붙여줘", "이 문제 케이스로 남겨줘", "local-docs 마이그레이션". 코드 내용엔 손대지 않는다.'
+description: '`~/projects` 아래 project 공간과 local-docs·worktree·backup 인프라를 관리할 때 사용한다. "프로젝트 생성", "worktree", "local-docs", "백업 연결". 코드 내용은 다루지 않는다.'
 ---
 
 # project

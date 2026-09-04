@@ -12,18 +12,15 @@ Claude Code와 Codex용 개발 워크플로 kit를 하나의 공통 소스에서
 ## 한눈에 보기
 
 ```mermaid
-%%{init: {"flowchart": {"curve": "stepAfter", "nodeSpacing": 30, "rankSpacing": 42}}}%%
-flowchart TB
-    Source["tr-kit-source<br/><br/><b>공통 정본</b> · core · shared · skills<br/><b>타깃 차이</b> · adapters<br/><b>조립 정의</b> · recipes · glossary · packaging"]
-    Build["build<br/><br/>정적 합성 · 계약 검증<br/>tools/build.py"]
-    Snapshot["완전한 저장소 snapshot<br/><br/>out/claude · out/codex"]
-    Delivery["delivery<br/><br/>경계 · 멱등성 검증<br/>normal push"]
-    Target["GitHub 배포 저장소<br/><br/>tr-claude · tr-codex"]
+%%{init: {"flowchart": {"curve": "linear", "nodeSpacing": 42}}}%%
+flowchart LR
+    Core["공통 Core + Contracts<br/>의미 · 정책 · capability 정의"]
+    Adapter["Target Adapter<br/>Claude/Codex별 기능 구현"]
+    Recipe["Recipe<br/>조합 대상 · 산출 경로 선택"]
+    Build["Build<br/>계약 검증 · 정적 합성"]
+    Output["완성 Target 저장소<br/>tr-claude · tr-codex"]
 
-    Source --> Build
-    Build --> Snapshot
-    Snapshot --> Delivery
-    Delivery --> Target
+    Core --> Adapter --> Recipe --> Build --> Output
 ```
 
 - **관계**: core와 adapter는 별도 제품이 아니라 `tr-kit-source` 안의 정적 조립 입력이다.

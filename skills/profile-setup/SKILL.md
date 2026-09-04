@@ -1,6 +1,6 @@
 ---
 name: profile-setup
-description: tr-kit의 non-secret 로컬 연결을 설정·점검할 때 발동 — "career/knowledge 저장소 연결", "handoff 경로 설정", "dive 자동 제안 켜기", "profile.d doctor". read-only plan을 먼저 보여주고 승인된 managed profile만 변경한다.
+description: tr-kit의 non-secret 로컬 repository·경로·기능 설정을 연결·점검할 때 사용한다. "profile.d 설정", "career 저장소 연결", "profile doctor".
 ---
 
 # profile-setup

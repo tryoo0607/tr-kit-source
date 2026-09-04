@@ -1,6 +1,6 @@
 ---
 name: convention
-description: 이름·코딩 스타일·문서 작성 관례를 정하거나 조회·적용할 때 발동 — "이름 추천해줘/뭐라고 부르지", "이 코드 규칙 뭐야", "이 이름 괜찮아?", "docstring 어떻게 써", "README 형식". **"우리는 이렇게 쓴다"의 홈.**
+description: 이름, 코딩 스타일, README·docstring 등 작성 관례를 정하거나 적용할 때 사용한다. "이름 추천", "우리 규칙", "README 형식".
 ---
 
 # convention

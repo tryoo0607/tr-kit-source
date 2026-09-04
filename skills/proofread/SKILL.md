@@ -1,6 +1,6 @@
 ---
 name: proofread
-description: 산문·README·설계 문서·자료조사 결과를 검수할 때 발동 — "검수해줘", "오타 봐줘", "이 글 봐줘". 오타·문법·일관성·출처/사실·톤을 확인한다. 코드는 code review 범위다.
+description: 산문·README·설계 문서를 교정·검수할 때 사용한다. "오타 봐줘", "글 검수". 코드 검토에는 사용하지 않는다.
 ---
 
 # proofread

@@ -1,6 +1,6 @@
 ---
 name: ci
-description: CI/CD 파이프라인(**GitHub Actions**)을 작성·수정할 때 발동 — "CI 짜줘/워크플로 만들어줘/파이프라인 추가/actions 설정", "빌드·테스트 자동화 YAML". 스테이지(lint→test→build→deploy)·트리거·캐싱·secret 관례로 `.github/workflows/*.yml` 산출. 실패 디버그는 `odin:gh-fix-ci` 소프트의존. GitLab 등은 범위 밖(GHA 전용 — 회사는 project-local 우선).
+description: GitHub Actions workflow를 작성·수정하거나 CI/CD pipeline을 구성할 때 사용한다. "CI 짜줘", "Actions 설정". 다른 CI 제품에는 사용하지 않는다.
 ---
 
 # ci (GitHub Actions 파이프라인 작성)
