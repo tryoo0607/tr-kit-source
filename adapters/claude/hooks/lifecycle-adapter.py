@@ -22,6 +22,8 @@ def _read_json() -> dict[str, Any]:
 
 def _state_root() -> Path:
     base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    # Historical namespace retained so existing rollover notices survive updates.
+    # This is not a dependency on the retired claude-remote host binary.
     return base / "claude-remote"
 
 

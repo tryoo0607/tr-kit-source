@@ -11,35 +11,12 @@ set -uo pipefail
 . "${CLAUDE_PLUGIN_ROOT:?}/hooks/lib.sh" 2>/dev/null || exit 0
 
 input="$(cat 2>/dev/null || true)"
-source_kind="" sid=""
+source_kind=""
 if command -v jq >/dev/null 2>&1; then
   source_kind="$(printf '%s' "$input" | jq -r '.source // ""' 2>/dev/null || true)"
-  sid="$(printf '%s' "$input" | jq -r '.session_id // ""' 2>/dev/null || true)"
 fi
 
 generate() {
-
-# ── /clear 는 새 대화 id 를 만든다. claude-remote 의 sessions.log 는 세션을 처음
-#    만들 때 잡은 id 를 그대로 들고 있어서, 갱신하지 않으면 `restart` 가
-#    **clear 하기 전 대화를 살린다**(2026-08-06 실측). 여기서 최신 id 로 덮는다.
-if [ "$source_kind" = "clear" ] || [ "$source_kind" = "fork" ]; then
-  log="$(tr_state)/sessions.log"
-  # ⛔ **id 형식을 검증한다.** 이 로그는 `restore` 의 부활 좌표다 — 쓰레기가 한 줄 들어가면
-  #    `lookup_latest` 가 그걸 집고, cycle 이 **없는 대화를 되살리려다 세션을 잃는다.**
-  #    (2026-08-06 실측: 훅을 손으로 테스트하다 `session_id=t` 가 박혀 스냅샷까지 오염됐다)
-  case "$sid" in
-    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*-*-*-*) ;;
-    *) sid="" ;;
-  esac
-  if [ -n "$sid" ] && [ -w "$log" ] && [ -n "${TMUX:-}" ]; then
-    tmux_name="$(tmux display-message -p '#S' 2>/dev/null || true)"
-    canonical="${tmux_name#claude-}"
-    if [ -n "$canonical" ] && [ "$canonical" != "$tmux_name" ]; then
-      printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" \
-        "$canonical" "$sid" "$PWD" >> "$log"
-    fi
-  fi
-fi
 
 # ── 롤오버 재개 플래그 — /clear·compact 직후 첫 프롬프트에서 inject-state 가 「재개 요약」을 띄운다.
 #    키는 tmux 세션명(clear 를 넘어 안정적). sid 는 clear 때 바뀌므로 안 쓴다.

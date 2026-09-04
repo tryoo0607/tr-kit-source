@@ -20,11 +20,6 @@
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/auth-warn.sh",
-            "timeout": 8
-          },
-          {
-            "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/handoff-inbox.sh",
             "timeout": 8
           }

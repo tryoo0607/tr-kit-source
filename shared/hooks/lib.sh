@@ -27,6 +27,8 @@ tr_project() {
 #    하드코딩하고 나머지는 `XDG_STATE_HOME` 을 존중했다. XDG_STATE_HOME 을 쓰는 환경에선
 #    **statusline 이 쓴 값을 훅이 못 읽는다** → 넛지가 조용히 죽는다(2026-08-06 과 같은 병).
 <!-- if:claude -->
+# 기존 session의 flags를 잃지 않기 위해 역사적 디렉터리 이름만 유지한다.
+# `claude-remote` host binary에 대한 runtime 의존은 없다.
 tr_state() { printf '%s/claude-remote' "${XDG_STATE_HOME:-$HOME/.local/state}"; }
 <!-- /if -->
 <!-- if:codex -->

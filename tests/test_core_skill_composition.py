@@ -66,7 +66,7 @@ class CoreSkillCompositionTest(unittest.TestCase):
         cases = {
             ("claude", "artifact-html-render.md"): "Artifact",
             ("codex", "artifact-html-render.md"): "$visualize",
-            ("claude", "session-control.md"): "claude-remote",
+            ("claude", "session-control.md"): "현재 host",
             ("codex", "session-control.md"): "/clear",
             ("claude", "kit-delivery.md"): "Claude kit",
             ("codex", "kit-delivery.md"): "Codex",
@@ -105,6 +105,7 @@ class CoreSkillCompositionTest(unittest.TestCase):
 
     def test_happy_host_compatibility_is_explicitly_temporary(self):
         paths = (
+            ROOT / "adapters/claude/capabilities/references/session-host-control.md",
             ROOT / "adapters/codex/capabilities/session-control.md",
             ROOT / "adapters/codex/capabilities/references/session-host-control.md",
             ROOT / "adapters/codex/capabilities/scripts/happy_runtime_refresh.py",
@@ -113,6 +114,31 @@ class CoreSkillCompositionTest(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path):
                 self.assertIn("TEMPORARY_HAPPY_COMPAT", path.read_text())
+
+    def test_claude_adapter_does_not_depend_on_retired_host_tools(self):
+        self.assertFalse((ROOT / "adapters/claude/hooks/auth-warn.sh").exists())
+        hooks = (ROOT / "adapters/claude/hooks/hooks.json").read_text()
+        self.assertNotIn("auth-warn", hooks)
+
+        paths = (
+            ROOT / "adapters/claude/capabilities/session-control.md",
+            ROOT / "adapters/claude/capabilities/references/session-host-control.md",
+            ROOT / "adapters/claude/capabilities/references/kit-delivery.md",
+            ROOT / "adapters/claude/capabilities/artifact-render.md",
+            ROOT / "skills/project/references/backup.md",
+            ROOT / "shared/backbone/references/wrap-up.md",
+            ROOT / "shared/hooks/inject-state.sh",
+        )
+        retired = (
+            "claude-auth-check",
+            "claude-skillflow",
+            "local-docs-backup",
+            "setup/tools/install.sh",
+        )
+        for path in paths:
+            for token in retired:
+                with self.subTest(path=path, token=token):
+                    self.assertNotIn(token, path.read_text())
 
     def test_core_skill_sources_do_not_name_target_mechanisms(self):
         forbidden = (

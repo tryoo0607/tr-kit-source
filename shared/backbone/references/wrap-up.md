@@ -8,7 +8,7 @@
 | career-log | 성과·배움 있는 작업 | `career` |
 | 문서화 | 프로젝트 내부 문서 갱신 필요 | `convention` — **요청 있을 때만** |
 | 도메인 저장소 반영 | 별도 도메인 plugin이 소유하는 설정·구성 변경 | 설치된 도메인 skill |
-| `_local-docs` 백업 | 기록이 바뀜 | `local-docs-backup`(bin) — cron(하루 1회)의 보강 |
+| `_local-docs` 백업 | 기록이 바뀜 | `_docs` Git 작업 트리 확인 후 commit·push 제안 |
 | 세션 마무리 | 세션 끝·컨텍스트 정리 | `session` |
 | secret 점검 | secret 다뤘음 | `secrets` |
 
