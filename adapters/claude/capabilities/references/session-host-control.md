@@ -43,4 +43,8 @@ claude-remote machine <tag>
 
 `/clear`, kill, 전체 cycle은 사용자의 명시적 행동이다. 부활 좌표와 busy 세션을 확인하지 않고 실행하지 않는다.
 
+## Plugin runtime 갱신
+
+Marketplace/cache 갱신 뒤 현재 Claude Code 세션은 `/reload-plugins`를 우선 사용한다. 여러 원격 세션은 각각의 idle 상태를 확인하고 사용자 승인 후 순차 reload한다. `/reload-plugins`가 없거나 실패한 세션만 정확한 세션 ID와 부활 좌표를 확인해 `claude-remote` restart 절차로 넘긴다. Codex/Happy용 process helper를 Claude 세션에 사용하지 않는다.
+
 `claude-remote`가 없거나 심링크가 끊겼으면 임시 우회하지 않고 `kit`의 Claude delivery 절차로 넘긴다.

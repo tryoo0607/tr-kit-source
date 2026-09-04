@@ -1,1 +1,1 @@
-Codex에서는 60%에 정리를 시작하고 75%에 **resume/fork가 아닌 새 독립 세션**을 안내한다. 새 session id의 pending state 단발 주입과 무응답 세션의 안전 경계는 `references/host-control.md`를 읽는다.
+Codex에서는 60%에 기록 준비를 시작하고 75%에 기록을 마친 뒤 사용자가 `/clear`해도 된다고 안내한다. clear 후 state 단발 주입, 실행 중 Happy/Codex session의 plugin runtime 갱신과 무응답 안전 경계는 `references/host-control.md`를 읽는다.

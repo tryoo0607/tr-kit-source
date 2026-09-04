@@ -50,7 +50,7 @@ class CoreSkillCompositionTest(unittest.TestCase):
         expected = {
             "analysis": {"skeleton.html", "spec.md", "svg-patterns.md"},
             "prototype": {"frames.md"},
-            "session": {"handoff.md"},
+            "session": {"handoff.md", "runtime-refresh.md"},
             "kit": {"authoring.md", "output-format.md"},
         }
         for skill, names in expected.items():
@@ -67,7 +67,7 @@ class CoreSkillCompositionTest(unittest.TestCase):
             ("claude", "artifact-html-render.md"): "Artifact",
             ("codex", "artifact-html-render.md"): "$visualize",
             ("claude", "session-control.md"): "claude-remote",
-            ("codex", "session-control.md"): "독립 세션",
+            ("codex", "session-control.md"): "/clear",
             ("claude", "kit-delivery.md"): "Claude kit",
             ("codex", "kit-delivery.md"): "Codex",
         }
@@ -89,6 +89,19 @@ class CoreSkillCompositionTest(unittest.TestCase):
             for destination, source_name in expected.items():
                 with self.subTest(target=target, destination=destination):
                     self.assertEqual(artifacts[destination], source_name)
+
+    def test_codex_runtime_refresh_helper_is_target_specific_and_executable(self):
+        artifacts = {
+            item["destination"]: ROOT / item["source"]
+            for item in self.recipe("codex").get("artifacts", [])
+        }
+        source = artifacts["skills/session/scripts"] / "happy_runtime_refresh.py"
+        self.assertTrue(source.is_file())
+        self.assertTrue(source.stat().st_mode & 0o111)
+        claude_destinations = {
+            item["destination"] for item in self.recipe("claude").get("artifacts", [])
+        }
+        self.assertNotIn("skills/session/scripts", claude_destinations)
 
     def test_core_skill_sources_do_not_name_target_mechanisms(self):
         forbidden = (

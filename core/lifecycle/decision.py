@@ -100,6 +100,8 @@ def _decide_context(event: dict[str, Any]) -> dict[str, Any]:
     handoff_notified = _boolean(
         memory.get("handoff_notified"), "memory.handoff_notified"
     )
+    continuity_key = memory.get("continuity_key")
+    project = memory.get("project")
     data = {
         "session_id": event["session"]["id"],
         "used_percent": used * 100 // window,
@@ -107,6 +109,10 @@ def _decide_context(event: dict[str, Any]) -> dict[str, Any]:
         "window_tokens": window,
         "remaining_tokens": max(window - used, 0),
     }
+    if isinstance(continuity_key, str) and continuity_key:
+        data["continuity_key"] = continuity_key
+    if isinstance(project, str) and project:
+        data["project"] = project
     if _threshold_reached(handoff, used, window, "policy.handoff"):
         return _result("none", **data) if handoff_notified else _result(
             "rollover.handoff", **data
@@ -280,7 +286,11 @@ def _decide_session(event: dict[str, Any]) -> dict[str, Any]:
     available = _boolean(resume.get("state_available"), "resume.state_available")
     current = event["session"]["id"]
     if isinstance(origin, str) and origin and origin != current and available:
-        return _result("resume.inject")
+        project = resume.get("project")
+        return _result(
+            "resume.inject",
+            **({"project": project} if isinstance(project, str) and project else {}),
+        )
     return _result("none")
 
 

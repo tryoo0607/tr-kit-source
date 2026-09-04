@@ -33,6 +33,12 @@ destination = "skills/session/references/host-control.md"
 scope = "payload"
 
 [[artifacts]]
+id = "codex-session-runtime-tools"
+source = "adapters/codex/capabilities/scripts"
+destination = "skills/session/scripts"
+scope = "payload"
+
+[[artifacts]]
 id = "codex-kit-delivery"
 source = "adapters/codex/capabilities/references/kit-delivery.md"
 destination = "skills/kit/references/delivery.md"
