@@ -2,6 +2,11 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
+## 0.5.3 — 2026-09-04
+
+- split 이후 source worktree를 정확히 식별하는 `kit-verify`와 빠른 hook 검증을 추가했다.
+- 로컬·CI·delivery의 전체 검증을 `tools/validate.py full` 단일 진입점으로 통합했다.
+
 ## 0.5.2 — 2026-09-04
 
 - knowledge와 project가 공유하는 LLM Wiki core와 local-docs v2 migration을 추가했다.
