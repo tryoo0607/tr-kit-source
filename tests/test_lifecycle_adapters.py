@@ -23,7 +23,8 @@ class AdapterTest(unittest.TestCase):
             **os.environ,
             "HOME": str(self.home),
             "XDG_STATE_HOME": str(self.state),
-            "TR_SESSION_KEY": "codex-project",
+            "TR_CONTINUITY_KEY": "happy-codex-project",
+            "TR_PROJECT": "demo",
         }
 
     def tearDown(self):
@@ -59,7 +60,8 @@ class AdapterTest(unittest.TestCase):
 
         render = self.run_adapter("codex", "render-context", result)
         self.assertIn("60%", render.stdout)
-        self.assertIn("독립 인계 준비", render.stdout)
+        self.assertIn("/clear", render.stdout)
+        self.assertIn("인계 준비", render.stdout)
 
         repeated_event = json.loads(
             self.run_adapter(
@@ -68,7 +70,7 @@ class AdapterTest(unittest.TestCase):
         )
         self.assertEqual(decide(repeated_event)["action"], "none")
 
-    def test_codex_handoff_is_consumed_only_by_a_new_session(self):
+    def test_codex_handoff_is_consumed_only_after_clear_in_same_continuity(self):
         observed = json.loads(
             self.run_adapter(
                 "codex", "context-event", self.codex_payload("codex-context-75.jsonl", "old")
@@ -77,7 +79,8 @@ class AdapterTest(unittest.TestCase):
         result = decide(observed)
         self.assertEqual(result["action"], "rollover.handoff")
         rendered = self.run_adapter("codex", "render-context", result)
-        self.assertIn("resume/fork", rendered.stdout)
+        self.assertIn("/clear", rendered.stdout)
+        self.assertIn("하셔도 됩니다", rendered.stdout)
 
         same = json.loads(
             self.run_adapter("codex", "resume-event", {"session_id": "old"}).stdout
@@ -89,6 +92,7 @@ class AdapterTest(unittest.TestCase):
             self.run_adapter("codex", "resume-event", {"session_id": "new"}).stdout
         )
         self.assertEqual(decide(new)["action"], "resume.inject")
+        self.assertEqual(decide(new)["data"]["project"], "demo")
         self.run_adapter("codex", "ack-resume", {"session_id": "new"})
         after_ack = json.loads(
             self.run_adapter("codex", "resume-event", {"session_id": "newer"}).stdout

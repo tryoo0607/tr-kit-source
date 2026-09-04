@@ -18,6 +18,7 @@ MAX_STATE_POINTERS=3    # 전문은 주입하지 않고 최신 포인터만
 
 input="$(cat 2>/dev/null || true)"
 rkey="$(tmux display-message -p '#S' 2>/dev/null || echo default)"
+project="$(tr_project 2>/dev/null || true)"
 lifecycle_core="${CLAUDE_PLUGIN_ROOT:?}/hooks/core/decision.py"
 lifecycle_adapter="${CLAUDE_PLUGIN_ROOT:?}/hooks/lifecycle-adapter.py"
 
@@ -26,11 +27,11 @@ generate() {
 # ── target transport → normalized event → core decision → target output.
 # adapter 경로는 build에서 target별 파일로 고정된다. runtime target 선택은 없다.
 if command -v python3 >/dev/null 2>&1 && [ -r "$lifecycle_core" ] && [ -r "$lifecycle_adapter" ]; then
-  context_event="$(printf '%s' "$input" | TR_SESSION_KEY="$rkey" python3 "$lifecycle_adapter" context-event 2>/dev/null || true)"
+  context_event="$(printf '%s' "$input" | TR_SESSION_KEY="$rkey" TR_PROJECT="$project" python3 "$lifecycle_adapter" context-event 2>/dev/null || true)"
   if [ -n "$context_event" ]; then
     context_result="$(printf '%s' "$context_event" | python3 "$lifecycle_core" 2>/dev/null || true)"
     [ -z "$context_result" ] || printf '%s' "$context_result" | \
-      TR_SESSION_KEY="$rkey" python3 "$lifecycle_adapter" render-context 2>/dev/null || true
+      TR_SESSION_KEY="$rkey" TR_PROJECT="$project" python3 "$lifecycle_adapter" render-context 2>/dev/null || true
   fi
 fi
 
@@ -111,8 +112,12 @@ if command -v python3 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
     resume_result="$(printf '%s' "$resume_event" | python3 "$lifecycle_core" 2>/dev/null || true)"
     resume_action="$(printf '%s' "$resume_result" | jq -r '.action // "none"' 2>/dev/null || true)"
     if [ "$resume_action" = "resume.inject" ]; then
+      _resume_project="$(printf '%s' "$resume_result" | jq -r '.data.project // ""' 2>/dev/null || true)"
+      if [ -n "$_resume_project" ]; then
+        mapfile -t _resume_candidates < <(_tr_proj_state "$_resume_project")
+      fi
       _top="${_resume_candidates[0]}"
-      printf '📋 **새 독립 세션이 이전 인계를 이어받았다.**\n'
+      printf '📋 **`/clear` 후 이전 작업을 이어받았다.**\n'
       printf '먼저 `%s/%s` 하나만 읽고, 전체 transcript·roadmap은 필요한 절만 조회한다.\n' "$DOCS_ROOT" "$_top"
       printf '첫 응답에 이어가는 작업·직전까지·남은 것·다음 검증을 **재개 요약**으로 보여준다.\n\n'
       printf '%s' "$input" | TR_SESSION_KEY="$rkey" python3 "$lifecycle_adapter" ack-resume 2>/dev/null || true

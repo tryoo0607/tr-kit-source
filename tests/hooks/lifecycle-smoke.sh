@@ -33,11 +33,11 @@ check() {
 }
 
 run_hook() {
-  local plugin="$1" hook="$2" payload="$3"
+  local plugin="$1" hook="$2" payload="$3" continuity_key="${4:-}"
   (
     cd "$SB/home/projects/demo" || exit 1
     printf '%s\n' "$payload" | HOME="$SB/home" XDG_STATE_HOME="$SB/state" TMPDIR="$SB/tmp" \
-      CLAUDE_PLUGIN_ROOT="$plugin" PATH="$SB/bin:$PATH" env -u TMUX \
+      CLAUDE_PLUGIN_ROOT="$plugin" TR_CONTINUITY_KEY="$continuity_key" PATH="$SB/bin:$PATH" env -u TMUX \
       bash "$plugin/hooks/$hook" 2>&1
   )
 }
@@ -51,23 +51,27 @@ rollout60="$SB/home/.codex/sessions/2026/09/03/rollout-old-60.jsonl"
 cp "$FIXTURES/codex-context-60.jsonl" "$rollout60"
 payload60="$(printf '{"session_id":"old-60","prompt":"continue","transcript_path":"%s"}' "$rollout60")"
 out="$(run_hook "$codex" inject-state.sh "$payload60")"
-check 'Codex 60% 준비' '준비 알림 없음' grep -q 'Codex 컨텍스트 60%.*독립 인계 준비' <<< "$out"
+check 'Codex 60% 준비' '준비 알림 없음' grep -q 'Codex 컨텍스트 60%.*clear.*인계 준비' <<< "$out"
 out2="$(run_hook "$codex" inject-state.sh "$payload60")"
 check 'Codex 준비 단발' '같은 세션에 준비 알림 반복' bash -c '! grep -q "Codex 컨텍스트 60%" <<< "$1"' _ "$out2"
 
 rollout75="$SB/home/.codex/sessions/2026/09/03/rollout-old-75.jsonl"
 cp "$FIXTURES/codex-context-75.jsonl" "$rollout75"
 payload75="$(printf '{"session_id":"old-75","prompt":"handoff","transcript_path":"%s"}' "$rollout75")"
-out="$(run_hook "$codex" inject-state.sh "$payload75")"
-check 'Codex 75% 독립 인계' '독립 세션 안내 없음' \
-  bash -c 'grep -q "Codex 컨텍스트 75%" <<< "$1" && grep -q "resume/fork" <<< "$1"' _ "$out"
+out="$(run_hook "$codex" inject-state.sh "$payload75" happy-a)"
+check 'Codex 75% clear 준비' '기록 후 clear 안내 없음' \
+  bash -c 'grep -q "Codex 컨텍스트 75%" <<< "$1" && grep -q "이제.*clear.*하셔도" <<< "$1"' _ "$out"
 
-out="$(run_hook "$codex" inject-state.sh '{"session_id":"new-session","prompt":"continue"}')"
-check '새 세션 state 자동 선택' 'pending handoff가 task.md를 고르지 못함' \
-  bash -c 'grep -q "새 독립 세션이 이전 인계를 이어받았다" <<< "$1" && grep -q "demo/state/task.md" <<< "$1"' _ "$out"
-out2="$(run_hook "$codex" inject-state.sh '{"session_id":"new-session","prompt":"continue"}')"
+other="$(run_hook "$codex" inject-state.sh '{"session_id":"other-session","prompt":"continue"}' happy-b)"
+check '다른 Happy 세션 격리' '다른 continuity key가 pending handoff를 소비함' \
+  bash -c '! grep -q "clear.*후 이전 작업을 이어받았다" <<< "$1"' _ "$other"
+
+out="$(run_hook "$codex" inject-state.sh '{"session_id":"new-session","prompt":"continue"}' happy-a)"
+check 'clear 후 state 자동 선택' 'pending handoff가 task.md를 고르지 못함' \
+  bash -c 'grep -q "clear.*후 이전 작업을 이어받았다" <<< "$1" && grep -q "demo/state/task.md" <<< "$1"' _ "$out"
+out2="$(run_hook "$codex" inject-state.sh '{"session_id":"new-session","prompt":"continue"}' happy-a)"
 check '재개 지시 단발' '같은 새 세션에서 재개 지시 반복' \
-  bash -c '! grep -q "새 독립 세션이 이전 인계를 이어받았다" <<< "$1"' _ "$out2"
+  bash -c '! grep -q "clear.*후 이전 작업을 이어받았다" <<< "$1"' _ "$out2"
 
 readonly_payload='{"session_id":"mark-read","tool_name":"Bash","tool_input":{"command":"jq '\''select(.a > 1)'\'' data.json"}}'
 run_hook "$codex" mark-changed.sh "$readonly_payload" >/dev/null
@@ -97,7 +101,9 @@ out="$(run_hook "$codex" pre-compact.sh '{"session_id":"compact","compaction_tri
 rc=$?
 set -e
 check 'auto-compact 1회 차단' "exit $rc" test "$rc" -eq 2
-check 'Codex compact 인계 문구' 'target adapter 문구 없음' grep -q '새 독립 세션' <<< "$out"
+check 'Codex compact 기록 문구' 'target adapter 문구 없음' grep -q 'state/<slug>.md' <<< "$out"
+check 'Codex compact는 독립 세션 아님' 'auto-compact를 새 독립 세션으로 오표기' \
+  bash -c '! grep -q "새 독립 세션" <<< "$1"' _ "$out"
 out2="$(run_hook "$codex" pre-compact.sh '{"session_id":"compact","compaction_trigger":"auto"}')"
 check 'auto-compact 2회차 통과' '두 번째에도 차단됨' test "$?" -eq 0
 check 'auto-compact 2회차 경고' '통과 경고 없음' grep -q '기록 없이 Codex auto-compact' <<< "$out2"

@@ -2,6 +2,12 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
+## 0.5.4 — 2026-09-04
+
+- Codex 컨텍스트 60%에서 인계 state를 준비하고 75%에서 `/clear` 가능 시점을 안내한다.
+- Happy session identity를 기준으로 `/clear` 후속 세션에 최신 state를 한 번 주입한다.
+- 실행 중 Happy/Codex 세션을 inventory하고 canary 방식으로 안전하게 갱신하는 도구를 추가했다.
+
 ## 0.5.3 — 2026-09-04
 
 - split 이후 source worktree를 정확히 식별하는 `kit-verify`와 빠른 hook 검증을 추가했다.
