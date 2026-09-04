@@ -44,6 +44,7 @@ def _ancestor_pids(start: int | None = None) -> set[int]:
 
 
 def _happy_session_key(sessions_path: Path, ancestor_pids: set[int]) -> str:
+    # TEMPORARY_HAPPY_COMPAT: remove this branch after the PolyGarden cutover.
     try:
         sessions = json.loads(sessions_path.read_text()).get("sessions", {})
     except (OSError, json.JSONDecodeError, AttributeError):

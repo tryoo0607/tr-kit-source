@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Inventory and safely rolling-refresh running Happy/Codex root sessions."""
+"""Inventory and safely rolling-refresh running Happy/Codex root sessions.
+
+TEMPORARY_HAPPY_COMPAT: remove when PolyGarden replaces Happy as session host.
+Do not extend this helper with new host features.
+"""
 
 from __future__ import annotations
 

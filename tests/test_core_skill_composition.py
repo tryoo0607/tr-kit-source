@@ -103,6 +103,17 @@ class CoreSkillCompositionTest(unittest.TestCase):
         }
         self.assertNotIn("skills/session/scripts", claude_destinations)
 
+    def test_happy_host_compatibility_is_explicitly_temporary(self):
+        paths = (
+            ROOT / "adapters/codex/capabilities/session-control.md",
+            ROOT / "adapters/codex/capabilities/references/session-host-control.md",
+            ROOT / "adapters/codex/capabilities/scripts/happy_runtime_refresh.py",
+            ROOT / "adapters/codex/hooks/lifecycle-adapter.py",
+        )
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertIn("TEMPORARY_HAPPY_COMPAT", path.read_text())
+
     def test_core_skill_sources_do_not_name_target_mechanisms(self):
         forbidden = (
             "Claude",
