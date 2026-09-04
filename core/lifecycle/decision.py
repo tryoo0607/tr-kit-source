@@ -16,7 +16,7 @@ class LifecycleError(ValueError):
 
 
 CONTROL = {";", "&&", "||", "|", "&", "(", ")"}
-REDIRECT_OUT = {">", ">>"}
+REDIRECT_OUT = {">", ">>", ">&", "&>", "&>>"}
 DIRECT_MUTATORS = {
     "chmod",
     "chown",
@@ -157,35 +157,50 @@ def _segments(command: str) -> tuple[list[list[str]], bool]:
     lexer.commenters = "#"
     segments: list[list[str]] = []
     current: list[str] = []
-    has_output_redirect = False
+    has_mutating_redirect = False
     in_double_brackets = False
     try:
         tokens = list(lexer)
     except ValueError:
         return [], False
-    for token in tokens:
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
         if token == "[[":
             in_double_brackets = True
+            index += 1
             continue
         if token == "]]" and in_double_brackets:
             in_double_brackets = False
+            index += 1
             continue
         if in_double_brackets:
+            index += 1
             continue
         if token in REDIRECT_OUT:
-            has_output_redirect = True
+            if current and current[-1].isdigit():
+                current.pop()
+            target = tokens[index + 1] if index + 1 < len(tokens) else ""
+            redirects_to_fd = token == ">&" and target.isdigit()
+            redirects_to_dev_null = target == "/dev/null"
+            if not redirects_to_fd and not redirects_to_dev_null:
+                has_mutating_redirect = True
+            index += 2 if target else 1
             continue
         if token in CONTROL:
             if current:
                 segments.append(current)
                 current = []
+            index += 1
             continue
         if token == "<":
+            index += 1
             continue
         current.append(token)
+        index += 1
     if current:
         segments.append(current)
-    return segments, has_output_redirect
+    return segments, has_mutating_redirect
 
 
 def _command_head(segment: list[str]) -> tuple[str, list[str]]:

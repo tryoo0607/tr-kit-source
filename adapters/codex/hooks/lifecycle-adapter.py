@@ -14,6 +14,7 @@ from typing import Any
 
 TAIL_BYTES = 4 * 1024 * 1024
 SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
+HAPPY_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
 def _read_json() -> dict[str, Any]:
@@ -68,6 +69,10 @@ def _continuity_key() -> str:
     explicit = os.environ.get("TR_CONTINUITY_KEY", "")
     if explicit and SAFE_ID.fullmatch(explicit):
         return explicit
+    # TEMPORARY_HAPPY_COMPAT: Happy injects this stable ID even when hostPid is stale.
+    reconnect = os.environ.get("HAPPY_RECONNECT_SESSION_ID", "")
+    if reconnect and HAPPY_SESSION_ID.fullmatch(reconnect):
+        return f"happy-{reconnect}"
     happy = _happy_session_key(Path.home() / ".happy/sessions.json", _ancestor_pids())
     if happy:
         return happy

@@ -79,6 +79,40 @@ class ChangeDecisionTest(unittest.TestCase):
                 )
                 self.assertEqual(result["action"], "none")
 
+    def test_dev_null_and_fd_redirections_are_read_only(self):
+        for command in (
+            "command 2>/dev/null",
+            "command >/dev/null",
+            "command 1>/dev/null",
+            "command &>/dev/null",
+            "command 2>&1",
+            "printf '2>/dev/null'",
+        ):
+            with self.subTest(command=command):
+                result = decide(
+                    event(
+                        "tool.completed",
+                        tool={"kind": "command", "command": command, "record_path": False},
+                    )
+                )
+                self.assertEqual(result["action"], "none")
+
+    def test_real_file_redirections_remain_mutating(self):
+        for command in (
+            "command > output.txt",
+            "command 2> error.log",
+            "command >> output.txt",
+            "command &> combined.log",
+        ):
+            with self.subTest(command=command):
+                result = decide(
+                    event(
+                        "tool.completed",
+                        tool={"kind": "command", "command": command, "record_path": False},
+                    )
+                )
+                self.assertEqual(result["action"], "change.mark")
+
     def test_actual_mutating_commands_and_redirection_are_marked(self):
         for command in (
             "sed -i s/old/new/ file.txt",
