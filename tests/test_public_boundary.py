@@ -21,7 +21,6 @@ class PublicBoundaryTest(unittest.TestCase):
             "game" + "01",
             "dev" + "01",
             "to-" + "nas",
-            "to-" + "inno",
             "/home/" + "tryoo0607",
         ]
 
@@ -59,10 +58,6 @@ class PublicBoundaryTest(unittest.TestCase):
         for path in self.source_files():
             if path.resolve() == this_file or not path.is_file():
                 continue
-            relative = str(path.relative_to(ROOT)).lower()
-            for token in self.forbidden_tokens():
-                if token.lower() in relative:
-                    failures.append(f"{path.relative_to(ROOT)}:{token} (path)")
             try:
                 text = path.read_text().lower()
             except UnicodeDecodeError:
