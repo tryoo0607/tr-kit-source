@@ -1,6 +1,6 @@
 ---
 name: diagram
-description: 다이어그램을 그리거나 유지할 때 발동 — "다이어그램/그려줘/class diagram/시퀀스/구성도/아키텍처 그림/토폴로지/ER/상태도". class·sequence·ER·state·flowchart·C4. 분석·설계·토폴로지에서 소환. Mermaid 텍스트 정본.
+description: 구조·흐름·관계를 Mermaid 다이어그램으로 만들거나 유지할 때 사용한다. "구성도", "시퀀스", "ERD", "상태도".
 ---
 
 # diagram

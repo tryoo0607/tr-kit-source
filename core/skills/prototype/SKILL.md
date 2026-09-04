@@ -1,6 +1,6 @@
 ---
 name: prototype
-description: 프론트 프로토타입·목업을 빠르게 만들 때 발동 — "프로토타입/목업 만들어줘", "이 화면 HTML로 그려줘/시안", "랜딩/대시보드 목업", "워치/모바일 화면 스케치". 단일 자체완결 HTML 목업. 목데이터·throwaway이며 실제 구현은 「수행」.
+description: 웹·모바일 UI 아이디어를 단일 HTML prototype·mockup으로 만들 때 사용한다. "화면 시안", "프로토타입", "대시보드 목업". production 구현에는 사용하지 않는다.
 ---
 
 # prototype

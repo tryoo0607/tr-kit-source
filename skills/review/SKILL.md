@@ -1,6 +1,6 @@
 ---
 name: review
-description: 작성된 코드를 검수할 때 발동 — "리뷰/검토해줘", diff·PR·브랜치·파일 리뷰. 이미 쓴 것을 severity 순으로 지적·제안한다(post-write). 손대기 전 **파악**은 알아내기 profile, 버그 **재현**은 「정의」 소관.
+description: 이미 작성된 코드·diff·PR을 품질과 결함 관점에서 검토할 때 사용한다. "코드 리뷰", "PR 검토". 구현 전 구조 파악에는 사용하지 않는다.
 ---
 
 # review

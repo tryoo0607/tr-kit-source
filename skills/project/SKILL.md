@@ -1,6 +1,6 @@
 ---
 name: project
-description: '`~/projects` 아래 프로젝트의 **공간과 기록 인프라**를 다룰 때 발동 — "프로젝트 새로 만들어줘", "worktree 따줘/정리해줘", "AGENTS.md 배치", "fork remote 구성", "백업 왜 안 돼/이 머신에 붙여줘", "이 문제 케이스로 남겨줘", "local-docs 마이그레이션". 코드 내용엔 손대지 않는다.'
+description: '`~/projects` 아래 project 공간과 local-docs·worktree·backup을 관리하고 프로젝트 지식을 조회·정리할 때 사용한다. "프로젝트 생성", "worktree", "local-docs", "전에 한 작업", "프로젝트 구조", "백업 연결". 코드 내용은 다루지 않는다.'
 ---
 
 # project
@@ -9,6 +9,8 @@ description: '`~/projects` 아래 프로젝트의 **공간과 기록 인프라**
 **코드 내용엔 손대지 않는다** — 커밋·머지·브랜치 전략은 `git`.
 
 > `_local-docs`에 **무엇을 어떤 형식으로 쓰는가**는 플러그인 루트의 **`LOCAL-DOCS-SCHEMA.md`**가 정본이다. 여긴 그 **바깥일**(자리를 만들고, 백업하고, 옮기는 일)을 한다.
+
+local-docs v2는 plugin root의 `core/llm-wiki/` 공통 계약에 `state → exec` 작업 생명주기를 결합한다. 외부 근거는 `sources/`, 현재 project 지식은 `wiki/`에 두며 모든 작업 기록을 Wiki로 복제하지 않는다.
 
 ## 🔑 먼저 — 갈림선
 
@@ -21,6 +23,7 @@ description: '`~/projects` 아래 프로젝트의 **공간과 기록 인프라**
 | 백업이 안 돌 때 · 새 머신 | `references/backup.md` |
 | 검증 케이스 원장 | `references/cases.md` |
 | 스키마 마이그레이션 | `references/migrate.md` |
+| 기록 재개·과거 작업·project 지식 조회·합성·점검 | `references/local-docs.md` + plugin root `core/llm-wiki/` |
 
 ## 구조
 
@@ -33,6 +36,8 @@ description: '`~/projects` 아래 프로젝트의 **공간과 기록 인프라**
     ├─ <repo>/                             코드 (자체 .git)
     └─ <repo>.worktrees/<slug>/            병렬작업
 ```
+
+`_docs/<project>/` 내부 v2 구조는 [local-docs.md](references/local-docs.md)를 따른다. `state/`, `exec/`, `cases/`, `out/` 경로는 lifecycle hook 호환성을 위해 v1과 같다.
 
 **예외 — bare 레이아웃**: 인프라·kit·유틸 repo는 중첩 없이 `~/projects/<repo>`가 곧 repo다.
 
@@ -71,3 +76,4 @@ sudo -u <그계정> ls <노출경로>/deploy    # "허가 거부"여야 정상
 | 기록의 형식·스키마 | `LOCAL-DOCS-SCHEMA.md` |
 | 무엇을 기록하나 | **백본** — 각 단계의 `returns` |
 | kit 자체 설치·점검 | `kit` |
+| project 밖에서도 재사용할 일반 지식 | `knowledge` |

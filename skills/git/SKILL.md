@@ -1,6 +1,6 @@
 ---
 name: git
-description: git 워크플로가 필요할 때 발동 — 커밋(단위·메시지)·브랜치 전략·머지/rebase·PR 작성. "커밋해줘/머지/브랜치 따줘/PR", 코드 변경을 git에 반영할 때. worktree 공간 생성은 project 소관, 여기선 그 안의 코드 흐름.
+description: commit, branch, merge, rebase, PR 등 Git workflow를 다룰 때 사용한다. "커밋해줘", "브랜치 따줘", "PR 만들어줘". worktree 공간 관리는 project가 담당한다.
 ---
 
 # git

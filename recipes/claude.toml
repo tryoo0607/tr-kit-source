@@ -27,6 +27,12 @@ destination = "LICENSE"
 scope = "target"
 
 [[artifacts]]
+id = "claude-repository-notice"
+source = "NOTICE"
+destination = "NOTICE"
+scope = "target"
+
+[[artifacts]]
 id = "claude-commands"
 source = "adapters/claude/commands"
 destination = "commands"
