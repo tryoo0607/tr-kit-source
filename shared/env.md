@@ -26,9 +26,9 @@
 
 | 키 | 값 |
 |---|---|
-| `paths.projects` | `~/projects` |
-| `paths.docs` | `~/projects/_docs/<project>` — 작업 기록 실파일 |
-| `paths.assets` | `~/projects/_assets/<project>` — 대용량 원본 |
+| `public.paths.projects` | runtime profile 값, 미설정 시 `~/projects` |
+| `paths.docs` | `<projects>/_docs/<project>` — 작업 기록 실파일 |
+| `paths.assets` | `<projects>/_assets/<project>` — 대용량 원본 |
 | `paths.bin` | `~/.local/bin` — kit이 심링크를 까는 곳 |
 
 > 실제 repo 경로는 runtime profile에 두고 source에 커밋하지 않는다.

@@ -44,6 +44,10 @@ class ProfileBindingsTest(unittest.TestCase):
         contracts = load_contracts([CONTRACT])
         self.assertIs(contracts["public.features.dive_ambient"]["default"], False)
         self.assertEqual(contracts["public.scope.default"]["default"], "unknown")
+        self.assertEqual(contracts["public.paths.projects"]["type"], "path")
+        self.assertFalse(
+            contracts["public.paths.projects"]["must_be_git_worktree"]
+        )
 
     def test_plan_is_read_only_and_apply_writes_only_selected_key(self):
         key = "public.repositories.knowledge"
