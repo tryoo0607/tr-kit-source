@@ -98,7 +98,9 @@ def prepare_sandbox(sandbox: Path, plugin: Path, target: str, setup: Path) -> tu
     env.pop("TMUX", None)
 
     if setup.exists():
-        setup_text = render(setup.read_text(), sandbox=sandbox, plugin=plugin, target=target)
+        setup_text = "set -euo pipefail\n" + render(
+            setup.read_text(), sandbox=sandbox, plugin=plugin, target=target
+        )
         result = subprocess.run(
             ["bash"],
             input=setup_text,
