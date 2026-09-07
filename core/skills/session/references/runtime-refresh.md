@@ -20,6 +20,22 @@ Plugin 설치가 끝난 뒤 이미 실행 중인 세션에 새 skill·hook을 �
 - 세션 제목·대화·underlying thread identity를 보존하는 host 기능만 사용한다.
 - 비밀 필드가 섞인 session store 전체를 출력하지 않는다.
 
+## Happy host 복구 (`TEMPORARY_HAPPY_COMPAT`)
+
+PolyGarden 전환 전 임시 host 지원은 source checkout의 `install.sh happy-host`가 소유한다.
+기본은 dry-run이며 `--apply`에서만 `~/.local/bin/happy-cycle`과 systemd user unit을
+복사하고 daemon·snapshot timer를 enable한다. `--dest` staging은 systemd 상태를 바꾸지 않는다.
+서버 주소·plugin directory 같은 머신별 값은 installer가 덮지 않는 `~/.config/happy/env`에
+두며 daemon과 restore worker가 함께 읽는다.
+
+- `happy-cycle snapshot`: 실제 process environment의 Happy session ID까지 일치하는 root만 원자적으로 저장한다.
+- `happy-cycle restore`: snapshot에서 현재 죽은 session만 같은 ID와 cwd로 재개한다.
+- `happy-cycle cycle`: snapshot 뒤 확인을 받고 정확한 PID만 정상 종료하고 daemon을 재기동한 다음 detached user unit에서 복원한다. 비대화형 실행은 `--yes`도 명시해야 한다.
+- 모든 변경 명령은 기본 plan-only이며 `--apply`가 필요하다. `SIGKILL`과 전체 process-name kill은 사용하지 않는다.
+- 주기 snapshot은 활성 세션이 0개이거나 cycle lock이 잡힌 동안 기존 복구 좌표를 덮지 않는다.
+- daemon은 부팅 시 자동 시작하지만 개별 session의 부팅 자동 restore는 하지 않는다. 필요할 때 사용자가 `happy-cycle restore --apply`를 실행한다.
+- 로그인 전 자동 시작에는 user linger가 필요하다. installer는 상태를 표시하고 명시 `--enable-linger`에서만 변경한다.
+
 ## 완료 조건
 
 - canary와 batch 각각에서 기존 사용자 session identity가 유지된다.

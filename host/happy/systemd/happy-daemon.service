@@ -1,0 +1,17 @@
+# TEMPORARY_HAPPY_COMPAT: remove after PolyGarden replaces Happy.
+[Unit]
+Description=Happy daemon for remote session creation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=%h/.asdf/bin:%h/.asdf/shims:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/.config/happy/env
+ExecStartPre=-/usr/bin/env happy daemon stop
+ExecStart=/usr/bin/env happy daemon start-sync
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

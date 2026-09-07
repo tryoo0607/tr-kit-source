@@ -1,0 +1,7 @@
+# TEMPORARY_HAPPY_COMPAT: remove after PolyGarden replaces Happy.
+[Unit]
+Description=Snapshot verified live Happy session coordinates
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env %h/.local/bin/happy-cycle snapshot --apply

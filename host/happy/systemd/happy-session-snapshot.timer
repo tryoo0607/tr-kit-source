@@ -1,0 +1,11 @@
+# TEMPORARY_HAPPY_COMPAT: remove after PolyGarden replaces Happy.
+[Unit]
+Description=Periodically snapshot verified live Happy sessions
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

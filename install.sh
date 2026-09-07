@@ -2,6 +2,7 @@
 # tr-kit-source install — 빌드 산출물(out/<target>)을 호스트에 배치.
 #   codex  = 마켓플레이스 플러그인 모델(codex plugin marketplace add + plugin add) + AGENTS.md loose.
 #   claude = 기존 tr-claude 플러그인 교체(migration) — 라이브 교체는 별도 확인, 스테이징 복사만.
+#   happy-host = TEMPORARY_HAPPY_COMPAT host helper + systemd user units.
 # 기본은 dry-run(무엇을 할지 출력만). 실제 적용은 --apply. 스테이징은 --dest DIR.
 #
 #   ./install.sh codex                 # dry-run (실제 ~/.codex 대상)
@@ -10,10 +11,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 target="${1:-}"; shift || true
-apply=0; dest=""; prev=""
+apply=0; dest=""; enable_linger=0; prev=""
 for a in "$@"; do
   case "$a" in
     --apply) apply=1 ;;
+    --enable-linger) enable_linger=1 ;;
     --dest=*) dest="${a#--dest=}" ;;
   esac
   [ "$prev" = "--dest" ] && dest="$a"
@@ -21,9 +23,11 @@ for a in "$@"; do
 done
 
 if [ -z "$target" ]; then
-  echo "usage: install.sh <claude|codex> [--apply] [--dest DIR]"; exit 1
+  echo "usage: install.sh <claude|codex|happy-host> [--apply] [--dest DIR] [--enable-linger]"; exit 1
 fi
-[ -d "$ROOT/out/$target" ] || "$ROOT/build.sh" "$target" >/dev/null
+case "$target" in
+  claude|codex) [ -d "$ROOT/out/$target" ] || "$ROOT/build.sh" "$target" >/dev/null ;;
+esac
 
 codex_home="${dest}${CODEX_HOME:-$HOME/.codex}"
 
@@ -53,6 +57,42 @@ case "$target" in
         "mkdir -p '$dest/tr-claude-plugin' && cp -r '$ROOT/out/claude/.' '$dest/tr-claude-plugin/'"
     else
       echo "  스테이징: --dest DIR --apply 로 out/claude 를 그 아래 복사만."
+    fi
+    ;;
+  happy-host)
+    # TEMPORARY_HAPPY_COMPAT: isolated host support, removed with Happy migration.
+    H="$ROOT/host/happy"
+    [ -f "$H/happy_cycle.py" ] || { echo "  ✗ missing host helper: $H/happy_cycle.py"; exit 1; }
+    host_home="${dest:-$HOME}"
+    bin="$host_home/.local/bin/happy-cycle"
+    units="$host_home/.config/systemd/user"
+    echo "[bin] $H/happy_cycle.py → $bin"
+    for unit in "$H/systemd"/*; do echo "[systemd] $(basename "$unit") → $units/"; done
+    if [ "$apply" = 1 ]; then
+      install -Dm755 "$H/happy_cycle.py" "$bin"
+      for unit in "$H/systemd"/*; do install -Dm644 "$unit" "$units/$(basename "$unit")"; done
+    else
+      echo "  [dry] install -Dm755 '$H/happy_cycle.py' '$bin'"
+      echo "  [dry] install -Dm644 '$H/systemd/'* '$units/'"
+    fi
+    if [ -n "$dest" ]; then
+      echo "  staged only — systemd state unchanged"
+    else
+      act "systemd user daemon-reload" "systemctl --user daemon-reload"
+      act "enable Happy daemon at user-manager start" \
+        "systemctl --user enable --now happy-daemon.service"
+      act "enable periodic Happy session snapshot" \
+        "systemctl --user enable --now happy-session-snapshot.timer"
+      linger="$(loginctl show-user "$(id -un)" -p Linger 2>/dev/null | cut -d= -f2 || true)"
+      if [ "$linger" != "yes" ]; then
+        if [ "$enable_linger" = 1 ]; then
+          act "enable user linger for boot-before-login" "loginctl enable-linger '$(id -un)'"
+        else
+          echo "  ⚠ Linger is not enabled; boot-before-login needs --enable-linger."
+        fi
+      else
+        echo "  ✓ Linger=yes"
+      fi
     fi
     ;;
   *) echo "unknown target: $target"; exit 1 ;;
