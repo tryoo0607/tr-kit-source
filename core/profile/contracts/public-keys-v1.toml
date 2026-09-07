@@ -1,6 +1,15 @@
 schema_version = 1
 
 [[keys]]
+name = "public.paths.projects"
+type = "path"
+required_by = ["project"]
+must_exist = true
+must_be_git_worktree = false
+required_files = []
+required_directories = []
+
+[[keys]]
 name = "public.repositories.career"
 type = "path"
 required_by = ["career"]

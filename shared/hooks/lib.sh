@@ -1,23 +1,48 @@
 #!/usr/bin/env bash
 # 훅 공용 — 프로젝트 판정과 경로 계산.
 #
-# 🔑 심링크에 의존하지 않는다. `~/projects/_docs/<project>/` 를 **계산**한다.
-#    심링크가 깨져도 시스템은 안 멈추고, 사람이 `ls` 로 못 볼 뿐이다.
+# 🔑 심링크에 의존하지 않는다. `<projects>/_docs/<project>/` 를 **계산**한다.
+#    projects root는 runtime profile을 우선하고, 없으면 `~/projects`를 쓴다.
 
-PROJECTS="$HOME/projects"
+# runtime profile의 scalar를 읽는다. profile이 없거나 key가 없으면 조용히 실패한다.
+tr_profile_get() {
+  local key="${1:-}" runtime="${CLAUDE_PLUGIN_ROOT:-}/profile/resolver.py"
+  [ -n "$key" ] && [ -r "$runtime" ] || return 1
+  python3 "$runtime" get "$key" 2>/dev/null
+}
+
+_tr_realpath() {
+  local path="${1:-}"
+  [ -n "$path" ] || return 1
+  readlink -f -- "$path" 2>/dev/null || realpath -- "$path" 2>/dev/null
+}
+
+_tr_projects_configured="$(tr_profile_get public.paths.projects || true)"
+case "$_tr_projects_configured" in
+  /*) [ -d "$_tr_projects_configured" ] || _tr_projects_configured="$HOME/projects" ;;
+  *) _tr_projects_configured="$HOME/projects" ;;
+esac
+PROJECTS="$(_tr_realpath "$_tr_projects_configured" || printf '%s' "$_tr_projects_configured")"
 DOCS_ROOT="$PROJECTS/_docs"
+unset _tr_projects_configured
 
 # cwd 로 프로젝트 이름을 판정. ~/projects 밖이면 빈 문자열.
 tr_project() {
-  local cwd="${1:-$PWD}"
+  local cwd="${1:-$PWD}" rest first
+  cwd="$(_tr_realpath "$cwd" || printf '%s' "$cwd")"
   case "$cwd" in
     "$PROJECTS"/*) ;;
     *) return 0 ;;
   esac
-  local rest="${cwd#"$PROJECTS"/}"
-  local first="${rest%%/*}"
+  rest="${cwd#"$PROJECTS"/}"
+  first="${rest%%/*}"
   case "$first" in
     _docs|_assets|"") return 0 ;;
+    *.worktrees)
+      [ "$rest" != "$first" ] || return 0
+      first="${first%.worktrees}"
+      [ -n "$first" ] || return 0
+      ;;
   esac
   printf '%s' "$first"
 }
@@ -95,13 +120,6 @@ tr_resume_state() {
   fi
   # ③ 폴백
   tr_all_state
-}
-
-# runtime profile의 scalar를 읽는다. profile이 없거나 key가 없으면 조용히 실패한다.
-tr_profile_get() {
-  local key="${1:-}" runtime="${CLAUDE_PLUGIN_ROOT:-}/profile/resolver.py"
-  [ -n "$key" ] && [ -r "$runtime" ] || return 1
-  python3 "$runtime" get "$key" 2>/dev/null
 }
 
 # 영역(scope) 판정 — 명시적 project/env/profile 순서. 값: work | personal | unknown
