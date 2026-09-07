@@ -89,6 +89,7 @@ def prepare_sandbox(sandbox: Path, plugin: Path, target: str, setup: Path) -> tu
             "XDG_STATE_HOME": str(sandbox / "state"),
             "CLAUDE_PLUGIN_ROOT": str(plugin),
             "TR_KIT_TARGET": target,
+            "TR_KIT_PROFILE_DIR": str(sandbox / ".config/tr-kit/profile.d"),
             "SB": str(sandbox),
             "PLUGIN": str(plugin),
             "TARGET": target,
