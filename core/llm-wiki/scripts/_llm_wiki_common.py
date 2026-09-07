@@ -129,10 +129,12 @@ def table_cell(value: Any) -> str:
 def work_metadata(path: Path) -> dict[str, str]:
     metadata: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            break
         if line.startswith("# ") and "title" not in metadata:
             metadata["title"] = line[2:].strip()
         match = TABLE_ROW.match(line)
         if match:
             key, value = match.groups()
-            metadata[key.strip()] = value.strip()
+            metadata.setdefault(key.strip(), value.strip())
     return metadata

@@ -1,0 +1,2 @@
+mkdir -p "$SB/state/{{STATE_DIR}}/unrecorded"
+printf 'reason\tclear\ntranscript\t/p/x.jsonl\n' > "$SB/state/{{STATE_DIR}}/unrecorded/default"

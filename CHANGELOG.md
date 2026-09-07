@@ -2,6 +2,12 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
+## 0.5.6 — 2026-09-07
+
+- 재부팅 시 Happy daemon 자동 시작과 session snapshot·안전 cycle을 위한 임시 host 호환 계층을 추가한다.
+- 양 target이 공유하는 hook 동작을 동일 fixture runner로 검증한다.
+- LLM Wiki 작업 메타가 본문 표에 오염되는 문제를 수정하고 단계·자리표시 값 검증을 보강한다.
+
 ## 0.5.5 — 2026-09-04
 
 - Happy가 제공하는 reconnect session ID를 우선 사용해 Codex `/clear` 후 state 인계를 복원한다.

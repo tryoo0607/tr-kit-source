@@ -1,0 +1,4 @@
+exit 0
+match 수신함 — .incoming. 앞으로 미처리 2건
+match incoming/a.md
+match incoming/b.md

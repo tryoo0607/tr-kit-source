@@ -60,6 +60,16 @@ emit() {  # $1=allow|deny|ask  $2=사유
 [ "$tool" = "Bash" ] || exit 0
 [ -n "$cmd" ] || exit 0
 
+# ══ 2층 ⚠️ ask (항상) — 임시 Happy host cycle은 현재 세션도 재시작한다 ════════
+# TEMPORARY_HAPPY_COMPAT: host/happy와 함께 제거한다.
+if printf '%s' "$cmd" | grep -qE '(^|[|;&[:space:]])([^[:space:]]*/)?happy-cycle[[:space:]]+cycle([[:space:]]|$)' \
+   && printf '%s' "$cmd" | grep -qE '(^|[[:space:]])--apply([[:space:]]|$)'; then
+  emit ask '⚠️ **검증된 Happy 세션을 재시작한다 — 현재 세션도 포함될 수 있다.**
+
+먼저 `happy-cycle inventory`와 `happy-cycle snapshot`의 plan을 확인해 대상 session ID·PID·cwd를 유저에게 보여줘라.
+그 결과를 확인받은 뒤에만 `happy-cycle cycle --apply --yes`를 실행한다.'
+fi
+
 # ══ 2층 ⚠️ ask (항상) — force push 는 남의 작업을 덮는다 ════════════════════════
 #
 # 여러 checkout·사람·자동화가 같은 branch를 갱신할 수 있으므로 force push 전에

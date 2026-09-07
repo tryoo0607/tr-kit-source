@@ -1,0 +1,5 @@
+# 기록 디렉토리는 백업이 로컬뿐이다
+exit 0
+match "permissionDecision": *"ask"
+match 재귀 강제 삭제
+match _docs

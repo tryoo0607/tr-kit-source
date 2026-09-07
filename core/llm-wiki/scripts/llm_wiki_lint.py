@@ -15,11 +15,23 @@ STORAGE = {"inline", "repository", "external", "remote"}
 STATUS = {"seed", "evergreen", "archived"}
 LOG_HEADER = re.compile(r"^## \[\d{4}-\d{2}-\d{2}\] (capture|ingest|synthesize|query|lint|migrate) \| .+")
 COMPLETED_STAGE = re.compile(r"^[\s*_`]*(?:마무리\b|완료\b|✅)")
+WORK_STAGE = re.compile(r"^[\s*_`]*(?:진입|정의|계획|수행|점검|마무리)\b")
+PURPOSE_PLACEHOLDERS = {"확인 필요", "이 기록 공간이 다루는 project 경계"}
+UPDATED_PLACEHOLDERS = {"확인 필요", "YYYY-MM-DD", "YYYY-MM-DD HH:MM", "2026-08-06 14:20"}
 
 
 def _safe_relative(raw: object) -> bool:
     path = Path(str(raw))
     return bool(str(raw)) and not path.is_absolute() and ".." not in path.parts
+
+
+def _placeholder(value: str, examples: set[str]) -> bool:
+    normalized = value.strip()
+    return (
+        normalized in examples
+        or (normalized.startswith("<") and normalized.endswith(">"))
+        or (normalized.startswith("{{") and normalized.endswith("}}"))
+    )
 
 
 def lint(root: Path, project: bool = False) -> tuple[list[str], list[str]]:
@@ -131,8 +143,11 @@ def lint(root: Path, project: bool = False) -> tuple[list[str], list[str]]:
             text = readme.read_text(encoding="utf-8")
             if "| 스키마 | v2 |" not in text:
                 warnings.append("README.md: project schema is not v2")
-            if not re.search(r"^\|\s*목적\s*\|", text, re.MULTILINE):
+            purpose = work_metadata(readme).get("목적", "")
+            if not purpose:
                 warnings.append("README.md: missing stable purpose")
+            elif _placeholder(purpose, PURPOSE_PLACEHOLDERS):
+                warnings.append("README.md: placeholder stable purpose")
             for field in ("현재 초점", "다음"):
                 if f"| {field} |" in text:
                     warnings.append(f"README.md: deprecated dynamic field: {field}")
@@ -147,7 +162,13 @@ def lint(root: Path, project: bool = False) -> tuple[list[str], list[str]]:
                 for field in ("title", "단계", "갱신"):
                     if not metadata.get(field):
                         warnings.append(f"{label}: missing work metadata: {field}")
-                if COMPLETED_STAGE.search(metadata.get("단계", "")):
+                stage = metadata.get("단계", "")
+                updated = metadata.get("갱신", "")
+                if stage and not WORK_STAGE.search(stage):
+                    warnings.append(f"{label}: invalid work metadata: 단계")
+                if updated and _placeholder(updated, UPDATED_PLACEHOLDERS):
+                    warnings.append(f"{label}: placeholder work metadata: 갱신")
+                if COMPLETED_STAGE.search(stage):
                     warnings.append(f"{label}: completed-looking record remains in state")
         if (root / "design").exists():
             warnings.append("design/: legacy content requires selective Wiki synthesis")

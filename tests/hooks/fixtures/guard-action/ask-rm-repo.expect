@@ -1,0 +1,4 @@
+# 보호 목록에 없는 경로도 묻는다 — 예전엔 조용히 통과했다 (2026-08-10 판정 반전)
+exit 0
+match "permissionDecision": *"ask"
+match 재귀 강제 삭제

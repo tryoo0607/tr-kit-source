@@ -1,0 +1,2 @@
+mkdir -p "$SB/state/{{STATE_DIR}}/asap"
+: > "$SB/state/{{STATE_DIR}}/asap/default"

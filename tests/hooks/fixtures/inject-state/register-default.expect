@@ -1,0 +1,5 @@
+exit 0
+match 훅: 응답 규약 요약 .default.
+match 스테이지는 진입·정의·계획·수행·점검·마무리 6종뿐이다
+nomatch 표·결론 중심
+maxbytes 2000

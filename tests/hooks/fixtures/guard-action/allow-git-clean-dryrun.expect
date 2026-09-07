@@ -1,0 +1,3 @@
+# 🔑 dry-run 은 안 묻는다 — 훅 안내문이 바로 이 명령을 시킨다. 시킨 걸 막으면 자기모순
+exit 0
+nomatch permissionDecision

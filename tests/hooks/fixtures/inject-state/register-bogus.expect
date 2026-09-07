@@ -1,0 +1,5 @@
+exit 0
+match 훅: 응답 규약 요약 .default.
+nomatch brief
+nomatch 근거와 대안까지 편다
+maxbytes 2000

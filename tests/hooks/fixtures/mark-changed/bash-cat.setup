@@ -1,0 +1,2 @@
+mkdir -p "$SB/projects/alpha" "$SB/projects/_docs/alpha/state"
+printf '%s' "$SB/projects/alpha" > "$SB/.cwd"

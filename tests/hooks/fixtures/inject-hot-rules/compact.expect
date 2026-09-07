@@ -1,0 +1,4 @@
+exit 0
+match compact 최소 hot 규칙
+nomatch tr-claude — 전역 정책
+maxbytes 1000

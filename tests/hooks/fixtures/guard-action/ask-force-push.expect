@@ -1,0 +1,4 @@
+exit 0
+match "permissionDecision": *"ask"
+match 원격 히스토리를 덮는다
+match HEAD..

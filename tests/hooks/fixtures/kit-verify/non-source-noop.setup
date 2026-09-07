@@ -1,0 +1,5 @@
+repo="$SB/projects/not-a-kit-source"
+mkdir -p "$repo"
+git -C "$repo" init -q -b main 2>/dev/null
+git -C "$repo" -c user.email=t@t -c user.name=t commit -qm init --allow-empty >/dev/null 2>&1
+printf '%s' "$repo" > "$SB/.cwd"

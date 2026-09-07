@@ -1,0 +1,4 @@
+# allowlist 에 Bash(git:*) 를 넣은 대가 — 워킹트리를 지우는 verb 는 훅이 잡는다
+exit 0
+match "permissionDecision": *"ask"
+match reflog

@@ -1,0 +1,3 @@
+# 파일을 안 고친 턴(마크 없음)은 판정하지 않는다 — 휘발성 턴 오탐 방지의 핵심
+exit 0
+nofile state/{{STATE_DIR}}/format-drift/f1

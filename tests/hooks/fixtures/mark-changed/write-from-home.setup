@@ -1,0 +1,4 @@
+# 🔑 cwd 가 ~ (프로젝트 밖) — 세션 대부분이 여기서 뜬다.
+# 예전엔 tr_docs()(cwd 기반)가 빈 값이라 exit 0 → 마크를 아예 안 찍었다 = 기록 강제가 꺼졌다.
+mkdir -p "$SB/projects/alpha" "$SB/projects/_docs/alpha/state"
+printf '%s' "$SB" > "$SB/.cwd"

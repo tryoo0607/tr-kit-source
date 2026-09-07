@@ -1,0 +1,4 @@
+# 🔑 변수가 안 풀린 재귀 삭제 — 빈 변수 하나가 `rm -rf /` 가 된다. 세상에서 사고 나는 모양
+exit 0
+match "permissionDecision": *"ask"
+match 전개 결과

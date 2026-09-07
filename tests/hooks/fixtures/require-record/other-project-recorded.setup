@@ -1,0 +1,11 @@
+# 🔑 오탐 회귀 — beta 를 고치고 beta 에 기록했는데 cwd 는 alpha (kit 도구 돌리느라 cd 한 상황).
+# 예전엔 alpha 의 기록을 찾다가 없다고 차단했다 (cases/hooks/require-record-wrong-project.md).
+mkdir -p "$SB/tmp" "$SB/projects/alpha" \
+         "$SB/projects/_docs/alpha/state" "$SB/projects/_docs/beta/exec"
+printf '%s' "$SB/projects/alpha" > "$SB/.cwd"
+
+: > "$SB/tmp/tr-changed-r1"                       # 이 턴에 뭔가 고쳤다
+printf 'beta\n' > "$SB/tmp/tr-changed-projects-r1"  # 고친 곳은 beta 다
+
+sleep 1
+printf '# 기록\n' > "$SB/projects/_docs/beta/exec/work.md"   # beta 에 기록 (마크보다 새로움)

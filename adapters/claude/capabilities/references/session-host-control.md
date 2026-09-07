@@ -37,4 +37,4 @@ Environment=HAPPY_PLUGIN_DIRS=<현재 검증된 tr-claude plugin directory>
 Environment=HAPPY_SETTING_SOURCES=user,project,local
 ```
 
-daemon을 다시 시작한 뒤 기존 Claude 세션도 restart/resume해야 반영된다. Marketplace update는 이 경로를 자동 갱신하지 않으므로 남은 Happy 사용 기간에는 검증된 version을 고정하고, 꼭 올릴 때만 경로와 runtime을 함께 갱신한다. 이 절차는 Happy와 함께 제거하며 확장하지 않는다.
+daemon을 다시 시작한 뒤 기존 Claude 세션도 restart/resume해야 반영된다. Marketplace update는 이 경로를 자동 갱신하지 않으므로 남은 Happy 사용 기간에는 검증된 version을 고정하고, 꼭 올릴 때만 경로와 runtime을 함께 갱신한다. daemon 자동기동과 session snapshot/restore는 공통 runtime reference의 격리된 임시 host 경로를 사용하며 Happy와 함께 제거한다.

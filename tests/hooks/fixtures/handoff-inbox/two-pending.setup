@@ -1,0 +1,11 @@
+mkdir -p "$SB/projects/tr-handoffs/incoming/done" "$SB/projects/tr-handoffs/outgoing/done"
+git -C "$SB/projects/tr-handoffs" init -q
+touch "$SB/projects/tr-handoffs/incoming/done/.gitkeep" "$SB/projects/tr-handoffs/outgoing/done/.gitkeep"
+printf x > "$SB/projects/tr-handoffs/incoming/a.md"
+printf x > "$SB/projects/tr-handoffs/incoming/b.md"
+git -C "$SB/projects/tr-handoffs" add -f incoming outgoing
+git -C "$SB/projects/tr-handoffs" -c user.email=test@example.invalid -c user.name=test -c commit.gpgSign=false commit -qm init
+git -C "$SB/projects/tr-handoffs" update-ref refs/remotes/origin/main HEAD
+touch "$SB/projects/tr-handoffs/.git/FETCH_HEAD"
+mkdir -p "$SB/.config/tr-kit/profile.d"
+printf 'schema_version = 1\n[public.repositories]\nhandoffs = "%s"\n[public.handoff]\ninbox = "incoming"\n' "$SB/projects/tr-handoffs" > "$SB/.config/tr-kit/profile.d/10-test.toml"

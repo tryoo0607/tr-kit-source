@@ -1,0 +1,2 @@
+exit 2
+match fixture event cwd failed

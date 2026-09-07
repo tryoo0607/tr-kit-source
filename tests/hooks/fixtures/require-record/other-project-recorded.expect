@@ -1,0 +1,4 @@
+# 통과해야 한다 — cwd(alpha) 가 아니라 고친 프로젝트(beta) 를 보고 판정
+exit 0
+nofile tmp/tr-changed-r1
+nofile tmp/tr-changed-projects-r1

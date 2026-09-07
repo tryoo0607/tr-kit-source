@@ -1,0 +1,5 @@
+exit 0
+match state/long.md
+match 긴 작업
+nomatch compact에 들어가면 안 되는 payload
+maxbytes 2000

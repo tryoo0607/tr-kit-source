@@ -1,0 +1,7 @@
+mkdir -p "$SB/{{TRANSCRIPT_ROOT}}" "$SB/state/{{STATE_DIR}}/rollover-budget"
+if [ "$TARGET" = claude ]; then
+  printf '%s\n' '{"type":"assistant","message":{"usage":{"input_tokens":150000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}' > "$SB/{{TRANSCRIPT_ROOT}}/rollout-context-dedup.jsonl"
+else
+  printf '%s\n' '{"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":1000,"last_token_usage":{"input_tokens":750}}}}' > "$SB/{{TRANSCRIPT_ROOT}}/rollout-context-dedup.jsonl"
+fi
+: > "$SB/state/{{STATE_DIR}}/rollover-budget/context-dedup.handoff"

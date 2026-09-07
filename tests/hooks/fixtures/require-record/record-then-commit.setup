@@ -1,0 +1,20 @@
+# 🔑 실제 작업 순서 회귀 — ①코드 고침 → ②기록 → ③커밋·백업
+# 예전엔 ③이 마크 mtime 을 갱신해 ②를 앞질러서, 기록이 있는데도 차단됐다
+# (실측 2026-08-13: 기록 14:11:54 · 마크 14:13:18).
+mkdir -p "$SB/tmp" "$SB/projects/alpha" "$SB/projects/_docs/alpha/state"
+printf '%s' "$SB/projects/alpha" > "$SB/.cwd"
+printf 'alpha\n' > "$SB/tmp/tr-changed-projects-r3"
+
+# ① 첫 변경 → 마크 생성
+: > "$SB/tmp/tr-changed-r3"
+
+# ② 기록 (마크보다 나중)
+sleep 1
+printf '# 기록\n' > "$SB/projects/_docs/alpha/state/work.md"
+
+# ③ 커밋·백업 — 여기서 mark-changed 가 또 불린다.
+#    수정 후: 이미 있으므로 mtime 을 안 건드린다 → 기록이 여전히 더 새롭다
+sleep 1
+printf '{"session_id":"r3","tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' \
+  | (cd "$SB/projects/alpha" && HOME="$SB" TMPDIR="$SB/tmp" \
+     CLAUDE_PLUGIN_ROOT="$PLUGIN" bash "$PLUGIN/hooks/mark-changed.sh" >/dev/null 2>&1)
