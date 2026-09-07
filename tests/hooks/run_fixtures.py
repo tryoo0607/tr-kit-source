@@ -177,7 +177,33 @@ def run_case(hook: str, case_path: Path, target: str, plugin: Path) -> tuple[lis
         rendered_expect = render(expect.read_text(), sandbox=sandbox, plugin=plugin, target=target)
         rendered_path = sandbox / ".expect"
         rendered_path.write_text(rendered_expect)
-        return check_expectations(rendered_path, output, result.returncode, sandbox), output
+        errors = check_expectations(rendered_path, output, result.returncode, sandbox)
+        if errors and hook == "handoff-inbox":
+            resolver = plugin / "profile/resolver.py"
+            repo_result = subprocess.run(
+                ["python3", str(resolver), "get", "public.repositories.handoffs"],
+                text=True,
+                env=env,
+                capture_output=True,
+            )
+            repo = repo_result.stdout.strip()
+            tree_result = subprocess.run(
+                ["git", "-C", repo, "ls-tree", "-r", "--name-only", "origin/main"],
+                text=True,
+                env=env,
+                capture_output=True,
+            ) if repo else None
+            output += (
+                f"\n[fixture-debug] profile-rc={repo_result.returncode} repo={repo!r} "
+                f"profile-stderr={repo_result.stderr.strip()!r}\n"
+            )
+            if tree_result is not None:
+                output += (
+                    f"[fixture-debug] tree-rc={tree_result.returncode} "
+                    f"tree={tree_result.stdout.strip()!r} "
+                    f"tree-stderr={tree_result.stderr.strip()!r}\n"
+                )
+        return errors, output
 
 
 def main() -> int:
