@@ -1,0 +1,2 @@
+mkdir -p "$SB/state/{{STATE_DIR}}/chat"
+: > "$SB/state/{{STATE_DIR}}/chat/default"

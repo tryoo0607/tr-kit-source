@@ -1,0 +1,7 @@
+# 고쳤는데 어느 프로젝트에도 기록이 없다 → 여전히 차단되어야 한다 (가드가 느슨해지면 안 됨)
+mkdir -p "$SB/tmp" "$SB/projects/alpha" \
+         "$SB/projects/_docs/beta/state" "$SB/projects/_docs/gamma/state"
+printf '%s' "$SB/projects/alpha" > "$SB/.cwd"
+printf 'beta\ngamma\n' > "$SB/tmp/tr-changed-projects-r2"
+sleep 1
+: > "$SB/tmp/tr-changed-r2"      # 마크가 기록보다 나중 = 미기록

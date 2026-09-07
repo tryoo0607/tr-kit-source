@@ -1,0 +1,7 @@
+mkdir -p "$SB/projects/tr-handoffs/incoming/done" "$SB/projects/tr-handoffs/outgoing/done"
+cd "$SB/projects/tr-handoffs" && git init -q -b main 2>/dev/null
+touch incoming/done/.gitkeep outgoing/done/.gitkeep
+printf x > incoming/done/old.md
+git add -A >/dev/null 2>&1; git -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+mkdir -p "$SB/.config/tr-kit/profile.d"
+printf 'schema_version = 1\n[public.repositories]\nhandoffs = "%s"\n[public.handoff]\ninbox = "incoming"\n' "$SB/projects/tr-handoffs" > "$SB/.config/tr-kit/profile.d/10-test.toml"

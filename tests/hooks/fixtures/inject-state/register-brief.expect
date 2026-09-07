@@ -1,0 +1,6 @@
+exit 0
+match 훅: 응답 규약 요약 .brief.
+match 표·결론 중심
+match 안전·근거 규칙은 유지한다
+nomatch 근거와 대안까지 편다
+maxbytes 2000

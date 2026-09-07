@@ -1,0 +1,4 @@
+mkdir -p "$SB/state/{{STATE_DIR}}/register" "$SB/bin"
+printf 'default' > "$SB/state/{{STATE_DIR}}/register/named"
+# 이름 있는 tmux 를 흉내낸다 — 키가 'named' 여야 위 파일이 잡힌다
+printf '#!/bin/sh\nprintf named\n' > "$SB/bin/tmux"; chmod +x "$SB/bin/tmux"

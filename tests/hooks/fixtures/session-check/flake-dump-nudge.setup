@@ -1,0 +1,3 @@
+mkdir -p "$SB/state/{{STATE_DIR}}/flake-dump" "$SB/bin"
+printf 'snap\n' > "$SB/state/{{STATE_DIR}}/flake-dump/20260820-000000-1"
+printf '#!/bin/sh\nexit 1\n' > "$SB/bin/tmux"; chmod +x "$SB/bin/tmux"

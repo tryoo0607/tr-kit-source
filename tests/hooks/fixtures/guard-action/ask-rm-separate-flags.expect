@@ -1,0 +1,4 @@
+# 플래그를 나눠 쓴 형태(`-r -f`)도 잡는다 — 예전 문자열 매칭은 `rm -rf` 만 봤다
+exit 0
+match "permissionDecision": *"ask"
+match 재귀 강제 삭제

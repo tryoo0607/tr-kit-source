@@ -1,0 +1,3 @@
+# 기록 후 커밋해도 통과해야 한다 — 마크 mtime 이 기록을 앞지르면 안 된다
+exit 0
+nofile tmp/tr-changed-r3

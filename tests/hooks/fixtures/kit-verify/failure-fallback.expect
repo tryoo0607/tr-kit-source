@@ -1,0 +1,2 @@
+exit 0
+match hook validation이 실패한 채로 넘어간다

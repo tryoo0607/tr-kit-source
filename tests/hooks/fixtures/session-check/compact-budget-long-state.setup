@@ -1,0 +1,4 @@
+mkdir -p "$SB/projects/alpha" "$SB/projects/_docs/alpha/state"
+printf '%s\n' "$SB/projects/alpha" > "$SB/.cwd"
+printf '# 긴 작업\n\n| 단계 | 수행 |\n\n' > "$SB/projects/_docs/alpha/state/long.md"
+awk 'BEGIN { for (i=0; i<5000; i++) print "compact에 들어가면 안 되는 payload" }' >> "$SB/projects/_docs/alpha/state/long.md"

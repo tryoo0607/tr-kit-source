@@ -1,0 +1,14 @@
+mkdir -p "$SB/tmp"
+: > "$SB/tmp/tr-changed-f2"
+python3 - "$SB/t.jsonl" <<'PY'
+import json, sys
+rows = [
+    {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x"}]}},
+    {"type": "user", "message": {"content": "고쳐줘"}},
+    {"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "…"}]}},
+    {"type": "assistant", "message": {"content": [{"type": "text", "text": "완료 — rofi 종료됨. 다음으로 넘어간다."}]}},
+]
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    for r in rows:
+        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+PY

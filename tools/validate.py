@@ -149,6 +149,7 @@ def validate_full_profile(root: Path = ROOT) -> None:
         cwd=root,
     )
     validate_hook_profile(root)
+    _run([sys.executable, "tests/hooks/run_fixtures.py"], cwd=root)
     _run(["bash", "tests/hooks/lifecycle-smoke.sh"], cwd=root)
     _run(["bash", "tests/hooks/kit-verify-smoke.sh"], cwd=root)
 

@@ -1,0 +1,4 @@
+mkdir -p "$SB/projects/_docs/alpha/state" "$SB/projects/_docs/beta/state"
+printf '# 오래된 것\n\n## 미결\n- [ ] x\n' > "$SB/projects/_docs/beta/state/old.md"
+touch -d '2020-01-01' "$SB/projects/_docs/beta/state/old.md"
+printf '# 최신 작업\n\n| 단계 | 수행 |\n\n## 진행\n안 나와야 하는 로그\n' > "$SB/projects/_docs/alpha/state/new.md"

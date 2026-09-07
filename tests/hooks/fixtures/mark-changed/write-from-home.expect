@@ -1,0 +1,4 @@
+# cwd 가 프로젝트 밖이어도 **고친 파일 경로**로 판정해 마크가 찍혀야 한다
+exit 0
+file tmp/tr-changed-m1
+file tmp/tr-changed-projects-m1

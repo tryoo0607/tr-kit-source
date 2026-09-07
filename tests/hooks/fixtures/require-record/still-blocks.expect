@@ -1,0 +1,6 @@
+# 미기록은 그대로 차단. 여러 프로젝트를 고쳤으면 후보를 보여준다
+exit 2
+match 작업 기록이 갱신되지 않았다
+match 고친 프로젝트가 2개다
+match _docs/beta
+match _docs/gamma

@@ -1,0 +1,3 @@
+exit 0
+file state/{{STATE_DIR}}/unrecorded/default
+nofile tmp/tr-changed-aaaaaaaa-1111-2222-3333-444444444444

@@ -1,0 +1,3 @@
+exit 2
+match kit source를 고쳤는데 hook validation이 실패한다
+match fixture validation failed

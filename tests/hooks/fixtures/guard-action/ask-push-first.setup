@@ -1,0 +1,1 @@
+mkdir -p "$SB/projects/tr-claude"; cd "$SB/projects/tr-claude" && git init -q -b main 2>/dev/null; printf "%s" "$SB/projects/tr-claude" > "$SB/.cwd"

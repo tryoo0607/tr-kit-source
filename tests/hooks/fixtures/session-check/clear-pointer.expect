@@ -1,0 +1,6 @@
+exit 0
+match 이어갈 것 → .alpha/state/new.md.
+match 최신 작업
+match 나머지 미결
+nomatch 안 나와야 하는 로그
+maxbytes 2000
