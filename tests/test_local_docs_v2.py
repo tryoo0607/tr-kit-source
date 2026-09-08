@@ -230,6 +230,14 @@ Project synthesis.
             self.assertTrue((plugin / "skills/project/references/local-docs.md").is_file())
             built_migrate = plugin / "skills/project/scripts/local_docs_migrate.py"
             self.assertTrue(built_migrate.is_file())
+            built_sync = plugin / "skills/project/scripts/local-docs-sync"
+            built_sync_module = plugin / "skills/project/scripts/local_docs_sync.py"
+            self.assertTrue(built_sync.is_file())
+            self.assertTrue(built_sync_module.is_file())
+            help_result = subprocess.run(
+                [str(built_sync), "--help"], check=False, text=True, capture_output=True
+            )
+            self.assertEqual(help_result.returncode, 0, help_result.stderr)
             dry = self.run_tool(built_migrate)
             self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
             self.assertIn("OK dry-run only", dry.stdout)
