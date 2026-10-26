@@ -1,0 +1,20 @@
+schema_version = 1
+
+# Normalize site anchors only in the copied official documentation.
+[[replacements]]
+file = "upstream/reference/config.md"
+old = "](#custom-columns)"
+new = "](#custom-columns-experimental)"
+count = 1
+
+[[replacements]]
+file = "upstream/reference/list.md"
+old = "](#custom-columns)"
+new = "](#custom-columns-experimental)"
+count = 2
+
+[[replacements]]
+file = "upstream/reference/list.md"
+old = "](#default-branch-object)"
+new = "](#default_branch-object)"
+count = 1

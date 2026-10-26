@@ -1,0 +1,7 @@
+schema_version = 1
+[[replacements]]
+file = "references/implementations/tool-connections.md"
+old = "WIKI_SKILL_ENTRY"
+new = "../../../wiki-manager/SKILL.md"
+count = 1
+target_skill = "wiki-manager"

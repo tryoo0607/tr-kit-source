@@ -1,0 +1,20 @@
+schema_version = 1
+runtime_note = """
+## 이 배포본의 연결
+
+화면 제작이나 시각적 개편에서 BMAD의 요구와 UX 결과를 입력으로 사용한다. 기존 디자인 시스템, 접근성 요구와 사용자가 지정한 스타일을 우선한다. 작은 수정에 전체 재설계나 새 stack 생성을 강제하지 않는다. 별도 작업 상태나 설치 절차를 만들지 않는다.
+
+화면 동작 검증이 필요하면 [playwright-cli](../playwright-cli/SKILL.md)에 대상 URL, 확인할 시나리오와 viewport를 전달해 해당 지침을 적용한다. 필요한 결과는 실제 동작과 렌더 관측, 오류와 screenshot 위치다. 이 연결은 지침 적용이며 별도 에이전트나 자동 실행을 보장하지 않는다. 브라우저를 사용할 수 없으면 정적 검수와 미실행 범위를 밝힌다.
+"""
+
+[[replacements]]
+file = "SKILL.md"
+old = "Approach this as the design lead at a design studio known for giving every client a distinct visual identity that is not mistaken for anyone else's. This client has already rejected proposals that felt cliché or templated, and is paying for a distinctive point of view: make deliberate, opinionated choices about palette, typography, and layout that are specific to this brief, and take aesthetic risk if justified."
+new = "Make deliberate choices about palette, typography, and layout grounded in the actual brief and existing design system. Do not invent client history, rejected proposals, or preferences. Take aesthetic risk only where the brief leaves room for it."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Then review that plan against the brief before building:"
+new = "Then review that visual plan against the brief, reusing any existing BMAD plan rather than creating another implementation plan:"
+count = 1

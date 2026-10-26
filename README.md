@@ -1,108 +1,80 @@
 # tr-kit-source
 
-[![build](https://github.com/tryoo0607/tr-kit-source/actions/workflows/build.yml/badge.svg)](https://github.com/tryoo0607/tr-kit-source/actions/workflows/build.yml)
-[![release](https://img.shields.io/github/v/release/tryoo0607/tr-kit-source)](https://github.com/tryoo0607/tr-kit-source/releases/latest)
+BMAD를 중심으로 개발, 조사, 검증, 지식과 인계를 연결하는 Codex 및 Claude용 플러그인 소스다.
 
-Claude Code와 Codex용 개발 워크플로 kit를 하나의 공통 소스에서 정적으로 조립하고 배포한다.
+이전 redesign의 현재 구현을 저장소 루트로 승격했다. drafts와 이전 core/shared/recipe 기반 구현은 현재 source와 배포 입력에서 제거했다. 기존 설치본과 운영 데이터는 source 교체만으로 바뀌지 않는다.
 
-- **공통 관리**: 업무 의미와 판단은 한 번만 정의한다.
-- **target 분리**: 제품별 형식과 기능 연결만 adapter에 둔다.
-- **정적 산출**: build가 target이 고정된 완성 저장소를 만든다.
+## 소스 구조
 
-## 한눈에 보기
+| 경로 | 책임 |
+|---|---|
+| common/base | 공통 지침, 자체 skill, 외부 의존 선언과 공통 binding |
+| adapters/codex | Codex의 Wiki 선택, metadata와 MCP 경로 차이 |
+| adapters/claude | Claude의 Wiki 선택, metadata와 MCP 경로 차이 |
+| scripts | 외부 source 확보, 조립, 패키징과 실행 검증 |
+| sources.toml | 공개 upstream URL. 정확한 commit은 dependencies.toml |
+| tests | 현재 source의 조립, 검수와 도구 설정 테스트 |
+| out | 생성물. 직접 편집하거나 커밋하지 않음 |
 
-```mermaid
-%%{init: {"flowchart": {"curve": "linear", "nodeSpacing": 42}}}%%
-flowchart LR
-    Core["공통 Core + Contracts<br/>의미 · 정책 · capability 정의"]
-    Adapter["Target Adapter<br/>Claude/Codex별 기능 구현"]
-    Recipe["Recipe<br/>조합 대상 · 산출 경로 선택"]
-    Build["Build<br/>계약 검증 · 정적 합성"]
-    Output["완성 Target 저장소<br/>tr-claude · tr-codex"]
+adapter의 skills 폴더는 전체 skill 목록이 아니라 제품별 보정만 담는다. BMAD와 개발 지원 skill 대부분은 common에서 포함한다. Codex와 Claude의 전체 포함 결과는 assembly.json으로 확인한다.
 
-    Core --> Adapter --> Recipe --> Build --> Output
-```
+## 포함 기능
 
-- **관계**: core와 adapter는 별도 제품이 아니라 `tr-kit-source` 안의 정적 조립 입력이다.
-- **선택 시점**: recipe가 build 시점에 공통 정본과 target adapter를 결합한다.
-- **runtime**: 설치 후에는 adapter 탐색, target 선택, source 재조립을 하지 않는다.
+- BMAD: 조사, 요구, 설계, 구현과 검증.
+- document, Claude-Mem, LLM Wiki: 작업 정본, 경험과 지식의 연결.
+- Context7: 버전별 문서 조회.
+- Semgrep 및 Trivy: 코드, 패키지, 이미지와 IaC 검사.
+- frontend-design, diagram-design, Playwright: 화면 제작, 시각화와 브라우저 검증.
+- project, Worktrunk, Orca: 코드 공간과 workspace 연결.
+- session, profile-setup, skill-authoring: 인계와 호스트 운영, 설정 및 저작.
 
-## 디렉터리 책임
+skill을 포함한 것과 실행 도구 설치, worker 가동 및 자동 hook 수집은 다르다. 새 package에는 plugin hook을 자동 등록하지 않는다.
 
-| 경로 | 맡는 것 | 맡지 않는 것 |
-|---|---|---|
-| `core/` | 공통 lifecycle·profile 엔진, capability 계약, 조합이 필요한 공통 skill | Claude/Codex raw payload와 제품별 출력 형식 |
-| `shared/` | 두 target에 동일하게 들어가는 정책·백본·공통 runtime | target별 분기 |
-| `skills/` | target 차이 없이 그대로 배포할 완성형 공통 skill | capability fragment 조립 |
-| `adapters/<target>/` | hook 입출력, manifest, capability fragment 등 target 전용 수단 | 공통 업무 의미와 판단 규칙 |
-| `recipes/` | 공통 소스와 target adapter를 어떤 경로로 조립할지 정의하는 실행 계획 | 업무 규칙 본문 |
-| `glossary/` | `AGENTS.md`·`CLAUDE.md`처럼 의미가 같은 target별 명칭 값 | 행동이 다른 기능 분기 |
-| `packaging/<target>/` | 배포 저장소 root의 marketplace metadata와 README | plugin payload 내부 구현 |
-| `agents-doc/` | target 이름으로 변환되는 공통 agent 진입 문서 | 제품별 hook 구현 |
-| `tools/` | recipe 검증, 정적 합성, delivery 검증·배포 | runtime target 선택 |
-| `tests/` | 조립 계약, 공개 경계, lifecycle과 delivery 회귀 | 운영 데이터 |
+## 준비와 빌드
 
-## 조립 방식
+Python 3.12 이상, Git과 PyYAML이 필요하다. 외부 checkout은 cache에 두고 정확한 revision과 clean 상태를 검사한다. build는 원격 source를 자동 취득하지 않는다.
 
-| 종류 | 공통 정본 | target 입력 | 결과 |
-|---|---|---|---|
-| 그대로 공유 | `shared/`, `skills/` | 없음 | 두 target에 동일한 파일 |
-| skill capability | `core/skills/<skill>/SKILL.md` | `adapters/<target>/capabilities/` | slot이 모두 채워진 완성 `SKILL.md` |
-| lifecycle hook | `core/lifecycle/decision.py` | `adapters/<target>/hooks/` | 공통 event→result 판단 + target raw payload·렌더링 |
-| repository packaging | 공통 payload와 `LICENSE` | `packaging/<target>/` | 설치 가능한 완전한 저장소 tree |
-
-- **계약의 역할**: `core/contracts/capabilities.toml`은 필수 slot과 fragment 형식만 검사하며 산출물에는 포함되지 않는다.
-- **실패 조건**: source 누락, 산출 경로 충돌, 미치환 token·guard·slot이 있으면 build를 중단한다.
-
-## 생성되는 저장소
-
-| target | 로컬 snapshot | 공개 배포 저장소 | 릴리스 |
-|---|---|---|---|
-| Claude Code | `out/claude/` | [`tr-claude`](https://github.com/tryoo0607/tr-claude) | [`v0.5.4`](https://github.com/tryoo0607/tr-claude/releases/tag/v0.5.4) |
-| Codex | `out/codex/` | [`tr-codex`](https://github.com/tryoo0607/tr-codex) | [`v0.5.4`](https://github.com/tryoo0607/tr-codex/releases/tag/v0.5.4) |
-
-- **소유권**: 두 배포 저장소는 사람이 payload를 직접 관리하는 별도 source가 아니다.
-- **생성 방식**: `tr-kit-source`가 repository 전체 tree를 만드는 managed-root mirror다.
-- **설치 안내**: 각 배포 저장소의 README를 따른다.
-
-## 빌드와 검증
-
-```sh
-./build.sh            # claude와 codex 모두 생성
-./build.sh claude     # 하나만 생성
-
+```bash
+python3 -m pip install 'PyYAML==6.0.3'
+python3 scripts/fetch_sources.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-bash tests/hooks/lifecycle-smoke.sh
+./build.sh codex --output out/codex
 ```
 
-원격을 수정하지 않는 target 통합 dry-run:
+기본 source cache는 .cache/upstreams다. 기존 cache를 재사용하려면 fetch의 --cache와 build의 TR_KIT_SOURCE_CACHE에 같은 경로를 명시한다. 다른 revision이나 dirty checkout은 자동 reset하지 않는다.
 
-```sh
-python3 -m tools.delivery \
-  --repo claude=/path/to/tr-claude \
-  --repo codex=/path/to/tr-codex
+Codex 결과는 기존 tr-codex marketplace와 plugins/tr-codex payload를 포함한다. 설치 selector는 tr-codex@tr-codex다. 기능 버전은 VERSION, 제품별 suffix는 source commit에서 가져오므로 같은 커밋의 재배포는 같은 결과를 만든다. 기존 출력은 덮지 않으므로 다시 빌드할 때 새 output 경로를 지정한다.
+
+Claude도 기존 tr-claude marketplace와 plugins/tr-claude payload를 만든다. 로컬 Claude 호스트 적용은 Codex 검증 이후에 한다.
+
+```bash
+./build.sh claude --output out/claude-check
 ```
 
-- **적용 위치**: 실제 작업 checkout이 아니라 깨끗한 disposable clone만 변경한다.
-- **검증 항목**: repository, marker, symlink, 소유 경계와 두 번째 적용의 멱등성을 확인한다.
-- **push 정책**: 변경이 있을 때만 normal fast-forward push를 수행하며 force push는 사용하지 않는다.
+## 설치와 실행 검증
 
-## recipe 계약
+```bash
+./install.sh codex out/codex
+```
 
-- 기본 빌드는 `recipes/*.toml`에서 `_`로 시작하지 않는 모든 target을 찾는다.
-- `_base.toml`의 공통 artifact와 target recipe의 artifact·composition을 합친다.
-- composition은 공통 문서의 `{{slot:<capability>}}`를 recipe가 선택한 adapter fragment로 채운다.
-- `_schema.toml`이 허용 key·scope·generator를 정의하고 build가 이를 직접 검증한다.
-- `recipes/*.yaml`처럼 지원하지 않는 recipe가 남아 조용히 무시되는 것도 실패한다.
-- 공식 target은 모두 `managed-root`이며 source output이 배포 저장소 전체의 정본이다.
+기본은 native 설치 명령만 보여주는 dry-run이다. --apply는 marketplace 등록과 plugin 설치를 실행한다. 기존 plugin, 전역 AGENTS.md와 toolchain 경로의 전환은 먼저 [적용 및 정리 기준](ROLLOUT.md)으로 변경 범위와 복구안을 확인한다. 현재 세션은 새 설치를 자동으로 다시 읽지 않는다.
 
-## 변경 이력과 기여
+선택적 개발 도구는 scripts/setup_dev_tools.py --prefix NEW_DIRECTORY --uv /path/to/uv로 격리 설치한다. 도구 버전은 common/base/scripts/dev-tools.toml이 소유한다. env.sh는 선택한 shell에서 명시 적용하며 전역 설정을 자동 수정하지 않는다. BMAD의 uv와 Claude-Mem의 Bun 및 worker는 별도 실행 전제다.
 
-- [`CHANGELOG.md`](CHANGELOG.md): 모든 공개 버전을 한 파일 안의 버전별 section으로 관리한다.
-- [GitHub Releases](https://github.com/tryoo0607/tr-kit-source/releases): 특정 버전의 배포 시점과 release note를 관리한다.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md): 변경 제안과 검증 절차.
-- [`SECURITY.md`](SECURITY.md): 취약점 제보 절차.
+실제 도구 검증은 scripts/verify_dev_tools.py --plugin PLUGIN_ROOT --toolchain TOOLCHAIN_ROOT, 기록 연결은 scripts/verify_records.py로 실행한다. Context7 실조회는 --network-context7을 명시한다. 두 검증기는 모델 호출과 자동 skill 선택을 시험하지 않는다.
 
-## 라이선스
+## 배포와 데이터 경계
 
-[Apache License 2.0](LICENSE)
+.github/workflows/build.yml은 PR의 필수 검사 이름 build를 유지하며 두 제품의 테스트·조립·skill 검수와 임시 clone 배포 dry-run을 수행한다. main push는 같은 검증을 통과한 생성물을 기존 tryoo0607/tr-codex와 tryoo0607/tr-claude 저장소에 일반 커밋/push한다. delivery.yml은 같은 흐름을 재사용하는 수동 배포 진입점이다. source 저장소에는 원본을, 두 배포 저장소에는 생성물만 둔다. 별도 tr-redesign 배포 저장소나 plugin은 만들지 않는다.
+
+기존 Actions secret 이름 TR_CODEX_DEPLOY_KEY와 TR_CLAUDE_DEPLOY_KEY를 재사용한다. 각 key는 해당 배포 저장소의 쓰기 권한이 필요하며 main 보호 정책도 자동 push를 허용해야 한다. 값이나 권한을 자동 변경하지 않는다. 두 제품을 모두 준비한 뒤 순서대로 push하므로 두 번째 push가 실패하면 부분 반영될 수 있다. 문제를 수정하고 같은 source commit의 workflow를 재실행하면 이미 반영된 제품은 no-op으로 처리한다. release.json에 source revision과 전체 생성물 hash를 기록한다.
+
+로컬에서 원격을 변경하지 않고 배포 차이를 확인하려면 두 제품을 out/codex와 out/claude에 빌드한 다음 아래를 실행한다. CLONE_ROOT는 존재하지 않는 새 경로여야 한다.
+
+```bash
+python3 scripts/delivery.py --built-root out --clone-root /tmp/tr-kit-delivery-check --source-revision SOURCE_COMMIT_SHA
+```
+
+기존 문서와 project는 자동 이동하지 않는다. 로컬/GitHub 문서 정본, 공유 및 이관 기준과 QMD 보류 정책은 ROLLOUT.md를 따른다.
+
+공통 자체 소스의 라이선스는 LICENSE를 따른다. 외부 skill과 runtime은 각 upstream의 라이선스를 보존하며, 저장소 전체를 단일 라이선스의 외부 코드로 취급하지 않는다.

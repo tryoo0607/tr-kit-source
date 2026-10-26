@@ -1,0 +1,42 @@
+schema_version = 1
+runtime_note = """
+## 이 배포본의 연결
+
+Context7은 필요한 라이브러리 문서 근거를 반환한다. BMAD의 전체 조사나 작업 상태를 대신 관리하지 않는다. 설치된 `ctx7 --version`을 [도구 manifest](../../scripts/dev-tools.toml)와 대조하고, 부재나 불일치는 설치 담당으로 돌려준다. 일반 조회 중 설치나 업데이트, 로그인, MCP 등록을 실행하지 않는다. 필요한 문서만 읽고 라이브러리 ID와 버전, 출처 및 확인하지 못한 범위를 반환한다. 이미 확보한 정확한 버전의 근거는 재사용한다. 조회 문자열에는 내부 코드나 비밀을 넣지 않는다.
+"""
+
+[[replacements]]
+file = "SKILL.md"
+old = "Run commands with `npx ctx7@latest` so setup always uses the latest CLI without a global install:"
+new = "Use the installed, version-pinned `ctx7` CLI:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Optionally install globally if you prefer a bare `ctx7` command:\n\n```bash\nnpm install -g ctx7@latest\n```"
+new = "Installation and updates belong to toolchain setup, outside this lookup workflow."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "npx ctx7@latest"
+new = "ctx7"
+count = 17
+
+[[replacements]]
+file = "SKILL.md"
+old = "The available versions are listed in the `library` command output. Use the closest match to what the user specified."
+new = "The available versions are listed in the `library` output. Use the requested version when indexed. If absent, explicitly report the mismatch and verify the exact version in its official documentation or source; never silently substitute a nearby version."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "3. If they cannot or choose not to authenticate, answer from training knowledge and clearly note it may be outdated"
+new = "3. If authentication is unavailable or declined, use official documentation or source through available browsing tools. Clearly mark what could not be verified; do not present recalled API details as verified."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If you cannot find what you need after 3 attempts, use the best result you have."
+new = "If three attempts do not provide sufficient evidence, report that limit and check official documentation or source instead of treating the best partial result as complete."
+count = 1

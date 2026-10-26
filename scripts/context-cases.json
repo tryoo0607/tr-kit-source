@@ -1,0 +1,72 @@
+[
+  {
+    "name": "기존 repo에 병렬 공간 준비",
+    "before": [
+      {"path": "skills/project/SKILL.md"},
+      {"path": "skills/project/references/management.md"},
+      {"path": "skills/project/references/structure.md", "section": "workspace 기준"},
+      {"path": "skills/project/references/tools/worktrunk.md"},
+      {"path": "skills/worktrunk/SKILL.md"},
+      {"path": "skills/worktrunk/reference/switch.md"}
+    ],
+    "after": [
+      {"path": "skills/project/SKILL.md"},
+      {"path": "skills/project/references/management.md"},
+      {"path": "skills/project/references/structure.md", "section": "workspace 기준"},
+      {"path": "skills/worktrunk/SKILL.md"},
+      {"path": "skills/worktrunk/upstream/reference/switch.md"}
+    ]
+  },
+  {
+    "name": "Worktrunk 경로 설정 직접 확인",
+    "before": [
+      {"path": "skills/worktrunk/SKILL.md"},
+      {"path": "skills/worktrunk/reference/config.md", "section": "Worktree path template"}
+    ],
+    "after": [
+      {"path": "skills/worktrunk/SKILL.md"},
+      {"path": "skills/worktrunk/upstream/reference/config.md", "section": "Worktree path template"}
+    ]
+  },
+  {
+    "name": "Orca 등록과 외부 공간 인식",
+    "before": [
+      {"path": "skills/project/SKILL.md"},
+      {"path": "skills/project/references/management.md"},
+      {"path": "skills/project/references/tools/orca.md"},
+      {"path": "skills/orca-cli/SKILL.md"}
+    ],
+    "after": [
+      {"path": "skills/project/SKILL.md"},
+      {"path": "skills/project/references/management.md"},
+      {"path": "skills/orca-cli/SKILL.md"}
+    ],
+    "unmeasured": ["동일 호스트/CLI 버전의 Orca guide와 실제 명령 출력. 양쪽 모두 필요하지만 이번 정적 합계에서 제외"]
+  },
+  {
+    "name": "Orca 기존 공간 에이전트 실행",
+    "before": [
+      {"path": "skills/session/SKILL.md"},
+      {"path": "skills/session/references/orca.md"},
+      {"path": "skills/orca-cli/SKILL.md"}
+    ],
+    "after": [
+      {"path": "skills/session/SKILL.md"},
+      {"path": "skills/orca-cli/SKILL.md"}
+    ],
+    "unmeasured": ["동일 호스트/CLI 버전의 Orca guide와 실제 명령 출력. 양쪽 모두 필요하지만 이번 정적 합계에서 제외"]
+  },
+  {
+    "name": "비대상 대조: 문서 맥락 조회",
+    "before": [
+      {"path": "skills/document/SKILL.md"},
+      {"path": "skills/document/references/types/context.md"}
+    ],
+    "after": [
+      {"path": "skills/document/SKILL.md"},
+      {"path": "skills/document/references/types/context.md"}
+    ],
+    "allowed_growth_chars": 28,
+    "growth_reason": "본문 동작은 동일하며 역할 metadata 표시 추가분만 허용"
+  }
+]

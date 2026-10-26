@@ -1,3 +1,0 @@
-exit 0
-match "permissionDecision": *"ask"
-match 외부로 나가는 액션

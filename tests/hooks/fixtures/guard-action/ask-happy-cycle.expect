@@ -1,5 +1,0 @@
-exit 0
-match "permissionDecision": *"ask"
-match Happy 세션을 재시작
-match snapshot
-nomatch "deny"

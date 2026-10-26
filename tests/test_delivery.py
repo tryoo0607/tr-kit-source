@@ -1,154 +1,93 @@
+import json
+import os
+from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
-from pathlib import Path
+from unittest.mock import patch
 
-from tools.delivery import (
-    DeliveryError,
-    DeliverySpec,
-    SyncMapping,
-    deploy_target,
-    verify_target,
-)
+SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
+sys.path.insert(0, str(SCRIPTS))
+from package import package
+import delivery
 
 
-class DeliveryDryRunTest(unittest.TestCase):
+class DeliveryTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.output = self.root / "out"
-        self.repo = self.root / "repo"
-        (self.output / "payload").mkdir(parents=True)
-        (self.output / "payload/new.txt").write_text("new\n")
-        (self.repo / "plugins/demo").mkdir(parents=True)
-        (self.repo / "plugins/demo/old.txt").write_text("old\n")
-        (self.repo / "outside.txt").write_text("preserve\n")
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=self.repo, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=self.repo, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=self.repo, check=True)
-        subprocess.run(
-            ["git", "remote", "add", "origin", "git@github.com:example/demo.git"],
-            cwd=self.repo,
-            check=True,
-        )
-        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
-        subprocess.run(["git", "commit", "-qm", "initial"], cwd=self.repo, check=True)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.source = self.root / 'source'
+        base = self.source / 'common/base'
+        (base / 'skills/example').mkdir(parents=True)
+        (base / 'instructions.md').write_text('Rules\n')
+        (base / 'skills/example/SKILL.md').write_text('---\nname: example\ndescription: Example\n---\nRun\n')
+        (base / 'skills/example/.gitignore').write_text('ignored.txt\n')
+        (base / 'skills/example/ignored.txt').write_text('Required upstream asset\n')
+        (self.source / 'VERSION').write_text('0.6.0\n')
+        for product, filename in [('codex', 'AGENTS'), ('claude', 'CLAUDE')]:
+            adapter = self.source / 'adapters' / product
+            adapter.mkdir(parents=True)
+            (adapter / f'{filename}.md.template').write_text('{{COMMON_INSTRUCTIONS}}\n')
+        self.revision = 'a' * 40
+        self.output = self.root / 'built'
+        for product in ('codex', 'claude'):
+            package(self.source, self.output / product, product, source_revision=self.revision)
 
-    def tearDown(self):
-        self.tmp.cleanup()
+    def run_git(self, *args):
+        return subprocess.check_output(['git', *map(str, args)], text=True, stderr=subprocess.DEVNULL).strip()
 
-    def spec(self, *, prepare=(), generated=()) -> DeliverySpec:
-        return DeliverySpec(
-            target="demo",
-            repository="example/demo",
-            mode="partial",
-            generated=tuple(generated),
-            prepare=tuple(tuple(command) for command in prepare),
-            checks=(("python3", "-c", "from pathlib import Path; assert Path('outside.txt').read_text() == 'preserve\\n'"),),
-            sync=(SyncMapping("payload", "plugins/demo"),),
-        )
+    def repository(self):
+        origin = self.root / 'remote.git'
+        self.run_git('init', '--bare', '--initial-branch=main', origin)
+        seed = self.root / 'seed'
+        self.run_git('clone', origin, seed)
+        (seed / 'old-hook').write_text('legacy\n')
+        self.run_git('-C', seed, 'add', '.')
+        self.run_git('-C', seed, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                     'commit', '-m', 'chore: seed')
+        self.run_git('-C', seed, 'push', 'origin', 'main')
+        return origin, self.run_git('--git-dir', origin, 'rev-parse', 'main')
 
-    def spec_with_checks(self, checks) -> DeliverySpec:
-        spec = self.spec()
-        return DeliverySpec(
-            target=spec.target,
-            repository=spec.repository,
-            mode=spec.mode,
-            generated=spec.generated,
-            prepare=spec.prepare,
-            checks=tuple(tuple(command) for command in checks),
-            sync=spec.sync,
-        )
+    def test_both_real_marketplaces_are_stable_and_verified(self):
+        for product in ('codex', 'claude'):
+            first = self.output / product
+            delivery.verify(first, product, self.revision)
+            second = self.root / f'again-{product}'
+            package(self.source, second, product, source_revision=self.revision)
+            self.assertEqual((first / 'release.json').read_bytes(), (second / 'release.json').read_bytes())
+            report = json.loads((first / 'release.json').read_text())
+            self.assertEqual(f'0.6.0+{product}.{self.revision[:12]}', report['version'])
 
-    def test_dry_run_is_isolated_boundary_checked_and_idempotent(self):
-        changed = verify_target(self.spec(), self.output, self.repo)
+    def test_tamper_extra_file_and_wrong_revision_are_rejected(self):
+        first = self.output / 'codex'
+        with self.assertRaisesRegex(ValueError, 'provenance'):
+            delivery.verify(first, 'codex', 'b' * 40)
+        (first / 'extra').write_text('unexpected')
+        with self.assertRaisesRegex(ValueError, 'integrity'):
+            delivery.verify(first, 'codex', self.revision)
 
-        self.assertEqual(changed, ("plugins/demo/new.txt", "plugins/demo/old.txt"))
-        self.assertTrue((self.repo / "plugins/demo/old.txt").is_file())
-        self.assertFalse((self.repo / "plugins/demo/new.txt").exists())
-
-    def test_allows_declared_target_generated_file(self):
-        command = (
-            "python3",
-            "-c",
-            "from pathlib import Path; Path('SUMMARY.md').write_text('generated\\n')",
-        )
-
-        changed = verify_target(
-            self.spec(prepare=(command,), generated=("SUMMARY.md",)), self.output, self.repo
-        )
-
-        self.assertIn("SUMMARY.md", changed)
-
-    def test_rejects_prepare_command_that_overwrites_source_owned_payload(self):
-        command = (
-            "python3",
-            "-c",
-            "from pathlib import Path; Path('plugins/demo/new.txt').write_text('overwritten\\n')",
-        )
-
-        with self.assertRaisesRegex(DeliveryError, "changed source-owned path"):
-            verify_target(self.spec(prepare=(command,)), self.output, self.repo)
-
-    def test_rejects_prepare_command_that_escapes_declared_ownership(self):
-        command = (
-            "python3",
-            "-c",
-            "from pathlib import Path; Path('unexpected.txt').write_text('unexpected\\n')",
-        )
-
-        with self.assertRaisesRegex(DeliveryError, "escaped recipe ownership"):
-            verify_target(self.spec(prepare=(command,)), self.output, self.repo)
-
-    def test_rejects_check_command_that_modifies_clone(self):
-        command = (
-            "python3",
-            "-c",
-            "from pathlib import Path; Path('plugins/demo/new.txt').write_text('changed\\n')",
-        )
-
-        with self.assertRaisesRegex(DeliveryError, "check command modified"):
-            verify_target(self.spec_with_checks((command,)), self.output, self.repo)
-
-    def test_managed_root_replaces_every_tracked_path_in_disposable_clone(self):
-        (self.output / ".tr-kit-generated").write_text("managed by tr-kit-source\n")
-        (self.output / "README.md").write_text("generated repository\n")
-        spec = DeliverySpec(
-            target="demo",
-            repository="example/demo",
-            mode="managed-root",
-            generated=(),
-            prepare=(),
-            checks=(),
-            sync=(),
-        )
-
-        changed = verify_target(spec, self.output, self.repo)
-
-        self.assertIn("outside.txt", changed)
-        self.assertIn("README.md", changed)
-        self.assertTrue((self.repo / "outside.txt").is_file())
-        self.assertFalse((self.repo / "README.md").exists())
-
-    def test_managed_root_requires_marker(self):
-        spec = DeliverySpec(
-            target="demo",
-            repository="example/demo",
-            mode="managed-root",
-            generated=(),
-            prepare=(),
-            checks=(),
-            sync=(),
-        )
-
-        with self.assertRaisesRegex(DeliveryError, "missing .tr-kit-generated"):
-            verify_target(spec, self.output, self.repo)
-
-    def test_deploy_requires_explicit_environment_gate(self):
-        spec = self.spec()
-        with self.assertRaisesRegex(DeliveryError, "TR_KIT_ALLOW_PUSH"):
-            deploy_target(spec, self.output, self.repo, source_revision="a" * 40)
+    def test_dry_run_preserves_remote_and_push_keeps_history_then_noop(self):
+        origin, before = self.repository()
+        clone = self.root / 'delivery'
+        delivery.prepare(self.output / 'codex', clone, 'codex', self.revision, str(origin))
+        self.assertFalse((clone / 'old-hook').exists())
+        self.assertIn('plugins/tr-codex/skills/example/ignored.txt',
+                      self.run_git('-C', clone, 'ls-files').splitlines())
+        self.assertEqual(before, self.run_git('--git-dir', origin, 'rev-parse', 'main'))
+        with patch.dict(os.environ, {'TR_KIT_ALLOW_PUSH': '0'}):
+            with self.assertRaisesRegex(ValueError, 'requires'):
+                delivery.publish(clone, self.revision)
+        with patch.dict(os.environ, {'TR_KIT_ALLOW_PUSH': '1'}):
+            self.assertEqual('pushed', delivery.publish(clone, self.revision))
+            self.assertEqual(before, self.run_git('--git-dir', origin, 'rev-parse', 'main^'))
+            again = self.root / 'again'
+            self.assertEqual('', delivery.prepare(self.output / 'codex', again, 'codex', self.revision, str(origin)))
+            self.assertEqual('no-op', delivery.publish(again, self.revision))
+        with self.assertRaisesRegex(ValueError, 'already exist'):
+            delivery.prepare(self.output / 'codex', clone, 'codex', self.revision, str(origin))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

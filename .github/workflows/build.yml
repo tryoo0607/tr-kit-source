@@ -1,20 +1,86 @@
 name: build
-
 on:
   push:
+    branches: [main]
   pull_request:
-
+  workflow_call:
+    inputs:
+      deploy:
+        type: boolean
+        default: false
+    secrets:
+      TR_CLAUDE_DEPLOY_KEY:
+        required: false
+      TR_CODEX_DEPLOY_KEY:
+        required: false
 permissions:
   contents: read
-
+concurrency:
+  group: tr-kit-delivery-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-
-      - name: validate source and all targets
-        run: python3 tools/validate.py full
+      - run: python3 -m pip install 'PyYAML==6.0.3'
+      - run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Fetch exact upstream revisions
+        run: python3 scripts/fetch_sources.py
+      - name: Build both existing marketplaces
+        run: |
+          ./build.sh codex --output out/codex --source-revision "$GITHUB_SHA"
+          ./build.sh claude --output out/claude --source-revision "$GITHUB_SHA"
+      - name: Validate every included skill
+        run: |
+          for product in codex claude; do
+            for skill in "out/$product/plugins/tr-$product/skills/"*; do
+              python3 scripts/validate.py "$skill" --creator "out/$product/plugins/tr-$product/skills/skill-creator"
+            done
+          done
+      - name: Verify delivery without remote writes
+        run: python3 scripts/delivery.py --built-root out --clone-root "$RUNNER_TEMP/delivery-check" --source-revision "$GITHUB_SHA"
+      - name: Configure existing repository-scoped deploy keys
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
+        env:
+          TR_CLAUDE_DEPLOY_KEY: ${{ secrets.TR_CLAUDE_DEPLOY_KEY }}
+          TR_CODEX_DEPLOY_KEY: ${{ secrets.TR_CODEX_DEPLOY_KEY }}
+        run: |
+          latest_source=$(git ls-remote https://github.com/tryoo0607/tr-kit-source.git refs/heads/main | cut -f1)
+          test "$latest_source" = "$GITHUB_SHA" || { echo 'Refusing to deploy a superseded source commit'; exit 1; }
+          test -n "$TR_CLAUDE_DEPLOY_KEY"
+          test -n "$TR_CODEX_DEPLOY_KEY"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$TR_CLAUDE_DEPLOY_KEY" > "$HOME/.ssh/tr-claude"
+          printf '%s\n' "$TR_CODEX_DEPLOY_KEY" > "$HOME/.ssh/tr-codex"
+          chmod 600 "$HOME/.ssh/tr-claude" "$HOME/.ssh/tr-codex"
+          ssh-keyscan github.com >> "$HOME/.ssh/known_hosts"
+          cat >> "$HOME/.ssh/config" <<'EOF'
+          Host github-tr-claude
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/tr-claude
+            IdentitiesOnly yes
+          Host github-tr-codex
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/tr-codex
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+      - name: Update existing distribution repositories
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
+        env:
+          TR_KIT_ALLOW_PUSH: '1'
+          TR_KIT_CLAUDE_REPOSITORY_URL: git@github-tr-claude:tryoo0607/tr-claude.git
+          TR_KIT_CODEX_REPOSITORY_URL: git@github-tr-codex:tryoo0607/tr-codex.git
+        run: python3 scripts/delivery.py --built-root out --clone-root "$RUNNER_TEMP/delivery-push" --source-revision "$GITHUB_SHA" --push
+      - name: Remove temporary deploy keys
+        if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
+        run: rm -f "$HOME/.ssh/tr-claude" "$HOME/.ssh/tr-codex"

@@ -1,0 +1,6 @@
+schema_version = 1
+[[replacements]]
+file = "SKILL.md"
+old = "description: Smart search (default). Search claude-mem's persistent cross-session memory database in three steps: search, timeline, then selected get_observations. Use when user asks \"did we already solve this?\", \"how did we do X last time?\", or needs work from previous sessions."
+new = "description: >-\n  Smart search (default). Search claude-mem's persistent cross-session memory database in three steps: search, timeline, then selected get_observations. Use when user asks \"did we already solve this?\", \"how did we do X last time?\", or needs work from previous sessions."
+count = 1

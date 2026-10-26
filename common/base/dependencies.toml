@@ -1,0 +1,279 @@
+schema_version = 1
+[[skills]]
+id = "find-docs"
+source = "context7"
+revision = "b5e81de845092694ba1bfc5af15400f319c89b6d"
+path = "skills/find-docs"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "playwright-cli"
+source = "playwright-cli"
+revision = "b1a5903c5b633b8c9f843ad7b629c2a78437040c"
+path = "skills/playwright-cli"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "frontend-design"
+source = "anthropic-skills"
+revision = "dbd4588f9e1033efb41dad4bef2f7947c8993d44"
+path = "skills/frontend-design"
+
+[[skills]]
+id = "diagram-design"
+source = "diagram-design"
+revision = "10cfad6a7be7f734a92d3d628e5fa344685d4f01"
+path = "skills/diagram-design"
+license_files = ["LICENSE"]
+
+# [[skills]] 항목: id, source(로컬 Git checkout), revision(정확한 commit), path
+# 선택 requires = ["다른 명시 include skill id"]로 의존 누락을 검사한다.
+# 선택 license_files = ["LICENSE"]는 checkout 기준 라이선스를 같은 skill 출력 경로에 보존한다.
+# 원격 취득은 조립과 분리한다. 검증된 checkout을 입력으로 제공한다.
+[[skills]]
+id = "skill-creator"
+source = "openai-skills"
+revision = "49f948faa9258a0c61caceaf225e179651397431"
+path = "skills/.system/skill-creator"
+
+
+[[skills]]
+id = "bmad"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-advanced-elicitation"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-advanced-elicitation"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-agent-analyst"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-agent-analyst"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-agent-architect"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-agent-architect"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-agent-dev"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-agent-dev"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-agent-pm"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-agent-pm"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-agent-po"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-agent-po"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-agent-ux-designer"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-agent-ux-designer"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-architecture"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-architecture"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-brainstorming"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-brainstorming"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-build"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-build"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-build-auto"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-build-auto"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-code-review"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-code-review"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-customize"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-customize"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-deep-recon"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-deep-recon"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-eval"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-eval"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-forge-idea"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-forge-idea"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-party-mode"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-party-mode"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-prd"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-prd"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-prfaq"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-prfaq"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-product-brief"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-product-brief"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-project-context"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-project-context"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-qa-generate-e2e-tests"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-qa-generate-e2e-tests"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-retrospective"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-retrospective"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-review"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-review"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-toolsmith"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-toolsmith"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-ux"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-ux"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmad-walkthrough"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmad-walkthrough"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmod-core-tools"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmod-core-tools"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmod-method"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmod-method"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "bmod-toolsmith"
+source = "bmad-method"
+revision = "61e01f82644c4bb533750cfa0d6d61ab61d2cc9b"
+path = "skills/bmod-toolsmith"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "mem-search"
+source = "claude-mem"
+revision = "d9b36b66dc68da92af9df238e4c4debab587ba62"
+path = "plugin/skills/mem-search"
+license_files = ["LICENSE"]
+resources = [{source="plugin", target="runtimes/claude-mem"}]
+
+[[skills]]
+id = "worktrunk"
+source = "worktrunk"
+revision = "6cbabac59e1c4290df0f136430c1adf50269b9dd"
+path = "plugins/worktrunk/skills/worktrunk"
+wrapped = true
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "orca-cli"
+source = "orca"
+revision = "46d0a00548be54ed63df104894e86e39543733e0"
+path = "skills/orca-cli"
+wrapped = true
+license_files = ["LICENSE"]

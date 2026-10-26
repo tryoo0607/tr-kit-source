@@ -1,0 +1,2 @@
+schema_version = 1
+runtime_note = "skill-authoring이 호출한 경우 일반 저작 절차를 제공하고 자체 규격은 호출자가 적용한다. script는 이 SKILL.md의 부모 디렉터리를 확인해 실행한다. agents/openai.yaml 생성과 초기화는 요청에 필요한 경우만 수행한다. 원본 지침 적용은 별도 격리 실행이나 자동 반환을 뜻하지 않는다."

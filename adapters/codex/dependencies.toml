@@ -1,0 +1,17 @@
+schema_version = 1
+
+[[skills]]
+id = "wiki"
+source = "llm-wiki"
+revision = "d60674ff785e5c6d35322657d7839a7c0bdd3ca7"
+path = "plugins/llm-wiki/skills/wiki"
+license_files = ["LICENSE"]
+resources = [{source="scripts/llm-wiki", target="scripts/llm-wiki"}, {source="scripts/llm-wiki-session", target="scripts/llm-wiki-session"}]
+
+[[skills]]
+id = "wiki-query"
+source = "llm-wiki"
+revision = "d60674ff785e5c6d35322657d7839a7c0bdd3ca7"
+path = "plugins/llm-wiki/skills/wiki-query"
+license_files = ["LICENSE"]
+requires = ["wiki"]

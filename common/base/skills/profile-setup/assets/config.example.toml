@@ -1,0 +1,63 @@
+# 새 설정 규격의 템플릿이다. 실제 config에 자동 복사하거나 적용하지 않는다.
+# 경로는 예시이며 이 호스트에서 확인한 값으로 바꾼다.
+schema_version = 1
+
+[roots]
+code = "~/workbench/repo"
+documents = "~/workbench/documents"
+assets = "~/workbench/assets"
+
+[documents.sync]
+enabled = false
+targets = []
+exclude = []
+
+# 아래는 선택 항목이다. ID는 기존 등록의 식별자를 사용한다.
+# 소속이나 프로젝트 목록을 다시 등록하는 설정이 아니다.
+
+# [projects.example-project]
+# code = "~/workbench/repo/example-project"
+# documents = "~/separate-documents/example-project"
+# assets = "~/separate-assets/example-project"
+
+# [groups.example-group]
+# documents = "~/separate-documents/example-group"
+# assets = "~/separate-assets/example-group"
+
+# [common]
+# documents = "~/separate-documents/common"
+# assets = "~/separate-assets/common"
+
+# 개인 지식은 common과 별도로 연결한다. 경로가 없으면 common으로 대체하지 않는다.
+# [knowledge]
+# documents = "~/repositories/personal-knowledge"
+# assets = "~/separate-assets/knowledge"
+
+# knowledge.sync는 documents.sync와 common.sync를 상속하지 않는다.
+# 생략해도 꺼짐이며, 아래 예시도 실제 동기화를 켜지 않는다.
+# [knowledge.sync]
+# enabled = false
+# targets = ["personal-knowledge"]
+# exclude = []
+
+# [sync_targets.personal-knowledge]
+# repository = "~/repositories/personal-knowledge"
+# remote = "origin"
+
+# 대상 이름과 remote는 예시다. 실제 Git 연결을 확인한 뒤 사용한다.
+# [sync_targets.team-docs]
+# repository = "~/separate-documents"
+# remote = "origin"
+
+# 소속 정책은 기본 정책 전체를 대체한다. group에서 project로 상속하지 않는다.
+# 이 예시는 계속 꺼짐이다. 활성화 전 저장소 전체의 추적 범위/이력을 확인한다.
+# [projects.example-project.sync]
+# enabled = false
+# targets = ["team-docs"]
+# exclude = ["private"]
+
+# [groups.example-group.sync]
+# enabled = false
+
+# [common.sync]
+# enabled = false

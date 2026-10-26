@@ -1,63 +1,11 @@
 name: delivery
-
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: tr-kit-delivery
-  cancel-in-progress: false
-
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    env:
-      TR_KIT_CLAUDE_REPOSITORY_URL: git@github-tr-claude:${{ github.repository_owner }}/tr-claude.git
-      TR_KIT_CODEX_REPOSITORY_URL: git@github-tr-codex:${{ github.repository_owner }}/tr-codex.git
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Configure repository-scoped deploy keys
-        env:
-          TR_CLAUDE_DEPLOY_KEY: ${{ secrets.TR_CLAUDE_DEPLOY_KEY }}
-          TR_CODEX_DEPLOY_KEY: ${{ secrets.TR_CODEX_DEPLOY_KEY }}
-        run: |
-          test -n "$TR_CLAUDE_DEPLOY_KEY"
-          test -n "$TR_CODEX_DEPLOY_KEY"
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$TR_CLAUDE_DEPLOY_KEY" > "$HOME/.ssh/tr-claude"
-          printf '%s\n' "$TR_CODEX_DEPLOY_KEY" > "$HOME/.ssh/tr-codex"
-          chmod 600 "$HOME/.ssh/tr-claude" "$HOME/.ssh/tr-codex"
-          ssh-keyscan github.com > "$HOME/.ssh/known_hosts"
-          cat > "$HOME/.ssh/config" <<'EOF'
-          Host github-tr-claude
-            HostName github.com
-            User git
-            IdentityFile ~/.ssh/tr-claude
-            IdentitiesOnly yes
-          Host github-tr-codex
-            HostName github.com
-            User git
-            IdentityFile ~/.ssh/tr-codex
-            IdentitiesOnly yes
-          EOF
-          chmod 600 "$HOME/.ssh/config" "$HOME/.ssh/known_hosts"
-
-      - name: Validate source and all targets
-        run: python3 tools/validate.py full
-
-      - name: Deploy complete target repositories
-        env:
-          TR_KIT_ALLOW_PUSH: "1"
-        run: |
-          python3 -m tools.delivery \
-            --clone-root "$RUNNER_TEMP/delivery-targets" \
-            --push \
-            --source-revision "$GITHUB_SHA"
+  verify-and-deliver:
+    uses: ./.github/workflows/build.yml
+    with:
+      deploy: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    secrets: inherit

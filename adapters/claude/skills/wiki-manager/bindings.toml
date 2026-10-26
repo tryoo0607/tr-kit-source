@@ -1,0 +1,6 @@
+schema_version = 1
+[[replacements]]
+file = "SKILL.md"
+old = "tools:\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - Bash\n  - WebFetch\n  - WebSearch"
+new = "allowed-tools:\n  - Read\n  - Write\n  - Edit\n  - Glob\n  - Grep\n  - Bash\n  - WebFetch\n  - WebSearch"
+count = 1

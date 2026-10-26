@@ -1,6 +1,10 @@
 tr-kit-source
 
-Skill-authoring guidance in this distribution adapts concepts from:
+Common source is licensed under Apache License 2.0. Bundled third-party
+skills and runtimes retain their own licenses. The dependency declarations
+and generated assembly.json identify pinned sources and copied license files.
+
+The following attribution is retained for the skill-authoring lineage:
 
 OutlineDriven/odin-claude-plugin, writing-skills
 Revision: c5260cfa20a297e29270e6a3191c4b375ad471f5

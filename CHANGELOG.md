@@ -2,6 +2,14 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
+## 0.6.0 — Unreleased
+
+- common/base와 제품별 adapters 중심으로 소스를 개편하고 이전 core/shared/recipe 및 lifecycle hook 구현을 제거한다.
+- BMAD, Claude-Mem, LLM Wiki와 개발 지원 skill을 정확한 upstream commit 및 제품별 binding으로 조립한다.
+- 기존 tr-codex와 tr-claude marketplace 이름을 유지하고 양 제품의 빌드·검수·배포 dry-run 및 main 자동 배포를 연결한다.
+- 생성물에 source revision과 파일 hash를 기록하고 로컬 캐시가 배포물에 섞이지 않도록 한다.
+- 문서·프로젝트 및 로컬 호스트 전환 기준을 정리한다. 원격 배포와 실제 호스트 적용 완료를 뜻하지 않는다.
+
 ## 0.5.6 — 2026-09-07
 
 - 재부팅 시 Happy daemon 자동 시작과 session snapshot·안전 cycle을 위한 임시 host 호환 계층을 추가한다.
