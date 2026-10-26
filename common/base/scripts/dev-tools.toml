@@ -1,0 +1,17 @@
+schema_version = 1
+
+[node]
+minimum = "22.13.0"
+ctx7 = "0.8.2"
+playwright_cli = "0.1.22"
+# The official CLI release pins this preview engine; test the complete tuple.
+playwright_engine = "1.64.0-alpha-1790635538000"
+
+[python]
+minimum = "3.10"
+semgrep = "1.182.1"
+playwright = "1.64.1"
+
+[trivy]
+version = "0.76.1"
+linux_x86_64_sha256 = "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"

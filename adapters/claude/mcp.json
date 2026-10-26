@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "claude-mem": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/records.py", "mem-mcp"],
+      "env": {"CLAUDE_MEM_WORKER_AUTOSTART": "false"}
+    }
+  }
+}

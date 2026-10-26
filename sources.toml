@@ -1,0 +1,13 @@
+schema_version = 1
+
+[sources]
+anthropic-skills = "https://github.com/anthropics/skills.git"
+bmad-method = "https://github.com/bmad-code-org/BMAD-METHOD.git"
+claude-mem = "https://github.com/thedotmack/claude-mem.git"
+context7 = "https://github.com/upstash/context7.git"
+diagram-design = "https://github.com/cathrynlavery/diagram-design.git"
+llm-wiki = "https://github.com/nvk/llm-wiki.git"
+openai-skills = "https://github.com/openai/skills.git"
+orca = "https://github.com/stablyai/orca.git"
+playwright-cli = "https://github.com/microsoft/playwright-cli.git"
+worktrunk = "https://github.com/max-sixty/worktrunk.git"

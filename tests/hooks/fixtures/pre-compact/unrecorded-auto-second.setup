@@ -1,1 +1,0 @@
-mkdir -p "$SB/tmp"; : > "$SB/tmp/tr-changed-c3"; echo 1 > "$SB/tmp/tr-compact-blocks-c3"

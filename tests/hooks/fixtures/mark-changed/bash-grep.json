@@ -1,1 +1,0 @@
-{"session_id":"m","tool_name":"Bash","tool_input":{"command":"grep -rn foo ."}}

@@ -1,0 +1,12 @@
+schema_version = 1
+runtime_note = """
+## 이 배포본의 연결
+
+BMAD의 설계나 조사에서 확인된 내용과 독자, 필요한 detail을 받아 설명용 HTML/SVG를 만든다. 새 설계를 임의 확정하거나 내용을 세 저장소에 복제하지 않는다. 원본 label과 관계를 유지하고 병합, 생략과 미확인은 fidelity ledger로 전달한다. 산출물 기록이 필요하면 document에 실제 파일 위치와 근거를 연결한다.
+
+원본 첫 사용 style 확인은 유지한다. 원본 설치 폴더를 개인화하지 않는다. 프로젝트 marker와 외부 profile을 사용하며, profile의 선택·저장 범위는 원본 profiles 지침을 따른다. profile 작업이 설치본 style-guide 변경을 요구하면 그 변경 대신 프로젝트별 style 사본을 사용하고 적용 위치를 알린다. 기본 web font는 외부 요청을 만들 수 있다. 오프라인 요청은 system font를 선택하고 SVG export에도 `--system-fonts`를 사용한다.
+
+기본 HTML과 SVG 검사는 포함된 `scripts/self_check.py`와 `scripts/export_svg.py`를 사용한다. 원본의 `<repo-root>/scripts/...` 검사는 maintainer checkout 전용이며 이 skill-only 배포에 포함되지 않는다. 실행하지 않은 검사를 통과했다고 보고하지 않는다. PNG export는 Python Playwright와 Chromium이 별도로 필요하고 Node playwright-cli만으로 충족되지 않는다. [도구 manifest](../../scripts/dev-tools.toml)의 Python runtime과 toolchain browser 경로를 사용한다. export는 사용자가 요청한 형식만 만든다.
+
+원본 파일의 형식 검사와 실제 화면 검수는 구분한다. 브라우저 관측이 필요하면 [playwright-cli](../playwright-cli/SKILL.md)에 로컬 HTML 또는 preview URL과 확인할 겹침, clipping, viewport를 전달한다. 필요한 결과는 screenshot과 시각적 결함, 미검증 범위다. 사용할 수 없으면 self-check만 수행한 범위를 밝힌다. 선택한 type reference와 조건부 export/import 자료만 읽고 전체 gallery를 로드하지 않는다.
+"""
