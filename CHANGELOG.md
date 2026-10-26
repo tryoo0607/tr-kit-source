@@ -2,7 +2,7 @@
 
 이 프로젝트의 공개 release 변경을 기록한다. 개인 작업 일지와 운영 환경 이력은 포함하지 않는다.
 
-## 0.6.0 — Unreleased
+## 0.6.0 — 2026-10-26
 
 - common/base와 제품별 adapters 중심으로 소스를 개편하고 이전 core/shared/recipe 및 lifecycle hook 구현을 제거한다.
 - BMAD, Claude-Mem, LLM Wiki와 개발 지원 skill을 정확한 upstream commit 및 제품별 binding으로 조립한다.
