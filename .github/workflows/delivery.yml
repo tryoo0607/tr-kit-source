@@ -1,14 +1,8 @@
 name: delivery
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: tr-kit-delivery-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
-  cancel-in-progress: false
 jobs:
   verify-and-deliver:
     uses: ./.github/workflows/build.yml

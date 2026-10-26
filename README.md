@@ -65,7 +65,7 @@ Claude도 기존 tr-claude marketplace와 plugins/tr-claude payload를 만든다
 
 ## 배포와 데이터 경계
 
-.github/workflows/delivery.yml이 기존 배포 진입점이다. PR에서는 공통 build.yml로 두 제품의 테스트·조립·skill 검수와 임시 clone 배포 dry-run만 수행한다. main push 또는 main의 수동 실행은 같은 검증을 통과한 생성물을 기존 tryoo0607/tr-codex와 tryoo0607/tr-claude 저장소에 일반 커밋/push한다. source 저장소에는 원본을, 두 배포 저장소에는 생성물만 둔다. 별도 tr-redesign 배포 저장소나 plugin은 만들지 않는다.
+.github/workflows/build.yml은 PR의 필수 검사 이름 build를 유지하며 두 제품의 테스트·조립·skill 검수와 임시 clone 배포 dry-run을 수행한다. main push는 같은 검증을 통과한 생성물을 기존 tryoo0607/tr-codex와 tryoo0607/tr-claude 저장소에 일반 커밋/push한다. delivery.yml은 같은 흐름을 재사용하는 수동 배포 진입점이다. source 저장소에는 원본을, 두 배포 저장소에는 생성물만 둔다. 별도 tr-redesign 배포 저장소나 plugin은 만들지 않는다.
 
 기존 Actions secret 이름 TR_CODEX_DEPLOY_KEY와 TR_CLAUDE_DEPLOY_KEY를 재사용한다. 각 key는 해당 배포 저장소의 쓰기 권한이 필요하며 main 보호 정책도 자동 push를 허용해야 한다. 값이나 권한을 자동 변경하지 않는다. 두 제품을 모두 준비한 뒤 순서대로 push하므로 두 번째 push가 실패하면 부분 반영될 수 있다. 문제를 수정하고 같은 source commit의 workflow를 재실행하면 이미 반영된 제품은 no-op으로 처리한다. release.json에 source revision과 전체 생성물 hash를 기록한다.
 
