@@ -2,14 +2,14 @@
 name: document
 metadata:
   tr-role: policy
-description: 작업 기록과 경험을 찾아 지식으로 반영하고, 현재 작업 상태와 관련 자료로 재개와 인계를 준비한다. BMAD 작업 기록, Claude-Mem 경험, LLM Wiki 지식의 연결에 사용한다. 개발 수행, 학습 진행, 실제 세션 전환과 도구 설치는 담당하지 않는다.
+description: 로컬 참고 원본 보관·분류·조회와 작업 기록·경험·지식 연결에 사용한다. BMAD·Claude-Mem·LLM Wiki를 재사용해 자료 활용과 인계를 준비한다. 개발 수행, 학습 진행, 실제 세션 전환과 도구 설치는 담당하지 않는다.
 ---
 
 # document
 
 ## 목적과 역할 경계
 
-작업 상태, 작업 경험, 재사용 지식을 연결한다. BMAD의 계획과 검증, Claude-Mem의 관측과 검색, LLM Wiki의 자료 수집과 지식 정리를 재사용하고 자체 기록 스키마나 별도 진행 상태를 만들지 않는다.
+로컬 참고 원본과 작업 상태, 작업 경험, 재사용 지식을 연결한다. BMAD의 계획과 검증, Claude-Mem의 관측과 검색, LLM Wiki의 자료 수집·조회·목록 관리를 재사용하고 자체 기록 스키마나 별도 진행 상태를 만들지 않는다.
 
 현재 작업 상태는 해당 작업의 정본에서 확인한다. 경험 검색 결과를 최신 요구나 승인으로 취급하지 않으며, Wiki 설명을 고쳤다는 이유로 작업 계획을 바꾸지 않는다. 기존 state/exec 등의 기록은 자동 이관하거나 삭제하지 않는다.
 
@@ -25,6 +25,7 @@ description: 작업 기록과 경험을 찾아 지식으로 반영하고, 현재
 
 | 요청 | 선택 조건 | 읽을 reference |
 |---|---|---|
+| PDF·이미지·문서 등 참고 원본 보관, 분류, 이동 또는 원본 찾기 | 해당 요청이 포함됨 | [files.md](references/types/files.md) |
 | 인계받은 작업 재개, 내부 인계 준비와 갱신 | 해당 요청이 포함됨 | [handoff.md](references/types/handoff.md) |
 | 작업 목록과 상태, 작업 경험 조회, 기존 작업 기록 갱신 | 해당 요청이 포함됨 | [history.md](references/types/history.md) |
 | 공부 메모와 조사 자료 저장, 지식 정리와 조회, 갱신과 점검 | 해당 요청이 포함됨 | [knowledge.md](references/types/knowledge.md) |
