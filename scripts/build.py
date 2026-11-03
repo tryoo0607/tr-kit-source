@@ -106,7 +106,7 @@ def bind_skill(stage, skill, binding_file):
 
 
 def assemble(root, product, output, *, version='0.0.0', source_cache=None):
-    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?', version):
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?', version):
         raise BuildError('invalid plugin version')
     base = root / 'common/base'
     adapter = root / 'adapters' / product
