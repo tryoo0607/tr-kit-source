@@ -1,0 +1,4 @@
+interface:
+  display_name: "Homelab"
+  short_description: "홈랩 대상과 저장소를 확인하고 설정과 구성 관계 및 복구 점검과 기록을 연결합니다"
+  default_prompt: "$homelab으로 홈랩 설정과 구성 관계, 복구 준비 및 미확인 기록을 연결해줘."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Homelab Audit"
+  short_description: "홈랩 설정 원본과 실제 관측을 비교하고 일치와 불일치와 미확인을 구분합니다"
+  default_prompt: "$homelab-audit으로 지정한 대상의 설정과 실제 관측을 비교해줘."

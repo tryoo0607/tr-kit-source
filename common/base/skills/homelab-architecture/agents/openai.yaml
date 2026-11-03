@@ -1,0 +1,4 @@
+interface:
+  display_name: "Homelab Architecture"
+  short_description: "홈랩 구성 관계와 의존성의 근거를 확인하고 정본 변경 및 도식화를 연결합니다"
+  default_prompt: "$homelab-architecture로 홈랩 구성 기록의 관계와 의존성을 점검하고 확인된 변경만 정리해줘."
