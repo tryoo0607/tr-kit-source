@@ -10,7 +10,7 @@
 4. 새 Codex 세션 하나에서 스킬 발견, 조사, 작은 구현과 검사, 기록 조회, 저장과 재개를 확인한다. 새 지침은 현재 세션에 자동 소급되지 않는다.
 5. 일상 작업에 적용한 뒤 문서와 project를 한 대상씩 전환한다. Codex에서 검증한 공통 source를 나중에 Claude에 적용한다.
 
-실제 host 교체는 설치 selector와 전역 지침 diff, 백업 위치 및 복구 명령을 확인한 뒤 수행한다. GitHub push와 원격 배포는 로컬 pilot과 별개다. 구버전 AGENTS.md가 이전 backbone이나 hook 경로를 가리키면 새 plugin만 설치해 전환 완료로 처리하지 않는다.
+실제 host 교체는 설치 selector와 전역 지침 diff, 백업 위치 및 복구 명령을 확인한 뒤 수행한다. Codex native plugin 갱신은 이전 버전 캐시를 제거할 수 있다(0.166.0 격리 검증). 해당 캐시를 읽는 실행 중 세션을 먼저 확인하고, 그 세션을 유지해야 하면 검증한 패키지만 준비한 뒤 전환 시점에 교체한다. 설치 성공을 현재 세션의 새 지침 반영으로 보고하지 않는다. GitHub push와 원격 배포는 로컬 pilot과 별개다. 구버전 AGENTS.md가 이전 backbone이나 hook 경로를 가리키면 새 plugin만 설치해 전환 완료로 처리하지 않는다.
 
 ## adapter 목록의 의미
 
