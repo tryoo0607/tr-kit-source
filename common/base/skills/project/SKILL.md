@@ -20,6 +20,7 @@ description: 코드 repo와 group의 관계, 임시 Git 프로젝트와 정식 �
 | 요청 | 선택 조건 | 읽을 reference |
 |---|---|---|
 | 코드 공간 구조 확인 또는 배치 검토 | 해당 요청이 포함됨 | [구조와 배치](references/structure.md) |
+| 프로젝트 이동, 이름 변경, 보관 또는 기존 구조 정리 | 해당 요청이 포함됨 | [프로젝트 관리](references/management.md)의 구조 전환과 의존성 검증 |
 | 임시 프로젝트 준비 또는 정식 전환 | 해당 요청이 포함됨 | [구조와 배치의 임시 프로젝트와 정식 전환](references/structure.md#임시-프로젝트와-정식-전환), [프로젝트 관리의 임시 프로젝트와 정식 전환](references/management.md#임시-프로젝트와-정식-전환) |
 | repo 등록/연결 또는 group 구성 | 해당 요청이 포함됨 | [프로젝트 관리](references/management.md)의 연결과 공간 준비 |
 | 작업할 코드 위치 확인 | 해당 요청이 포함됨 | [프로젝트 관리](references/management.md)의 위치 확인 |
