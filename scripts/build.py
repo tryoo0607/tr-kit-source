@@ -105,8 +105,14 @@ def bind_skill(stage, skill, binding_file):
     return {'skill': skill, 'changes': changes, 'runtime_note': note is not None}
 
 
-def assemble(root, product, output, *, version='0.0.0', source_cache=None):
-    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?', version):
+BUILD_CONTRACT_VERSION = 1
+
+
+def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=None, plugin_hooks=False, source_revision=None):
+    plugin_name = name or f'tr-{product}'
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', plugin_name):
+        raise BuildError('invalid plugin name')
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?', version):
         raise BuildError('invalid plugin version')
     base = root / 'common/base'
     adapter = root / 'adapters' / product
@@ -231,6 +237,20 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None):
                            'license_files': entry.get('license_files', []),
                            'resources': entry.get('resources', []),
                            'skill_hook_declared': bool(re.search(r'^hooks\s*:', (selected / 'SKILL.md').read_text(), re.M))})
+        resources_file = base / 'resources.toml'
+        if resources_file.is_file():
+            resources = tomllib.loads(resources_file.read_text())
+            if set(resources) != {'schema_version', 'files'} or resources['schema_version'] != 1:
+                raise BuildError('invalid local resource declaration')
+            for item in resources['files']:
+                if set(item) != {'source', 'target'}:
+                    raise BuildError('invalid local resource fields')
+                origin = inside(root, item['source'])
+                target = inside(stage, item['target'])
+                if (root / item['source']).is_symlink() or not origin.is_file() or target.exists():
+                    raise BuildError('invalid or colliding local resource')
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(origin, target)
         bindings = []
         for scope, folder in [('common', base / 'skills'), (product, adapter / 'skills')]:
             for path in sorted(folder.glob('*/bindings.toml')):
@@ -255,7 +275,7 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None):
             raise BuildError('missing referenced workflow.md')
         manifest_dir = stage / ('.codex-plugin' if product == 'codex' else '.claude-plugin')
         manifest_dir.mkdir()
-        manifest = {'name': f'tr-{product}', 'version': version}
+        manifest = {'name': plugin_name, 'version': version}
         if product == 'codex':
             manifest['skills'] = './skills/'
         mcp = adapter / 'mcp.json'
@@ -266,11 +286,21 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None):
             shutil.copy2(mcp, stage / '.mcp.json')
             if product == 'codex':
                 manifest['mcpServers'] = './.mcp.json'
+        declared_hooks = []
+        hooks = adapter / 'hooks'
+        if hooks.exists():
+            if not plugin_hooks:
+                raise BuildError('plugin hooks require explicit opt-in')
+            config = json.loads((hooks / 'hooks.json').read_text())
+            if not isinstance(config.get('hooks'), dict):
+                raise BuildError('hooks.json requires hooks')
+            copy_tree(hooks, stage / 'hooks')
+            declared_hooks = sorted(config['hooks'])
         (manifest_dir / 'plugin.json').write_text(json.dumps(manifest, indent=2) + '\n')
         files = {str(p.relative_to(stage)): hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in sorted(stage.rglob('*')) if p.is_file()}
-        (stage / 'assembly.json').write_text(json.dumps({'product': product, 'dependencies': report, 'bindings': bindings, 'files': files,
-                                                      'plugin_hooks': []}, indent=2) + '\n')
+        (stage / 'assembly.json').write_text(json.dumps({'product': product, 'build_contract': BUILD_CONTRACT_VERSION, 'source_revision': source_revision, 'dependencies': report, 'bindings': bindings, 'files': files,
+                                                      'plugin_hooks': declared_hooks}, indent=2) + '\n')
         stage.rename(output)
 
 

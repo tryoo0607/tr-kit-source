@@ -37,6 +37,19 @@ export/import는 Claude-Mem 간 자료 전달용이다. Claude Code auto-memory�
 
 BMAD 기록이나 Claude-Mem 결과를 넘길 때 원래 식별자/위치, 확인 시점과 범위, 검증과 미확인을 함께 전달한다. 기존 출처와 관련 지식을 먼저 찾아 재처리를 중복 생성으로 만들지 않는다. 세션 digest는 작업 정본이나 검증된 지식이 아니며, 필요한 내용만 명시적으로 지식에 반영한다.
 
+### 중앙 원본
+
+Docling 2.145.0의 `convert`, QMD 2.8.3의 named index와 collection 검색, organize 3.3.0을 재사용한다. 설치 CLI의 도움말과 버전을 먼저 확인하며 자동 설치, 모델 다운로드, 원격 fallback을 하지 않는다. 논문 서지는 설치된 Zotero의 기존 도구로 처리하며 부재 시 원본 링크만 유지한다.
+
+`python3 <plugin-root>/scripts/assets.py scope --root <projects/_tr-assets> --ownership project --group <group> --project <id>`는 경로만 계산한다. environment/group도 같은 소유 범위 인자를 사용한다. 기존 override가 있으면 계산 대신 `--scope <existing-path>`를 사용한다.
+
+- 준비: `assets.py prepare --scope <scope>`로 계획을 확인하고 명시 준비 요청에만 `--apply`한다. originals/extracted 두 폴더를 함께 준비한다.
+- 추출: `assets.py extract --scope <scope> --relative domain/spec.pdf`로 단일 원본을 처리한다. `--docling-command <python> <docling-entry>`로 기존 venv를 명시할 수 있다. `--docling-args` JSON 문자열 배열로 기존 `--artifacts-path` 등 변환 옵션을 전달한다. helper는 Hugging Face offline 환경을 고정하며 모델 부재를 자동 다운로드로 복구하지 않는다. CLI가 검증한 비어 있지 않은 단일 Markdown과 원본 안정 hash를 확인한 후 교체한다. 실패 시 이전 추출물과 stale provenance를 보존한다.
+- 색인: `assets.py index --scope <scope>`는 검증된 최신 추출물만 원본 공간 밖 `TR_ASSETS_STATE_ROOT` 또는 XDG state 아래 전용 파생 corpus에 복사하고 그 범위의 QMD config/index/collection만 갱신한다. 다른 기존 QMD collection을 update하지 않는다. 임베딩/모델은 내려받지 않는다.
+- 검색: `assets.py search --scope <project> --scope <group-common> --scope <environment> --query <question>`은 전달 순서대로 충분한 결과까지 검색하며 실제 원본과 freshness를 반환한다. 추가 scope는 사용 권한을 확인한 뒤 전달한다. 미색인이면 파일명/경로 fallback이며 내용 검색 성공으로 보고하지 않는다.
+
+전역 Git 규칙은 `python3 <plugin-root>/scripts/git-excludes.py [--backup <tr-local-docs-root>]`로 계획한다. 승인 범위에서 `--apply`하면 기존 제외를 보존해 정확한 `_bmad/`, `_bmad-output/`, `_tr-assets/` 디렉터리 규칙을 추가한다. 명시한 tr-local-docs의 버전 관리되는 루트 `.gitignore`에 `!_bmad-output/` 한 규칙만 예외로 추가하여 새 산출물 백업 파일이 add 가능하도록 한다. `_bmad/`와 `_tr-assets/` 제외는 유지하며 로컬 core.excludesFile 사본을 만들지 않는다. 기존 추적 파일을 untrack하지 않는다. 원본 assets는 BMAD 백업 대상이 아니다.
+
 ## 연계와 의존
 
 | 대상과 요청 | 입력 | 필요한 결과 | 의존과 부재 시 동작 |
@@ -44,6 +57,10 @@ BMAD 기록이나 Claude-Mem 결과를 넘길 때 원래 식별자/위치, 확�
 | BMAD 설치본: 작업 기록 조회/갱신 | 작업 포인터, 조회 질문 또는 검증된 변경과 사용자 정정 | 실제 기록 위치, 상태와 미결, 반영 결과 | BMAD 기록 변경에 필수. 도구 부재 시 접근 가능한 기존 파일 조회만 하고 원본 형식을 추측해 생성하지 않음 |
 | Claude-Mem 검색 또는 export | 프로젝트 범위, 관련 질문/시간대, 필요한 후보 ID | 관측과 근거, 검색 범위/한계 | 경험 조회에 선택. 부재 시 BMAD/Wiki의 접근 가능한 근거를 사용하고 memory 조회 미실행 표시. 실행 실패로 범위를 확대하지 않음 |
 | nvk/llm-wiki: 지식 조회/반영 또는 세션 맥락 | 대상 Wiki/세션, 자료와 출처, 요청 동작과 보관 범위 | 실제 source/지식/digest 위치, 반영 또는 조회 결과와 미결 | Wiki 쓰기에 필수. 부재 시 접근 가능한 기존 파일 조회와 후보 정리까지만 하고 미반영 표시 |
+| 로컬 Docling/QMD: 원본 추출과 범위별 내용 검색 | 명시한 로컬 scope, 단일 원본 상대경로 또는 검색어, 기존 도구/모델 위치 | 검증된 추출물과 provenance, 실제 원본 경로와 freshness, 범위별 상태 | 추출/색인 검색에 필수. 위 중앙 원본 명령으로 설치 CLI를 연결한다. 부재 시 파일명/경로 조회와 미색인 표시만 하며 자동 설치나 NAS fallback을 하지 않음 |
+| 설치된 Zotero 도구: 논문 서지 조회 | 사용 허용을 확인한 기존 설치 도구, 선택한 라이브러리, 질의 또는 논문 식별자 | 실제 논문 식별자, 서지와 원본 참조, 조회 한계 | 선택. 해당 도구의 설치 도움말/인터페이스로 지원 조회만 수행한다. 공통 package가 Zotero connector를 제공한다고 가정하지 않으며 부재 시 원본 링크만 보존, NAS로 우회하지 않음 |
+| private personal-library: 명시한 개인 NAS 조회 | 개인 자료 범위, 별도 설치된 private skill, config enablement, 요청별 opt-in | 기존 client가 반환한 원본 참조, provenance와 실제 상태 | 선택. 설치되고 허용된 personal-library/SKILL.md의 해당 절차에 요청을 전달한다. 부재/비활성/접근 불가이면 NAS 조회를 보류하며 공통 로컬 처리의 실패를 NAS fallback으로 전환하지 않음 |
+
 
 외부 skill은 현재 설치본의 SKILL.md로 진입해 공통 제약과 해당 분기를 따른다. 실제 도구는 그 버전의 지원 인터페이스를 확인해 사용한다. 사용하지 않을 도구 본문은 읽지 않으며, 별도 모델 호출이나 격리 실행을 보장하지 않는다.
 

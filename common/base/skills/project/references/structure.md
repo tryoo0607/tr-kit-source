@@ -14,21 +14,22 @@ repo/group/workspace 관계와 코드 공간 배치를 판단할 때 필요한 �
 |---|---|
 | repo | Git 저장소. remote URL만으로 로컬 checkout 경로를 확정하지 않음 |
 | project | 관리 대상 repo의 식별 단위. 여러 workspace가 같은 project에 속할 수 있음 |
-| group | 관련 project의 선택적 논리 묶음. 상위 폴더명과 자동 동일시하지 않음 |
+| group | 관련 project의 필수 소속 묶음. 실제 소속과 물리 경로를 대조하며 폴더 이름만으로 소속을 추정하지 않음 |
 | checkout | 실제 파일이 있는 Git 작업 트리. bare 저장소는 코드 작업 checkout이 아님 |
 | worktree | 같은 Git 저장소에 연결된 추가 작업 트리 |
 | workspace | 도구가 관리하는 작업 공간. worktree인지 독립 clone인지는 실제 결과로 확인 |
 
 ### 신규 배치 기준
 
-허용 배치 예시는 다음과 같다. 예시는 경로를 자동 생성하는 규칙이 아니다.
+정식 프로젝트는 확인된 group 아래 배치한다. 단독 프로젝트라도 group을 확정하며 code-root 바로 아래에 배치하지 않는다. 임시 프로젝트만 아래 _scratch 예외를 사용한다.
 
 ```text
-<code-root>/<project>/
 <code-root>/<group>/<project>/
+<code-root>/<group>/<project>.worktrees/<branch>/
+<code-root>/_scratch/<project>/
 ```
 
-기존 등록과 실제 checkout이 있으면 그 위치를 우선 유지한다. 신규 공간은 사용자가 지정한 위치나 관리 도구의 확인된 설정을 우선한다. 선택이 정해져 있지 않으면 단독 project는 직접 배치, 함께 배치할 group 요청이 있으면 group 하위 배치를 제안하고 생성 전에 대상 경로를 확정한다. group만 등록한 것은 물리 이동 지시가 아니다.
+기존 경로가 이 규칙과 달라도 즉시 이동하지 않는다. 현재 구조와 목표의 차이로 표시하고 관리 절차에서 의존성을 확인한다. group은 관련 프로젝트의 실제 묶음으로 정하며 임의의 목적별 분류나 이름 접두어로 대신하지 않는다. 배치안의 group과 경로를 사용자에게 제시해 확정한 뒤 생성한다. 예시 group 이름이나 논리 group 등록은 폴더 생성과 이동 승인이 아니다.
 
 code-root는 설정의 확인된 값을 쓰며 repo 경로는 명시 연결과 관리 결과로 확인한다. [설정 규격의 경로 해석](../../profile-setup/references/config-schema.md#경로와-식별자-해석)은 조회 자료로 필요한 부분만 적용한다. 코드 경로 설정 작성/검증은 본문의 설정 연결 분기로 처리한다.
 
@@ -44,9 +45,9 @@ code-root는 설정의 확인된 값을 쓰며 repo 경로는 명시 연결과 �
 
 정식 전환은 같은 repo와 이력을 유지해 확정된 정식 위치로 옮기는 방식을 기본으로 한다. 최초 repo 생성과 원본 경로 이동은 Git 및 파일 조작 절차이며 Worktrunk가 전체 이관을 대신하지 않는다. 연결된 worktree와 Orca 등록이 있으면 이동 전후 연결 검증이 필요하다. 이력이 없는 빈 repo에서는 worktree 생성에 필요한 시작 commit부터 확인한다.
 
-worktree 배치안은 원본 repo 옆의 `<project>.worktrees/<branch>/`다. `group/project`의 기존 부모 위치를 기준으로 하므로 group을 별도 템플릿 변수로 만들지 않는다. 구조 검토만이면 이 기준으로 충분하며 실제 생성이나 설정 확인이 필요할 때 management에서 선택한 도구 연결을 읽는다.
+worktree는 원본 repo 옆의 `<project>.worktrees/<branch>/`에 둔다. 기존 `<project>.<branch>` 배치를 정리된 상태로 승인하지 않는다. `group/project`의 부모 위치를 보존하고 원본 프로젝트 소속을 유지한다. source, 문서 백업 또는 Orca에서 별도 프로젝트 이름을 만들어 소속을 바꾸지 않는다. 실제 생성과 이동은 management의 도구 연결을 따른다.
 
-이 배치의 Worktrunk 템플릿은 `{{ repo_path }}/../{{ repo }}.worktrees/{{ branch | sanitize }}`다. `feature/login`은 경로에서 `feature-login`으로 구분된다. 실제 유효 설정, 경로 충돌과 설정 변경 승인을 확인한 후 wrapper에 전달하며 사용자 전역 설정을 자동 덮어쓰지 않는다.
+이 배치의 Worktrunk 템플릿은 `{{ repo_path }}/../{{ repo }}.worktrees/{{ branch | sanitize }}`다. 지침에 적혀 있다는 이유로 적용됐다고 가정하지 않고 실제 유효 설정과 도구가 계산한 경로를 확인한다. `feature/login`은 경로에서 `feature-login`으로 구분하며 변환 후 이름 충돌도 확인한다. 설정 변경 범위를 확인한 뒤 wrapper에 전달하고 임의 Git 명령으로 다른 배치를 만들지 않는다.
 
 ### 문서와 assets 연결
 

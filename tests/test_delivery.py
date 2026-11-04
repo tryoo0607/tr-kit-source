@@ -68,6 +68,15 @@ class DeliveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'integrity'):
             delivery.verify(first, 'codex', self.revision)
 
+    def test_local_prerelease_preserves_source_build_metadata(self):
+        output = self.root / 'local-prerelease'
+        package(self.source, output, 'codex', version='0.6.0-homelab.20261027.1',
+                source_revision=self.revision)
+        delivery.verify(output, 'codex', self.revision)
+        manifest = json.loads((output / 'plugins/tr-codex/.codex-plugin/plugin.json').read_text())
+        self.assertEqual(f'0.6.0-homelab.20261027.1+codex.{self.revision[:12]}',
+                         manifest['version'])
+
     def test_dry_run_preserves_remote_and_push_keeps_history_then_noop(self):
         origin, before = self.repository()
         clone = self.root / 'delivery'

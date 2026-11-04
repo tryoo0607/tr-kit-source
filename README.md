@@ -28,6 +28,8 @@ adapter의 skills 폴더는 전체 skill 목록이 아니라 제품별 보정만
 - project, Worktrunk, Orca: 코드 공간과 workspace 연결.
 - session, profile-setup, skill-authoring: 인계와 호스트 운영, 설정 및 저작.
 
+공통 배포물은 개인 인프라 운영과 개인 산출물 백업 기능을 포함하지 않는다. 일반 document·project·기록 기능은 공통에 유지하며, 개인 기능은 별도의 로컬 추가 플러그인에서 사용한다.
+
 skill을 포함한 것과 실행 도구 설치, worker 가동 및 자동 hook 수집은 다르다. 새 package에는 plugin hook을 자동 등록하지 않는다.
 
 ## 준비와 빌드
