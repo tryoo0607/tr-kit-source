@@ -5,7 +5,7 @@ schema_version = 1
 [roots]
 code = "~/workbench/repo"
 documents = "~/workbench/documents"
-assets = "~/workbench/assets"
+assets = "~/projects/_tr-assets"
 
 [documents.sync]
 enabled = false

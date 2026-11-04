@@ -27,7 +27,7 @@
 | `schema_version` | integer | 필수, `1` | 이 초안의 버전. 기존 profile 계약과 별개 |
 | `roots.code` | string | 선택, 기본값 없음 | 코드 공간의 기준 위치. repo 경로를 이름으로 자동 조합하지 않음 |
 | `roots.documents` | string | 선택, 기본값 없음 | 소속별 문서 위치를 계산할 기준 |
-| `roots.assets` | string | 선택, 기본값 없음 | 문서와 분리한 대용량 자료 기준 위치 |
+| `roots.assets` | string | 선택, 기본값 `~/projects/_tr-assets` | 중앙 원본 기준 위치. 기존 override는 유지 |
 | `projects.<id>.code` | string | 선택, 기본값 없음 | 해당 project의 기본 checkout 연결. 실제 등록과 다르면 충돌 확인 |
 | `projects.<id>.documents`, `projects.<id>.assets` | string | 선택 | 해당 소속의 전체 경로 override |
 | `groups.<id>.documents`, `groups.<id>.assets` | string | 선택 | group 공통 자료의 전체 경로 override |
@@ -51,7 +51,7 @@
 
 - 경로는 비어 있지 않은 절대경로 또는 `~/`로 시작하는 경로다. `~`는 현재 호스트 사용자 홈으로만 해석하며 환경변수, shell 명령과 glob을 확장하지 않는다. 경로 필드의 `..` 구성요소는 허용하지 않는다.
 - `<id>`는 `[A-Za-z0-9][A-Za-z0-9._-]*` 형식이다. 등록 식별자가 이 형식에 맞지 않으면 임의로 치환하지 않고 식별자 연결 설계를 먼저 해결한다. config 항목의 존재가 project/group 신규 등록이나 소속 변경을 뜻하지 않는다.
-- project/group/common의 문서와 assets 위치는 소속별 override가 우선이다. 없으면 각각의 root 아래 `projects/<id>`, `groups/<id>`, `common`을 사용한다. 해당 root도 없으면 그 위치가 필요한 작업만 보류한다. group 설정은 소속 project에 상속하지 않는다.
+- 문서는 소속별 override가 우선이며 없으면 roots.documents 아래 `projects/<id>`, `groups/<id>`, `common`을 쓴다. assets도 기존 소속별 override가 우선이다. 새 중앙 배치는 roots.assets 아래 `environment`, `groups/<group>/common`, `groups/<group>/projects/<project>`다. 그룹 관계는 확인한 등록에서 받으며 설정으로 추정하지 않는다. 각 범위의 originals/extracted는 명시적 prepare에서 함께 생성한다. 모든 worktree는 동일 프로젝트 범위를 참조한다. group 설정을 소속 project에 상속하거나 기존 경로를 자동 이관하지 않는다.
 - 개인 지식은 `knowledge.documents`와 `knowledge.assets`의 명시 경로만 사용한다. roots나 common으로 대체하지 않으며 누락된 위치가 필요한 작업만 보류한다. 문서 루트 아래 별도 knowledge 경로를 명시하거나 기존 private repository를 연결할 수 있다. 소속 간 경로 충돌 검사는 동일하게 적용한다.
 - 기존 문서 정본과 작업 공간은 확인된 현재 경로를 사용한다. 설정과 불일치하면 충돌을 알리며 새 경로 계산만으로 이동, 생성, clone하지 않는다. 별도 workspace 경로는 관리 도구의 결과를 사용한다.
 - 쓰기 전 실제 경로와 symlink 대상을 확인한다. 서로 다른 문서 소속의 경로가 같거나 포함 관계이면 충돌로 처리한다. assets와 문서 경로도 분리한다. 문서의 코드 repo 내부 배치는 document의 팀 공유 또는 명시 요청 예외를 확인한다.

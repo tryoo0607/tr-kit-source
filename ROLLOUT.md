@@ -58,3 +58,10 @@ QMD의 자동 index/embedding 갱신은 Codex pilot의 전제가 아니다. 타�
 ## 미검증 경계
 
 CLI의 실제 실행과 package 검증은 model의 자연어 skill 선택, UI 미적 품질과 다르다. Claude-Mem은 명시 worker와 Bun, BMAD는 uv를 필요로 하며 hook 자동 수집은 이번 package에 등록하지 않는다. worker 부재를 빈 검색이나 저장 성공으로 보고하지 않는다. 호스트 toolchain, 새 세션 재개와 복구를 확인해야 실제 운영 전환 완료다.
+
+
+## 중앙 참고 원본 배포 경계
+
+공통 packages는 scripts/assets.py의 명시 범위 경로 준비, Docling 추출과 전용 QMD 연결, scripts/git-excludes.py의 plan/apply를 제공한다. 기존 assets override와 회사 자료는 유지한다. 전역 제외와 tr-local-docs 예외는 fixture 검사 후 명시 적용하며 기존 추적 파일과 다른 제외는 보존한다. assets 원본은 BMAD 백업에 포함하지 않는다.
+
+개인 동반 package는 personal-library opt-in을 제공하지만 기존 homelab 소유 references-query client와 enrollment만 사용한다. Inno-desktop은 개인 백업 등록에서 제외한다. production corpus가 미설정이면 not_configured로 유지하며 등록, ingest, 서버 배포나 원본 백업을 시작하지 않는다. Codex 적용 검증과 Claude native 검증은 별도다. Claude 검증 후 회사 적용과 자료 이관은 별도 선택한다.
