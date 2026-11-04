@@ -35,7 +35,7 @@ def package(root, output, product='codex', version=None, source_revision=None, *
     with tempfile.TemporaryDirectory(dir=output.parent) as temporary:
         stage = Path(temporary) / 'marketplace'
         payload = stage / 'plugins' / name
-        assemble(root, product, payload, version=plugin_version, name=name, plugin_hooks=plugin_hooks)
+        assemble(root, product, payload, version=plugin_version, name=name, plugin_hooks=plugin_hooks, source_revision=source_revision)
         metadata = stage / ('.agents/plugins' if product == 'codex' else '.claude-plugin')
         metadata.mkdir(parents=True)
         source = {'source': 'local', 'path': f'./plugins/{name}'} if product == 'codex' else f'./plugins/{name}'

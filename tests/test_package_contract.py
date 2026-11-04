@@ -21,6 +21,9 @@ class PackageContractTests(unittest.TestCase):
         f=self.out/'plugins/example-addon/.codex-plugin/plugin.json'
         self.assertEqual(json.loads(f.read_text())['name'],'example-addon')
         self.assertIn('owner/source',(self.out/'README.md').read_text())
+        assembly=json.loads((f.parents[1]/'assembly.json').read_text())
+        self.assertEqual(assembly['source_revision'],'a'*40)
+        self.assertEqual(assembly['build_contract'],1)
     def test_own_hooks_require_explicit_opt_in(self):
         self.hooks()
         with self.assertRaisesRegex(BuildError,'explicit opt-in'):assemble(self.root,'claude',self.out)

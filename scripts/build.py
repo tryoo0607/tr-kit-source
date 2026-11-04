@@ -108,7 +108,7 @@ def bind_skill(stage, skill, binding_file):
 BUILD_CONTRACT_VERSION = 1
 
 
-def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=None, plugin_hooks=False):
+def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=None, plugin_hooks=False, source_revision=None):
     plugin_name = name or f'tr-{product}'
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', plugin_name):
         raise BuildError('invalid plugin name')
@@ -299,7 +299,7 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=
         (manifest_dir / 'plugin.json').write_text(json.dumps(manifest, indent=2) + '\n')
         files = {str(p.relative_to(stage)): hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in sorted(stage.rglob('*')) if p.is_file()}
-        (stage / 'assembly.json').write_text(json.dumps({'product': product, 'dependencies': report, 'bindings': bindings, 'files': files,
+        (stage / 'assembly.json').write_text(json.dumps({'product': product, 'build_contract': BUILD_CONTRACT_VERSION, 'source_revision': source_revision, 'dependencies': report, 'bindings': bindings, 'files': files,
                                                       'plugin_hooks': declared_hooks}, indent=2) + '\n')
         stage.rename(output)
 
