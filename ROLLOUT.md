@@ -65,3 +65,7 @@ CLI의 실제 실행과 package 검증은 model의 자연어 skill 선택, UI �
 공통 packages는 scripts/assets.py의 명시 범위 경로 준비, Docling 추출과 전용 QMD 연결, scripts/git-excludes.py의 plan/apply를 제공한다. 기존 assets override와 회사 자료는 유지한다. 전역 제외와 tr-local-docs 예외는 fixture 검사 후 명시 적용하며 기존 추적 파일과 다른 제외는 보존한다. assets 원본은 BMAD 백업에 포함하지 않는다.
 
 개인 동반 package는 personal-library opt-in을 제공하지만 기존 homelab 소유 references-query client와 enrollment만 사용한다. Inno-desktop은 개인 백업 등록에서 제외한다. production corpus가 미설정이면 not_configured로 유지하며 등록, ingest, 서버 배포나 원본 백업을 시작하지 않는다. Codex 적용 검증과 Claude native 검증은 별도다. Claude 검증 후 회사 적용과 자료 이관은 별도 선택한다.
+
+## Codex MCP 실행 경로
+
+Codex adapter의 MCP 실행기는 plugin root 기준 cwd와 상대 경로를 사용한다. MCP 인자는 shell 문자열이 아니므로 `${PLUGIN_ROOT}` 치환을 가정하지 않는다. 기존 호스트의 수동 MCP 설정이 같은 서버 이름을 덮어쓰고 있다면 해당 연결도 확인한다. plugin-only 새 세션과 기존 호스트 연결을 구분해 검증하고, worker 자동 시작은 계속 비활성화한다.

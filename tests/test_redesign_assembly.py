@@ -121,6 +121,27 @@ class AssemblyTests(unittest.TestCase):
         build.assemble(self.root, 'claude', self.output)
         self.assertEqual(json.loads(path.read_text()), json.loads((self.output / '.mcp.json').read_text()))
 
+    def test_codex_mcp_launches_packaged_helper_from_an_unrelated_workspace(self):
+        (self.base / 'dependencies.toml').write_text('schema_version=1\n')
+        actual_adapter = SCRIPT.parents[1] / 'adapters/codex/mcp.json'
+        (self.root / 'adapters/codex/mcp.json').write_bytes(actual_adapter.read_bytes())
+        helper = self.base / 'scripts/records.py'
+        helper.parent.mkdir()
+        helper.write_text('import json,sys; print(json.dumps({"args":sys.argv[1:]}))\n')
+        build.assemble(self.root, 'codex', self.output)
+        unrelated = Path(self.tmp.name) / 'caller'; unrelated.mkdir()
+        launcher = (
+            'import json,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); '
+            'spec=json.loads((root/".mcp.json").read_text())["mcpServers"]["claude-mem"]; '
+            'cwd=(root/spec["cwd"]).resolve() if "cwd" in spec else pathlib.Path.cwd(); '
+            'p=subprocess.run([spec["command"],*spec["args"]],cwd=cwd,check=True,capture_output=True,text=True); '
+            'print(p.stdout,end="")'
+        )
+        launched = subprocess.run(['python3', '-c', launcher, str(self.output)],
+                                  cwd=unrelated, capture_output=True, text=True)
+        self.assertEqual(0, launched.returncode, launched.stderr)
+        self.assertEqual({'args': ['mem-mcp']}, json.loads(launched.stdout))
+
     def test_duplicate_declaration_is_error(self):
         (self.root / 'adapters/claude/dependencies.toml').write_text(self.declaration)
         with self.assertRaisesRegex(build.BuildError, 'duplicate'):
