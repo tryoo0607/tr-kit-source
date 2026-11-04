@@ -1,4 +1,0 @@
-interface:
-  display_name: "Homelab Recovery"
-  short_description: "홈랩 백업과 복구 의존성을 점검하고 기존 실행기의 검증 범위와 미확인을 기록합니다"
-  default_prompt: "$homelab-recovery로 백업과 독립 복구 준비 상태를 점검하고 필요한 검증과 미확인을 정리해줘."

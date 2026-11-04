@@ -1,4 +1,0 @@
-interface:
-  display_name: "Homelab Record"
-  short_description: "홈랩 변경 결과를 기록하고 미확인 항목을 기존 작업 정본에서 다시 확인합니다"
-  default_prompt: "$homelab-record로 변경 결과와 미확인 항목을 확인하고 기록해줘."

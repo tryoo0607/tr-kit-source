@@ -1,4 +1,0 @@
-interface:
-  display_name: "Homelab Config"
-  short_description: "홈랩 설정 변경의 의도와 저장, 반영 확인 및 기록을 연결합니다"
-  default_prompt: "$homelab-config로 홈랩 설정 변경 범위를 확인하고 저장과 실제 반영, 검증 및 기록을 연결해줘."
