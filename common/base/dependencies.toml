@@ -20,6 +20,12 @@ revision = "dbd4588f9e1033efb41dad4bef2f7947c8993d44"
 path = "skills/frontend-design"
 
 [[skills]]
+id = "archify"
+source = "archify"
+revision = "a4065941f12be7967436261d9934784e381d423c"
+path = "archify"
+
+[[skills]]
 id = "diagram-design"
 source = "diagram-design"
 revision = "10cfad6a7be7f734a92d3d628e5fa344685d4f01"

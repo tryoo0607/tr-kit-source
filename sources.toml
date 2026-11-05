@@ -1,6 +1,7 @@
 schema_version = 1
 
 [sources]
+archify = "https://github.com/tt-a1i/archify.git"
 anthropic-skills = "https://github.com/anthropics/skills.git"
 bmad-method = "https://github.com/bmad-code-org/BMAD-METHOD.git"
 claude-mem = "https://github.com/thedotmack/claude-mem.git"
