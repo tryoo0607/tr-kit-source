@@ -10,7 +10,8 @@ BMAD가 요구, 계획, 구현과 완료 판단을 소유한다. 아래 도구�
 | UI 제작과 시각적 개편 | [frontend-design](../frontend-design/SKILL.md)에 기존 디자인 시스템, 요구와 대상 화면 | 구현 결과와 디자인 판단 |
 | UI 동작 및 렌더 확인 | [playwright-cli](../playwright-cli/SKILL.md)에 URL, 시나리오와 viewport | assertion, 관측, 오류와 산출물 위치 |
 | 코드 또는 이미지, 의존성, IaC 보안 검사 | [security-scan](../security-scan/SKILL.md)에 변경 대상과 검사 목적 | 발견 사항, 오류, 제외와 검사 범위 |
-| 구조를 설명하는 시각 자료 | [diagram-design](../diagram-design/SKILL.md)에 확인된 구조와 독자, 요청 형식 | 산출물 위치와 생략 내역 |
+| 구조와 흐름을 설명하는 시각 자료 | [archify](../archify/SKILL.md)에 확인된 구조와 독자, 요청 형식 | 산출물 위치, 검증과 미확인 내역 |
+| 수치 차트와 일정, 업무 시각화 | [diagram-design](../diagram-design/SKILL.md)에 확인된 데이터와 독자, 요청 형식 | 산출물 위치와 생략 내역 |
 
-각 대상의 SKILL.md로 진입해 필요한 절차를 적용한다. 도구가 없으면 설치를 자동 수행하지 말고 해당 검증의 미실행 범위를 반환한다. 다섯 skill을 매 작업마다 로드하지 않는다. 이 연결은 별도 에이전트 실행이나 native 자동 호출을 보장하지 않는다.
+각 대상의 SKILL.md로 진입해 필요한 절차를 적용한다. 도구가 없으면 설치를 자동 수행하지 말고 해당 검증의 미실행 범위를 반환한다. 선택하지 않은 skill을 매 작업마다 로드하지 않는다. 이 연결은 별도 에이전트 실행이나 native 자동 호출을 보장하지 않는다.
 """
