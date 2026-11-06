@@ -14,7 +14,11 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertIn('BMAD 작업 공간',text)
         self.assertNotIn('### BMAD 산출물 백업',text)
     def test_no_personal_hook_or_backup_runtime_in_shared_payload(self):
-        self.assertFalse((ROOT/'adapters/claude/hooks').exists())
-        self.assertFalse((ROOT/'adapters/codex/hooks').exists())
+        import json
+        for product in ('claude', 'codex'):
+            hooks = json.loads((ROOT / f'adapters/{product}/hooks/hooks.json').read_text())
+            self.assertEqual({'PreToolUse'}, set(hooks['hooks']))
+            self.assertIn('commit-guard.py', hooks['hooks']['PreToolUse'][0]['hooks'][0]['command'])
+            self.assertNotIn('backup', str(hooks))
         self.assertFalse(list((ROOT/'common/base/scripts').glob('*backup*')))
 if __name__=='__main__':unittest.main()

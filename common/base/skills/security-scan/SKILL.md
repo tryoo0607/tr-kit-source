@@ -1,6 +1,6 @@
 ---
 name: security-scan
-description: Semgrep로 코드 취약 패턴을, Trivy로 이미지와 의존성 및 IaC를 검사한다. 보안 스캔 요청이나 관련 변경의 검증에 사용한다. 일반 코드 리뷰와 배포 실행은 담당하지 않는다.
+description: Semgrep로 코드 취약 패턴을, Trivy로 이미지와 의존성 및 IaC를, Gitleaks로 커밋과 전송 대상 비밀 및 등록된 산출물을 검사한다. 보안 스캔 요청이나 관련 변경의 검증에 사용한다. 일반 코드 리뷰와 배포 실행은 담당하지 않는다.
 metadata:
   tr-role: external-wrapper
 ---
@@ -21,8 +21,9 @@ metadata:
 |---|---|---|
 | 코드 취약 패턴이나 자체 규칙 검사 | 해당 요청이 포함됨 | [Semgrep](references/semgrep.md) |
 | 이미지, 의존성, IaC 검사 | 해당 요청이 포함됨 | [Trivy](references/trivy.md) |
+| staged 내용, 전송 commit의 비밀 또는 로컬 전용 산출물 검사와 Git guard 등록 | 해당 요청이 포함됨 | [Gitleaks](references/gitleaks.md) |
 
-두 검사가 필요하면 각각 적용한다. Semgrep은 코드 패턴, Trivy는 패키지 취약점과 설정 검사를 우선 담당하고 같은 결과를 중복 이슈로 만들지 않는다.
+여러 검사가 필요하면 해당 분기만 각각 적용한다. Semgrep은 코드 패턴, Trivy는 패키지 취약점과 설정 검사를 우선 담당하고 같은 결과를 중복 이슈로 만들지 않는다.
 
 ## 결과와 완료 판단
 
