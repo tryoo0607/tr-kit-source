@@ -28,7 +28,7 @@ metadata:
 
 ## 제약과 주의점
 
-guide의 Full Handoffs보다 호출자가 정한 같은 대화 재개/전체 인계/감독 위임 구분을 따른다. 전달 receipt는 입력 접수 근거이며 상대 작업 완료 근거가 아니다. 기록 내용은 document가 소유한다. 일반 조작에는 orchestration/computer-use/emulator를 추가하지 않는다. 명시적인 공식 추적 요청에만 orchestration guide를 적용하며 미지원 기능은 보류하고 알린다.
+guide의 Full Handoffs보다 호출자가 정한 같은 대화 재개/전체 인계/감독 위임 구분을 따른다. 전달 receipt는 입력 접수 근거이며 상대 작업 완료 근거가 아니다. 업무 기록과 산출물 내용은 담당 skill이 소유하고, 기록 조회와 연결이 필요할 때 document를 적용한다. 일반 조작에는 orchestration/computer-use/emulator를 추가하지 않는다. 명시적인 공식 추적 요청에만 orchestration guide를 적용하며 미지원 기능은 보류하고 알린다.
 
 기동, 원격 입력, 종료/재시작, 공개 링크와 hook 실행은 승인 범위를 따른다. guide의 open 권고나 skill 로드만으로 실행하지 않는다. 런타임 접근 거부를 재기동으로 우회하지 않는다.
 
