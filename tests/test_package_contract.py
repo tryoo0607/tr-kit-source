@@ -31,6 +31,20 @@ class PackageContractTests(unittest.TestCase):
     def test_own_hooks_are_reported_when_explicit(self):
         self.hooks();assemble(self.root,'claude',self.out,plugin_hooks=True)
         self.assertEqual(json.loads((self.out/'assembly.json').read_text())['plugin_hooks'],['SessionStart'])
+    def test_shared_guard_hooks_are_explicitly_packaged_for_both_products(self):
+        import shutil,hashlib
+        source=Path(__file__).resolve().parents[1]
+        scripts=self.base/'scripts';scripts.mkdir()
+        shutil.copy2(source/'common/base/scripts/commit-guard.py',scripts/'commit-guard.py')
+        for product in ('claude','codex'):
+            shutil.copytree(source/f'adapters/{product}/hooks',self.root/f'adapters/{product}/hooks')
+            output=self.out/product
+            assemble(self.root,product,output,plugin_hooks=True)
+            report=json.loads((output/'assembly.json').read_text())
+            self.assertEqual(['PreToolUse'],report['plugin_hooks'])
+            self.assertEqual(hashlib.sha256((scripts/'commit-guard.py').read_bytes()).hexdigest(),report['files']['scripts/commit-guard.py'])
+            self.assertTrue((output/'hooks/hooks.json').is_file())
+
     def test_resource_is_copied_and_hashed(self):
         (self.root/'helper.py').write_text('print(1)\n')
         (self.base/'resources.toml').write_text('schema_version=1\n[[files]]\nsource="helper.py"\ntarget="scripts/helper.py"\n')

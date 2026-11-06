@@ -69,3 +69,17 @@ CLI의 실제 실행과 package 검증은 model의 자연어 skill 선택, UI �
 ## Codex MCP 실행 경로
 
 Codex adapter의 MCP 실행기는 plugin root 기준 cwd와 상대 경로를 사용한다. MCP 인자는 shell 문자열이 아니므로 `${PLUGIN_ROOT}` 치환을 가정하지 않는다. 기존 호스트의 수동 MCP 설정이 같은 서버 이름을 덮어쓰고 있다면 해당 연결도 확인한다. plugin-only 새 세션과 기존 호스트 연결을 구분해 검증하고, worker 자동 시작은 계속 비활성화한다.
+
+## 공통 Git guard 적용 경계
+
+이전 세 호스트 배포는 어떤 저장소의 Git guard 등록도 뜻하지 않는다. source 구현과 fixture 검증을 먼저 마치고 실제 호스트별로 다음 구체 결과를 제시한 뒤 live 활성화를 확인한다.
+
+- 명시 저장소 root와 worktree, 로컬 전용 artifact 경로, 검증된 백업 예외 및 공유 범위.
+- `git-guard-install.py plan`이 반환한 실제 hooks 경로와 기존 core.hooksPath, 원본 hook bytes/modes의 백업 대상, 추가 runtime 파일과 hash.
+- 새 외부 runtime 경로, 고정 scanner 버전, 기존 Orca 및 다른 plugin hook과의 공존, 지원하지 않는 관리자와 연결.
+- 양 제품의 새 격리 세션에서 allow/deny가 실행 전에 관측된 native canary 결과와 callback 오류 여부.
+- `status` 및 `rollback --state STATE` 복구 명령과 나중 편집 충돌 처리.
+
+등록기는 Git 전역/로컬 config와 다른 이벤트를 바꾸지 않는다. 같은 hooks 경로를 공유하는 다른 worktree는 자동 등록하지 않으며 이미 관리 중인 경로는 중복 설치를 거부한다. native plugin 설치기는 계속 plugin-only 책임을 유지한다. Git hook 활성화와 제품 hook trust는 별도다. 실제 운영 활성화는 이 변경의 구현과 테스트 권한에 포함되지 않는다.
+
+정책, 검사 범위와 복구 상세는 [Gitleaks 안내](common/base/skills/security-scan/references/gitleaks.md)를 정본으로 사용한다. findings 원문을 기록하거나 원격 전송하지 않는다.

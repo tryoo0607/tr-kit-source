@@ -30,7 +30,7 @@ adapter의 skills 폴더는 전체 skill 목록이 아니라 제품별 보정만
 
 공통 배포물은 개인 인프라 운영과 개인 산출물 백업 기능을 포함하지 않는다. 일반 document·project·기록 기능은 공통에 유지하며, 개인 기능은 별도의 로컬 추가 플러그인에서 사용한다.
 
-skill을 포함한 것과 실행 도구 설치, worker 가동 및 자동 hook 수집은 다르다. 새 package에는 plugin hook을 자동 등록하지 않는다.
+skill을 포함한 것과 실행 도구 설치, worker 가동 및 자동 hook 수집은 다르다. 공통 PreToolUse hook은 `--plugin-hooks`로 명시 포함하며 제품 trust와 활성화는 별도다. Git guard 등록은 자동 수행하지 않는다.
 
 ## 준비와 빌드
 
@@ -40,7 +40,7 @@ Python 3.12 이상, Git과 PyYAML이 필요하다. 외부 checkout은 cache에 �
 python3 -m pip install 'PyYAML==6.0.3'
 python3 scripts/fetch_sources.py
 python3 -m unittest discover -s tests -p 'test_*.py'
-./build.sh codex --output out/codex
+./build.sh codex --plugin-hooks --output out/codex
 ```
 
 기본 source cache는 .cache/upstreams다. 기존 cache를 재사용하려면 fetch의 --cache와 build의 TR_KIT_SOURCE_CACHE에 같은 경로를 명시한다. 다른 revision이나 dirty checkout은 자동 reset하지 않는다.
@@ -50,7 +50,7 @@ Codex 결과는 기존 tr-codex marketplace와 plugins/tr-codex payload를 포�
 Claude도 기존 tr-claude marketplace와 plugins/tr-claude payload를 만든다. 로컬 Claude 호스트 적용은 Codex 검증 이후에 한다.
 
 ```bash
-./build.sh claude --output out/claude-check
+./build.sh claude --plugin-hooks --output out/claude-check
 ```
 
 ## 설치와 실행 검증
@@ -80,3 +80,9 @@ python3 scripts/delivery.py --built-root out --clone-root /tmp/tr-kit-delivery-c
 기존 문서와 project는 자동 이동하지 않는다. 로컬/GitHub 문서 정본, 공유 및 이관 기준과 QMD 보류 정책은 ROLLOUT.md를 따른다.
 
 공통 자체 소스의 라이선스는 LICENSE를 따른다. 외부 skill과 runtime은 각 upstream의 라이선스를 보존하며, 저장소 전체를 단일 라이선스의 외부 코드로 취급하지 않는다.
+
+## 공통 커밋과 전송 안전 가드
+
+Gitleaks v8.30.1을 재사용해 실제 index와 outgoing commit을 로컬 검사한다. 저장소와 로컬 전용 산출물 경로는 명시 등록하며 `runs/` 전역 금지는 없다. 검증된 백업의 `_bmad-output` 허용도 비밀 검사를 생략하지 않는다. PreToolUse는 조기 피드백이고 Git hook은 제품과 무관한 최종 로컬 검사다. hook은 우회 가능하므로 완전한 보안 경계로 취급하지 않는다.
+
+Gitleaks만 준비하려면 `python3 scripts/setup_git_guard.py --prefix NEW_DIRECTORY`를 사용한다. `git-guard-install.py plan`으로 실제 경로, 변경과 백업을 먼저 확인하고 live 등록 전에 적용 범위를 승인한다. 기존 hook과 다른 plugin, Git 설정을 보존한다. 상세 계약과 명령은 [Gitleaks 안내](common/base/skills/security-scan/references/gitleaks.md), 실제 적용 경계는 [ROLLOUT](ROLLOUT.md)의 공통 Git guard 절을 따른다.

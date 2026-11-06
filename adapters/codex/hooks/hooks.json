@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|exec_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/scripts/commit-guard.py\" agent --product codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

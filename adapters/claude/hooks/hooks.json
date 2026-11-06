@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|exec_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/commit-guard.py\" agent --product claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

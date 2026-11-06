@@ -310,8 +310,9 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--source-cache', type=Path)
+    parser.add_argument('--plugin-hooks', action='store_true')
     args = parser.parse_args()
     try:
-        assemble(args.root.resolve(), args.product, args.output.resolve(), source_cache=args.source_cache)
+        assemble(args.root.resolve(), args.product, args.output.resolve(), source_cache=args.source_cache, plugin_hooks=args.plugin_hooks)
     except (BuildError, OSError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as error:
         parser.exit(1, f'build failed: {error}\n')
