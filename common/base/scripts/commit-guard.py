@@ -56,6 +56,7 @@ def scan(blobs, scanner):
         payload = base / 'payload'
         payload.mkdir(mode=0o700)
         labels = {}
+        go_sums = []
         for number, item in enumerate(blobs):
             label, blob = item if isinstance(item, tuple) else (None, item)
             name = f'candidate-{number:08d}'
@@ -64,8 +65,23 @@ def scan(blobs, scanner):
                 target.chmod(0o600)
                 stream.write(blob)
             labels[name] = label
+            if isinstance(label, str) and Path(label).name == 'go.sum':
+                go_sums.append(re.escape(name))
         config = base / 'trusted.toml'
-        config.write_text('[extend]\nuseDefault = true\n')
+        trusted = '[extend]\nuseDefault = true\n'
+        if go_sums:
+            # Extend only the heuristic rule, not stronger credential detectors.
+            # Bind its exception to our exact neutral filenames AND canonical Go
+            # checksum lines. All other lines and original bytes remain scanned.
+            checksum_line = (r'^[A-Za-z0-9][A-Za-z0-9._~!/-]* '
+                r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?'
+                r'(?:\+incompatible)?(?:/go\.mod)? '
+                r'h1:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$')
+            trusted += ('[[rules]]\nid = "generic-api-key"\n'
+                '[[rules.allowlists]]\ncondition = "AND"\nregexTarget = "line"\n'
+                'paths = [' + json.dumps(r'(?:^|/)(?:' + '|'.join(go_sums) + ')$') + ']\n'
+                'regexes = [' + json.dumps(checksum_line) + ']\n')
+        config.write_text(trusted)
         ignore = base / 'empty-ignore'
         ignore.write_text('')
         report = base / 'redacted.json'

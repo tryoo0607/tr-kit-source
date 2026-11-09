@@ -311,6 +311,42 @@ class RealGitleaksTests(GuardFixture):
                         guard.scan([(label, data)], self.scanner)
                     self.assertNotIn(token.decode(), str(caught.exception))
 
+    def test_actual_go_sum_checksum_exception_preserves_secret_checks(self):
+        import base64
+        import hashlib
+        self.scanner = Path(os.environ['TR_GITLEAKS_TEST_BINARY'])
+        digest = base64.b64encode(hashlib.sha256(b'synthetic checksum').digest()).decode()
+        line = f'cloud.google.com/go/auth v1.2.3 h1:{digest}\n'
+        for version in ('v1.2.3', 'v1.2.3/go.mod', 'v0.0.0-20260101000000-abcdefabcdef', 'v2.3.4+incompatible'):
+            guard.scan([('nested/go.sum', line.replace('v1.2.3', version).encode())], self.scanner)
+        token = 'ghp_' + 'F7zR4mN8qT2vL6cX9bW3sH5kJ1dP0eA4rU8i'
+        cases = [
+            ('checksums.txt', line),
+            ('go.sum', line.replace('h1:', 'h2:')),
+            ('go.sum', line.replace(digest, digest[:-3] + 'abc')),
+            ('go.sum', line.rstrip() + ' extra\n'),
+            ('go.sum', line + token),
+            ('go.sum', line.replace('cloud.google.com/go/auth', 'github.com/' + token)),
+        ]
+        for label, data in cases:
+            with self.subTest(label=label, case=cases.index((label, data))):
+                with self.assertRaisesRegex(guard.GuardError, 'secret detected'):
+                    guard.scan([(label, data.encode())], self.scanner)
+        # The exception cannot leak to another candidate in the same invocation.
+        with self.assertRaisesRegex(guard.GuardError, 'secret detected'):
+            guard.scan([('go.sum', line.encode()), ('other.txt', line.encode())], self.scanner)
+        self.save_policy()
+        self.stage('go.sum', line)
+        guard.check_index(self.repo, self.policy)
+        clean = self.commit()
+        guard.check_push(self.repo, self.policy, self.push_data(clean))
+        self.stage('go.sum', line + token)
+        with self.assertRaisesRegex(guard.GuardError, 'secret detected'):
+            guard.check_index(self.repo, self.policy)
+        dirty = self.commit()
+        with self.assertRaisesRegex(guard.GuardError, 'secret detected'):
+            guard.check_push(self.repo, self.policy, self.push_data(dirty, clean))
+
     def test_actual_colon_filename_and_gitlink_pointer(self):
         self.scanner = Path(os.environ['TR_GITLEAKS_TEST_BINARY'])
         self.save_policy()
