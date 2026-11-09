@@ -1,0 +1,38 @@
+schema_version = 1
+runtime_note = "## 프로젝트 범위와 실행 근거\n\n기존 구조, DI, pinned 버전과 요청된 작업을 먼저 확인한다. SDK, emulator, Hilt와 앱 의존성을 자동 설치하거나 전체 앱을 재구성하지 않는다. 원본 예제의 버전과 API가 불명확하거나 프로젝트와 다르면 [find-docs](../find-docs/SKILL.md)에 라이브러리, 정확한 버전과 질문을 전달해 공식 API 근거를 확인한다. 도구가 없거나 지원 API를 확인하지 못하면 미확인으로 보고하며 추측한 API를 구현 완료로 제시하지 않는다. 필요한 테스트 종류와 명령만 선택하고 SDK, 기기, 권한이 없으면 실행 미검증으로 남긴다. 정적 코드 확인과 지침 모델 테스트는 Android 빌드, instrumented 테스트나 실기기 성공의 근거가 아니다.\n\n다른 skill 링크는 해당 작업이 필요할 때만 읽는 선택 참고다. 미선택 upstream skill은 배포되지 않았으며 링크 열람은 설치나 실행 승인이 아니다."
+
+[[replacements]]
+file = "SKILL.md"
+old = "3. **Strict compliance:** If a version is listed as stable, you MUST use it, unless overridden by the user. Do not downgrade based on initial \"Unresolved reference\" errors in the editor or outdated web search results."
+new = "3. **Project compatibility:** Preserve the pinned project versions. Latest stable is research information, not upgrade authorization. Change dependencies only when an upgrade or migration is requested; verify the selected version’s API before using a sample."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "4. **Kotlin \\& Compose compiler:** Use Kotlin **2.0.0+** with the `org.jetbrains.kotlin.plugin.compose` Gradle plugin."
+new = "4. **Kotlin \\& Compose compiler:** Check the existing toolchain and selected library requirements. Treat Kotlin **2.0.0+** and `org.jetbrains.kotlin.plugin.compose` as guidance for a compatible requested migration, not permission to upgrade."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "5. **Min SDK:** Ensure `minSdk` is at least **25**."
+new = "5. **Min SDK:** Check the selected version’s minSdk requirement (the described M3 stack requires at least **25**); report incompatibility before proposing a change."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "6. **Compile SDK \\& AGP:** Ensure `compileSdk` and AGP meet the library's AAR metadata floors"
+new = "6. **Compile SDK \\& AGP:** Verify the selected library’s AAR metadata floors without automatically upgrading SDK or AGP"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "1. Unless otherwise indicated by the developer, use the latest stable version of Wear Compose Material3 from `{VERSION}` (superseding any literal version strings in the migration guide)."
+new = "1. Use the project’s pinned Wear Compose version. Use `{VERSION}` only for a requested upgrade after checking toolchain compatibility; examples may contain APIs absent from the pinned version."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "4. Do not use the Horologist Composables, Compose Layout, or Compose Material libraries; replace Horologist components with Wear Compose M3 equivalents"
+new = "4. Only for a requested Horologist migration, replace selected Horologist components with compatible Wear Compose M3 equivalents"
+count = 1

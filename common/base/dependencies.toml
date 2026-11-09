@@ -289,3 +289,52 @@ id = "github-readme-generator"
 source = "readme-generator"
 revision = "d8bdac94d1a9488751d65e55e78eeabd47895bd0"
 path = "skills/github-readme-generator"
+
+[[skills]]
+id = "doc-coauthoring"
+source = "anthropic-skills"
+revision = "dbd4588f9e1033efb41dad4bef2f7947c8993d44"
+path = "skills/doc-coauthoring"
+resources = [{source="README.md", target="skills/doc-coauthoring/UPSTREAM-README.md"}]
+
+[[skills]]
+id = "android-architecture"
+source = "android-architecture"
+revision = "68fd141eec5ad2029ae8393e510dbe46dea48c36"
+path = "skills/android-architecture"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "wear-compose-m3"
+source = "android-skills"
+revision = "bf68e2d66a992a1e6aeb7e9263293cc23fcbf475"
+path = "wear/wear-compose-m3"
+license_files = ["LICENSE.txt"]
+
+[[skills]]
+id = "testing-setup"
+source = "android-skills"
+revision = "bf68e2d66a992a1e6aeb7e9263293cc23fcbf475"
+path = "testing/testing-setup"
+license_files = ["LICENSE.txt"]
+
+[[skills]]
+id = "structuring-a-compose-test"
+source = "android-testing-skills"
+revision = "8665ed59643c90eb1056a256a6ddec161aa1cfa1"
+path = "compose/patterns/structuring-a-compose-test"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "running-instrumented-tests-with-androidjunit4"
+source = "android-testing-skills"
+revision = "8665ed59643c90eb1056a256a6ddec161aa1cfa1"
+path = "instrumentation/runner/running-instrumented-tests-with-androidjunit4"
+license_files = ["LICENSE"]
+
+[[skills]]
+id = "running-instrumented-tests-via-adb"
+source = "android-testing-skills"
+revision = "8665ed59643c90eb1056a256a6ddec161aa1cfa1"
+path = "adb/tests/running-instrumented-tests-via-adb"
+license_files = ["LICENSE"]

@@ -1,0 +1,86 @@
+schema_version = 1
+runtime_note = "## 프로젝트 범위와 실행 근거\n\n기존 구조, DI, pinned 버전과 요청된 작업을 먼저 확인한다. SDK, emulator, Hilt와 앱 의존성을 자동 설치하거나 전체 앱을 재구성하지 않는다. 원본 예제의 버전과 API가 불명확하거나 프로젝트와 다르면 [find-docs](../find-docs/SKILL.md)에 라이브러리, 정확한 버전과 질문을 전달해 공식 API 근거를 확인한다. 도구가 없거나 지원 API를 확인하지 못하면 미확인으로 보고하며 추측한 API를 구현 완료로 제시하지 않는다. 필요한 테스트 종류와 명령만 선택하고 SDK, 기기, 권한이 없으면 실행 미검증으로 남긴다. 정적 코드 확인과 지침 모델 테스트는 Android 빌드, instrumented 테스트나 실기기 성공의 근거가 아니다.\n\n다른 skill 링크는 해당 작업이 필요할 때만 읽는 선택 참고다. 미선택 upstream skill은 배포되지 않았으며 링크 열람은 설치나 실행 승인이 아니다."
+
+[[replacements]]
+file = "SKILL.md"
+old = "libraries, set up test infrastructure, create harnesses for unit tests, UI tests,"
+new = "libraries only when requested, set up scoped test infrastructure, create harnesses for unit tests, UI tests,"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If there is no Dependency Injection framework, install one: if it's a\nmultiplatform application, ask the user whether they want to install Koin, or\nkotlin-inject. If it's not multiplatform, install Hilt.\n\nInstall the testing dependencies (for example `com.google.dagger:hilt-compiler`\nthat should be applied with a `kspAndroidTest` configuration).\n\n"
+new = "Preserve the existing DI approach, including manual DI. Do not install Hilt, Koin, kotlin-inject or compiler dependencies merely because testing is requested. For an explicitly requested DI migration, assess the existing project first and use only the selected framework’s necessary testing integration.\n\n"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If there are no testing frameworks, and the user didn't specify any preference,\ninstall the following:"
+new = "If the user requests test infrastructure installation, select only the necessary framework from these options after checking existing versions and the requested test type. Analysis or a single test request does not authorize installing this whole list:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If instrumented screenshot tests are requested, install Dropshots."
+new = "For requested instrumented screenshot infrastructure, consider Dropshots only if compatible and within the authorized dependency scope."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If end-to-end testing is requested, install UI Automator."
+new = "For requested end-to-end infrastructure that needs system UI, consider UI Automator only within the authorized dependency scope."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Create a task to add or review unit tests in every file that contains business\nlogic (ViewModels, Repositories, and database-related classes such as DAOs)."
+new = "Add or review unit tests for the requested behavior and relevant business logic (ViewModels, Repositories, and database-related classes such as DAOs); do not open an app-wide test expansion task."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "## Step 7: Test databases"
+new = "## Step 7: Test databases (only when the requested behavior needs database integration coverage)"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "## Step 8: Screenshot tests"
+new = "## Step 8: Screenshot tests (only when requested or needed for the changed UI)"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "## Step 10: Navigation tests"
+new = "## Step 10: Navigation tests (only for navigation in scope)"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "## Step 12: End-to-end tests"
+new = "## Step 12: End-to-end tests (only for requested journeys)"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Install the `com.dropbox.dropshots` plugin in the module and a `Dropshots()`\nJUnit Rule. Create a new instrumented screenshot test for one of the app's\nfeatures."
+new = "Only when instrumented screenshot infrastructure is requested and Dropshots is selected, add the compatible plugin and rule for the target feature. Otherwise skip this step."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Install JaCoCo for local testing code coverage."
+new = "Install JaCoCo only when coverage setup is explicitly requested; otherwise keep the existing coverage tooling."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "## Step 14: Install JaCoCo"
+new = "## Step 14: JaCoCo (only for explicitly requested coverage setup)"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- Add the `jacoco` plugin to each module that contains tests."
+new = "- Only when JaCoCo is selected for the requested coverage setup, add the `jacoco` plugin to the modules in that coverage scope. Otherwise leave module plugins unchanged."
+count = 1

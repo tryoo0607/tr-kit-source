@@ -3,4 +3,8 @@ runtime_note = """
 ## 선택적 근거와 도식 연결
 
 설계 결정과 원본 memlog는 이 skill이 소유한다. 라이브러리의 특정 버전 API가 결정에 영향을 줄 때만 [find-docs](../find-docs/SKILL.md)에 버전과 질문을 전달해 해당 지침을 적용하고 공식 근거와 확인 범위를 받는다. 설명용 그림이 필요할 때만 [archify](../archify/SKILL.md)에 확정된 구조와 독자, 필요한 형식을 전달한다. 도식의 생략 내역과 파일 위치를 받고 결정 원문은 유지한다. 이미 충분한 근거와 도식은 재사용한다. 대상이 없으면 확인한 근거와 텍스트 설명을 제공하고 미실행 범위를 밝힌다.
+
+문서 공동 작성 과정의 보완이 필요할 때만 [doc-coauthoring](../doc-coauthoring/SKILL.md)에 기존 정본, 독자, 설명 깊이와 보존할 요구를 전달한다. 받은 수정과 독자 이해도 검토를 기존 산출물에 반영하고 사실 검증과 완료 판단은 이 skill이 유지한다. README, 자료 검색과 게시 요청은 기존 담당을 유지한다.
+
+Android 구조나 DI 판단이 필요할 때만 [android-architecture](../android-architecture/SKILL.md)에 기존 구조와 요청 범위를 전달해 근거와 대안을 받는다. Wear OS Compose 작업은 [wear-compose-m3](../wear-compose-m3/SKILL.md)에 pinned 버전과 대상 화면을 전달해 호환 API와 구현 근거를 받는다. Android 테스트 전략은 [testing-setup](../testing-setup/SKILL.md), Compose 테스트 골격은 [structuring-a-compose-test](../structuring-a-compose-test/SKILL.md), instrumented runner 구성은 [running-instrumented-tests-with-androidjunit4](../running-instrumented-tests-with-androidjunit4/SKILL.md), ADB 실행은 [running-instrumented-tests-via-adb](../running-instrumented-tests-via-adb/SKILL.md) 중 실제 요청에 필요한 대상만 선택한다. 입력은 프로젝트 버전, 기존 테스트와 요청 시나리오이며 결과는 변경 근거, 실행 명령, 관측과 미실행 범위다. 대상이 없으면 기존 프로젝트 절차와 공식 문서로 가능한 범위만 처리하고 제한을 밝힌다. 전체 순서 경유나 설치를 강제하지 않는다.
 """

@@ -1,0 +1,110 @@
+schema_version = 1
+runtime_note = "## 프로젝트 범위와 실행 근거\n\n기존 구조, DI, pinned 버전과 요청된 작업을 먼저 확인한다. SDK, emulator, Hilt와 앱 의존성을 자동 설치하거나 전체 앱을 재구성하지 않는다. 원본 예제의 버전과 API가 불명확하거나 프로젝트와 다르면 [find-docs](../find-docs/SKILL.md)에 라이브러리, 정확한 버전과 질문을 전달해 공식 API 근거를 확인한다. 도구가 없거나 지원 API를 확인하지 못하면 미확인으로 보고하며 추측한 API를 구현 완료로 제시하지 않는다. 필요한 테스트 종류와 명령만 선택하고 SDK, 기기, 권한이 없으면 실행 미검증으로 남긴다. 정적 코드 확인과 지침 모델 테스트는 Android 빌드, instrumented 테스트나 실기기 성공의 근거가 아니다.\n\n다른 skill 링크는 해당 작업이 필요할 때만 읽는 선택 참고다. 미선택 upstream skill은 배포되지 않았으며 링크 열람은 설치나 실행 승인이 아니다.\n\n실행 전 대상 device serial과 package를 확인하고 승인된 테스트 장치에만 명령을 적용한다. clearPackageData, pm clear와 animation 설정은 데이터 및 장치 상태를 바꾸므로 요청 범위에 포함될 때만 사용한다. 예제에 있다는 이유로 자동 실행하지 않는다."
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../fundamentals/strategies/organizing-test-source-sets/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/fundamentals/strategies/organizing-test-source-sets/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../instrumentation/runner/running-instrumented-tests-with-androidjunit4/SKILL.md"
+new = "../running-instrumented-tests-with-androidjunit4/SKILL.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../jvm-tests/runner/configuring-junit4-on-android/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/jvm-tests/runner/configuring-junit4-on-android/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../apps/installing-and-managing-apps/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/adb/apps/installing-and-managing-apps/SKILL.md"
+count = 3
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../architecture/understanding-adb-architecture/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/adb/architecture/understanding-adb-architecture/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../devices/connecting-over-wifi/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/adb/devices/connecting-over-wifi/SKILL.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../devices/connecting-to-devices/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/adb/devices/connecting-to-devices/SKILL.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "docs/CORPUS.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/docs/CORPUS.md"
+count = 3
+
+[[replacements]]
+file = "SKILL.md"
+old = "tasks/research/A2-adb-shell-commands.md"
+new = "upstream research A2-adb-shell-commands.md (not included in the pinned checkout; unverified reference, use the official documentation listed below instead)"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "wait — REQUIRED for meaningful exit codes"
+new = "wait for complete output; test results must be parsed from stdout"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "The pitfall most CI scripts fall into: omitting `-w`, which makes the exit code meaningless."
+new = "The pitfall most CI scripts fall into: treating the shell exit code as test success. `-w` waits for complete output, but stdout still must be parsed for failures and runner errors."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- [ ] **7. Disable animations and reset state for hermetic runs.** Per"
+new = "- [ ] **7. Only on the explicitly selected, authorized test device, disable animations or reset app state when the requested test permits these mutations.** Confirm device serial and package first; do not clear user data automatically. Record original animation values and restore them after the run. The following commands are examples, not permission to run them. Per"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- **PREFERRED:** use Test Orchestrator + `clearPackageData true` for hermetic test isolation in CI; this maps to Gradle's `testOptions.execution = \"ANDROIDX_TEST_ORCHESTRATOR\"`."
+new = "- **PREFERRED:** use Test Orchestrator for authorized isolated CI devices. Enable `clearPackageData true` only when clearing that selected package’s data is within the requested test scope; this is destructive to app data."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- **PREFERRED:** disable animations (`settings put global *_animation_scale 0`) before the run, or rely on Gradle's `testOptions.animationsDisabled = true`."
+new = "- **PREFERRED:** on authorized test devices, disable animations only when needed and restore the recorded values afterward; apply the same scope check to Gradle `testOptions.animationsDisabled = true`."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "      grep '^INSTRUMENTATION_STATUS_CODE: -2' instrument.log && exit 1"
+new = "      # Capture/inspection only: these lines do not determine test success.\n      # Use the existing project runner/result parser to validate completion."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "description: Use this skill to run instrumented Android tests directly through `adb shell am instrument -w -r` without going through Gradle. Covers the required `-w` (wait for complete output; test results must be parsed from stdout) and `-r` (raw output) flags, the `-e` argument table (`class`, `class#method`, `package`, `size`, `numShards`/`shardIndex`, `debug`, `annotation` / `notAnnotation`, `listener`, `clearPackageData`, `targetInstrumentation`), the canonical runners `AndroidJUnitRunner` and `AndroidTestOrchestrator`, the orchestrator wrapping pattern (target = orchestrator, `-e targetInstrumentation <pkg>/<runner>`), and the output framing (`INSTRUMENTATION_STATUS_CODE` 1=start, 0=ok, -1=error, -2=failure, -3=ignored, -4=assumption-failure; `INSTRUMENTATION_RESULT`; `INSTRUMENTATION_CODE`). Use when the user mentions `am instrument`, `AndroidJUnitRunner`, \"run tests from CI without Gradle\", \"Orchestrator\", `clearPackageData`, `targetInstrumentation`, exit codes from `am instrument`, or `INSTRUMENTATION_STATUS_CODE`."
+new = "description: Use this skill to run instrumented Android tests directly through `adb shell am instrument -w -r`. Covers the required `-w` (wait for complete output; test results must be parsed from stdout) and `-r` (raw output) flags, the `-e` argument table (`class`, `class#method`, `package`, `size`, `numShards`/`shardIndex`, `debug`, `annotation` / `notAnnotation`, `listener`, `clearPackageData`, `targetInstrumentation`), the canonical runners `AndroidJUnitRunner` and `AndroidTestOrchestrator`, the orchestrator wrapping pattern (target = orchestrator, `-e targetInstrumentation package/runner`), and the output framing (`INSTRUMENTATION_STATUS_CODE` 1=start, 0=ok, -1=error, -2=failure, -3=ignored, -4=assumption-failure; `INSTRUMENTATION_RESULT`; `INSTRUMENTATION_CODE`). Use when the user mentions `am instrument`, `AndroidJUnitRunner`, \"run tests from CI without Gradle\", \"Orchestrator\", `clearPackageData`, `targetInstrumentation`, exit codes from `am instrument`, or `INSTRUMENTATION_STATUS_CODE`."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "**Greppable lines** for fast pipelines:"
+new = "**Capture and inspection only**, not a CI success gate. Use the existing project runner/result parser to validate a normal final result, the expected nonzero executed-test count, matching start/completed frames, and absence of test/runner failures. If no such parser is available, report the captured results as unvalidated:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "# RIGHT — gate on stdout, NOT on $?\noutput=$(adb shell am instrument -w -r \\\n  com.example.app.test/androidx.test.runner.AndroidJUnitRunner)\nif echo \"$output\" | grep -qE 'INSTRUMENTATION_STATUS_CODE: -[12]$'; then\n  echo \"FAILED\"; exit 1\nfi\n# am instrument exits 0 even when tests fail (System.exit(0) in AOSP Instrument.java),\n# so the only reliable signal is parsing INSTRUMENTATION_STATUS_CODE: -2 (failure) or -1 (error)."
+new = "# Capture stdout for the existing project runner/result parser.\n# This example deliberately makes no test-success decision.\nadb shell am instrument -w -r \\\n  com.example.app.test/androidx.test.runner.AndroidJUnitRunner \\\n  | tee instrument.log\n# The existing parser must validate normal completion, expected nonzero test count,\n# matching start/completed frames and failures. Without it, results are unvalidated."
+count = 1

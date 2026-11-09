@@ -14,4 +14,8 @@ BMAD가 요구, 계획, 구현과 완료 판단을 소유한다. 아래 도구�
 | 수치 차트와 일정, 업무 시각화 | [diagram-design](../diagram-design/SKILL.md)에 확인된 데이터와 독자, 요청 형식 | 산출물 위치와 생략 내역 |
 
 각 대상의 SKILL.md로 진입해 필요한 절차를 적용한다. 도구가 없으면 설치를 자동 수행하지 말고 해당 검증의 미실행 범위를 반환한다. 선택하지 않은 skill을 매 작업마다 로드하지 않는다. 이 연결은 별도 에이전트 실행이나 native 자동 호출을 보장하지 않는다.
+
+문서 공동 작성 과정의 보완이 필요할 때만 [doc-coauthoring](../doc-coauthoring/SKILL.md)에 기존 정본, 독자, 설명 깊이와 보존할 요구를 전달한다. 받은 수정과 독자 이해도 검토를 기존 산출물에 반영하고 사실 검증과 완료 판단은 이 skill이 유지한다. README, 자료 검색과 게시 요청은 기존 담당을 유지한다.
+
+Android 구조나 DI 판단이 필요할 때만 [android-architecture](../android-architecture/SKILL.md)에 기존 구조와 요청 범위를 전달해 근거와 대안을 받는다. Wear OS Compose 작업은 [wear-compose-m3](../wear-compose-m3/SKILL.md)에 pinned 버전과 대상 화면을 전달해 호환 API와 구현 근거를 받는다. Android 테스트 전략은 [testing-setup](../testing-setup/SKILL.md), Compose 테스트 골격은 [structuring-a-compose-test](../structuring-a-compose-test/SKILL.md), instrumented runner 구성은 [running-instrumented-tests-with-androidjunit4](../running-instrumented-tests-with-androidjunit4/SKILL.md), ADB 실행은 [running-instrumented-tests-via-adb](../running-instrumented-tests-via-adb/SKILL.md) 중 실제 요청에 필요한 대상만 선택한다. 입력은 프로젝트 버전, 기존 테스트와 요청 시나리오이며 결과는 변경 근거, 실행 명령, 관측과 미실행 범위다. 대상이 없으면 기존 프로젝트 절차와 공식 문서로 가능한 범위만 처리하고 제한을 밝힌다. 전체 순서 경유나 설치를 강제하지 않는다.
 """

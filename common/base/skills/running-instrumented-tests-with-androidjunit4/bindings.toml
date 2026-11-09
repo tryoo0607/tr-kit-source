@@ -1,0 +1,98 @@
+schema_version = 1
+runtime_note = "## 프로젝트 범위와 실행 근거\n\n기존 구조, DI, pinned 버전과 요청된 작업을 먼저 확인한다. SDK, emulator, Hilt와 앱 의존성을 자동 설치하거나 전체 앱을 재구성하지 않는다. 원본 예제의 버전과 API가 불명확하거나 프로젝트와 다르면 [find-docs](../find-docs/SKILL.md)에 라이브러리, 정확한 버전과 질문을 전달해 공식 API 근거를 확인한다. 도구가 없거나 지원 API를 확인하지 못하면 미확인으로 보고하며 추측한 API를 구현 완료로 제시하지 않는다. 필요한 테스트 종류와 명령만 선택하고 SDK, 기기, 권한이 없으면 실행 미검증으로 남긴다. 정적 코드 확인과 지침 모델 테스트는 Android 빌드, instrumented 테스트나 실기기 성공의 근거가 아니다.\n\n다른 skill 링크는 해당 작업이 필요할 때만 읽는 선택 참고다. 미선택 upstream skill은 배포되지 않았으며 링크 열람은 설치나 실행 승인이 아니다.\n\n실행 전 대상 device serial과 package를 확인하고 승인된 테스트 장치에만 명령을 적용한다. clearPackageData, pm clear와 animation 설정은 데이터 및 장치 상태를 바꾸므로 요청 범위에 포함될 때만 사용한다. 예제에 있다는 이유로 자동 실행하지 않는다."
+
+[[replacements]]
+file = "SKILL.md"
+old = "- [ ] **1. Pin the AndroidX Test artifacts on `androidTestImplementation`.** These are the canonical 2026 GA versions per `docs/CORPUS.md` H.1:"
+new = "- [ ] **1. Inspect the pinned AndroidX Test artifacts on `androidTestImplementation`.** The following coordinates are upstream examples, not a requirement to upgrade. Verify compatibility and add only missing dependencies within the requested setup scope:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../adb/tests/running-instrumented-tests-via-adb/SKILL.md"
+new = "../running-instrumented-tests-via-adb/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../fundamentals/strategies/applying-testing-strategies/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/fundamentals/strategies/applying-testing-strategies/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../jvm-tests/runner/configuring-junit4-on-android/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/jvm-tests/runner/configuring-junit4-on-android/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../../platform/legacy/migrating-from-android-test-classes/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/platform/legacy/migrating-from-android-test-classes/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../espresso/writing-espresso-tests/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/instrumentation/espresso/writing-espresso-tests/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../managed-devices/running-tests-on-gradle-managed-devices/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/instrumentation/managed-devices/running-tests-on-gradle-managed-devices/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../scenarios/launching-activities-with-activityscenario/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/instrumentation/scenarios/launching-activities-with-activityscenario/SKILL.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../uiautomator/cross-app-tests-with-uiautomator/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/instrumentation/uiautomator/cross-app-tests-with-uiautomator/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "docs/CORPUS.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/docs/CORPUS.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "tasks/research/R1-androidx-test-core.md"
+new = "upstream research R1-androidx-test-core.md (not included in the pinned checkout; unverified reference, use the official documentation listed below instead)"
+count = 6
+
+[[replacements]]
+file = "SKILL.md"
+old = "- **MUST** pass `-w` to `am instrument` so the exit code reflects test result. Without it, `$?` is meaningless."
+new = "- **MUST** pass `-w -r` to `am instrument` to wait for raw results. Shell exit status does not prove tests passed; parse stdout for failures, runner errors, completion and the expected executed-test count."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- [ ] `adb shell am instrument -w -r -e size small <pkg>.test/androidx.test.runner.AndroidJUnitRunner` returns a non-zero exit code on test failure."
+new = "- [ ] `adb shell am instrument -w -r -e size small <pkg>.test/androidx.test.runner.AndroidJUnitRunner` produces complete parsed results; failures and runner errors fail CI even when shell status is zero."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- **PREFERRED:** keep `testOptions.animationsDisabled = true` even when individual tests don't seem to need it; ripple/transition flake silently corrupts unrelated tests."
+new = "- **PREFERRED:** disable animations only on the authorized test device when needed, record the original settings and restore them afterward. Do not clear package data or modify an arbitrary connected device automatically."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- [ ] **6. Add Test Orchestrator on `androidTestUtil` \u2014 NOT `androidTestImplementation`.**"
+new = "- [ ] **6. Only when Test Orchestrator is selected within the requested test setup, place it on `androidTestUtil`, never `androidTestImplementation`.**"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- **MUST** put `androidx.test:orchestrator` on `androidTestUtil`, never on `androidTestImplementation`. Putting it on the wrong configuration fails silently."
+new = "- **MUST**, when Orchestrator is selected, put `androidx.test:orchestrator` on `androidTestUtil`, never on `androidTestImplementation`. Do not add Orchestrator merely to satisfy this example."
+count = 1
