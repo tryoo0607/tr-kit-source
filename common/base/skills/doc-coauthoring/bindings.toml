@@ -1,0 +1,260 @@
+schema_version = 1
+runtime_note = "## 적용 범위와 검증\n\n기존 업무 skill이 PRD, 설계 결정 등 산출물의 요구와 검증을 소유하면 그 담당을 유지하고 공동 작성 과정에만 이 skill을 선택 적용한다. 문서 형식만 보고 전체 절차를 강제하지 않는다. 독자, 필요한 설명 깊이, 근거, 미확인과 원래 요구를 보존한다. 독자 검토는 이해도와 모호함 검사이며 사실 검증을 대신하지 않는다. 중요한 사실과 API는 원문 근거를 별도 확인하고 실행하지 않은 독립 독자 검토를 통과로 보고하지 않는다. 가용 도구나 독립 검토자가 없으면 수동 검토와 남은 한계를 밝힌다.\n\n원본: anthropics/skills, revision dbd4588f9e1033efb41dad4bef2f7947c8993d44. 원본 안내는 UPSTREAM-README.md에 보존한다. 이 skill의 개별 라이선스 명시는 확인되지 않았으며 Apache-2.0으로 단정하지 않는다."
+
+[[replacements]]
+file = "SKILL.md"
+old = "Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks."
+new = "Use for collaborative substantive documents when no existing business skill owns the requested artifact. README work stays with github-readme-generator; file search and record storage stay with document. Local drafts do not imply publishing."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask if they want to try this workflow or prefer to work freeform."
+new = "Apply the useful stages directly within the requested scope. Reuse supplied context; do not require a workflow opt-in or repeated confirmations."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If user declines, work freeform. If user accepts, proceed to Stage 1."
+new = "Respect requests for freeform work or skipped stages. Otherwise proceed with the stages needed for this document."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Start by asking the user for meta-context about the document:"
+new = "First reuse the request, existing draft and supplied evidence. Establish audience, desired outcome, explanation depth and constraints; ask only about important gaps that materially affect the result:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "  - Ask if connected tools should be searched to learn more\n  - Wait for user confirmation before searching"
+new = "  - Use available, authorized read-only connected tools when relevant; state access limits and ask only for missing information that cannot be obtained."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Generate 5-10 numbered questions based on gaps in the context."
+new = "Ask only the important unanswered questions; do not impose a question count or ask again about supplied context."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask if there's any more context they want to provide at this stage, or if it's time to move on to drafting the document."
+new = "When sufficient context is available, proceed to drafting without requiring a stage confirmation; preserve unresolved questions explicitly."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "5-20 options will be brainstormed"
+new = "Only relevant alternatives will be considered"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask which section they'd like to start with."
+new = "Use the requested order, or begin with the section containing the most uncertainty."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask if this structure works, or if they want to adjust it."
+new = "Use the established format or a suitable structure and refine it with feedback."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "**If access to artifacts is available:**\nUse `create_file` to create an artifact. This gives both Claude and the user a scaffold to work from.\n\nInform them that the initial structure with placeholders for all sections will be created.\n\nCreate artifact with all section headers and brief placeholder text like \"[To be written]\" or \"[Content here]\".\n\nProvide the scaffold link and indicate it's time to fill in each section.\n\n**If no access to artifacts:**\nCreate a markdown file in the working directory. Name it appropriately (e.g., `decision-doc.md`, `technical-spec.md`).\n\nInform them that the initial structure with placeholders for all sections will be created.\n\nCreate file with all section headers and placeholder text.\n\nConfirm the filename has been created and indicate it's time to fill in each section.\n\n"
+new = "Use the existing requested canonical destination. For a chat draft, draft in chat; for an explicitly requested file, edit that file. Use the available file or document editing tools and verify the saved result. Do not assume `create_file` or `str_replace` exists. Publish only on an explicit publishing request through [artifact-publish](../artifact-publish/SKILL.md), passing the approved content and destination; if unavailable, provide the draft and report publishing as unexecuted. A local draft never authorizes external publication.\n\n"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Announce work will begin on the [SECTION NAME] section. Ask 5-10 clarifying questions about what should be included:"
+new = "Work on the requested section. Ask only about material gaps that remain after reading the supplied context:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "For the [SECTION NAME] section, brainstorm [5-20] things that might be included, depending on the section's complexity."
+new = "For the [SECTION NAME] section, consider alternatives only where they help resolve uncertainty."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Generate 5-20 numbered options based on section complexity. At the end, offer to brainstorm more if they want additional options."
+new = "Use only as many relevant options as the decision needs; skip brainstorming when the requirements already determine the content."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask which points should be kept, removed, or combined. Request brief justifications to help learn priorities for the next sections."
+new = "Reuse expressed priorities to keep, remove or combine points. Ask for a choice only when a material unresolved trade-off requires the user."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Based on what they've selected, ask if there's anything important missing for the [SECTION NAME] section."
+new = "Compare the section with all supplied requirements, flag gaps and preserve unresolved requirements rather than replacing them with the existing draft."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Use `str_replace` to replace the placeholder text for this section with the actual drafted content."
+new = "Use available editing tools to update the canonical document, or provide the requested draft in chat."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Provide a note: Instead of editing the doc directly, ask them to indicate what to change. This helps learning of their style for future sections. For example: \"Remove the X bullet - already covered by Y\" or \"Make the third paragraph more concise\"."
+new = "Direct user edits and inline feedback are both welcome. Read direct edits before continuing and preserve the user’s requirements and style."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Use `str_replace` to make edits (never reprint the whole doc)"
+new = "Use available tools for targeted edits; provide the full document when requested or needed for review"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "When section is done, confirm [SECTION NAME] is complete. Ask if ready to move to the next section."
+new = "When the section meets the requirements, continue to the next section without a mandatory confirmation."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask if ready to move to Reader Testing, or if they want to refine anything else."
+new = "Perform proportionate reader testing when useful; honor requested review depth and report any unexecuted review."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask if they want one more review, or if the work is done."
+new = "Report completion against the requested requirements and identify any unresolved facts or unexecuted checks."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "If user wants to skip a stage: Ask if they want to skip this and write freeform"
+new = "If user wants to skip a stage: honor the request and continue within the agreed scope"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Use `create_file` for drafting full sections"
+new = "Use the available document or file tools for the requested destination"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Use `str_replace` for all edits"
+new = "Use available editing tools and verify the resulting content"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Generate 5-10 specific questions based on context and section purpose."
+new = "Ask only specific material questions not already answered by the context; skip questions when the section can be drafted reliably."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Ask them to read through it and indicate what to change. Note that being specific helps learning for the next sections."
+new = "Provide the revision for review and continue with the requested work; use any feedback to refine subsequent sections."
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "Generate 5-10 questions that readers would realistically ask."
+new = "Choose a small, proportionate set of realistic reader questions covering the document’s purpose and remaining ambiguity."
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "For each question, invoke a sub-agent with just the document content and the question."
+new = "If an independent reviewer tool is available and useful, send the document and the selected questions in one scoped review. Do not create an agent for every question. If unavailable, perform a clearly labeled author self-check and report the independent check as unexecuted."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Invoke sub-agent to check for ambiguity, false assumptions, contradictions."
+new = "Reuse the same independent review for ambiguity, false assumptions and contradictions when available; otherwise perform a labeled self-check without claiming independence."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "The user will need to do the testing manually."
+new = "An independent review is optional and depends on available tools and requested depth. Without one, self-check the reader questions and report the independent check as unexecuted; do not require the user to open a new session."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Provide testing instructions:\n1. Open a fresh Claude conversation: https://claude.ai\n2. Paste or share the document content (if using a shared doc platform with connectors enabled, provide the link)\n3. Ask Reader Claude the generated questions"
+new = "If the user explicitly wants to conduct an independent reader review, provide the document and selected questions using the tool or workflow they choose. Do not automatically require a separate account, session or external document transfer."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "When Reader Claude consistently answers questions correctly and doesn't surface new gaps or ambiguities, the doc is ready."
+new = "Record which reader checks ran, their observed results and remaining ambiguity. Reader comprehension alone does not establish factual correctness or fulfillment of all requirements; verify those separately."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "When Reader Testing passes:\nAnnounce the doc has passed Reader Claude testing. Before completion:"
+new = "Only if an independent reader check actually ran and passed, report that observed result. Otherwise state what was self-checked and what remains unexecuted. Before completion:"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "Consider linking this conversation in an appendix so readers can see how the doc was developed"
+new = "Include only requested and relevant provenance; do not append the conversation or create a session record automatically"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "After 3 consecutive iterations with no substantial changes, ask if anything can be removed without losing important information."
+new = "When repeated edits stop improving the result, check for redundancy and finish when the requested requirements are met."
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./skills)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills)"
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./skills/docx)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/docx)"
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./skills/pdf)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/pdf)"
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./skills/pptx)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/pptx)"
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./skills/xlsx)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/xlsx)"
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./spec)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/spec)"
+count = 1
+
+[[replacements]]
+file = "UPSTREAM-README.md"
+old = "](./template)"
+new = "](https://github.com/anthropics/skills/tree/dbd4588f9e1033efb41dad4bef2f7947c8993d44/template)"
+count = 1

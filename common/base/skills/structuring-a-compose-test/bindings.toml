@@ -1,0 +1,56 @@
+schema_version = 1
+runtime_note = "## 프로젝트 범위와 실행 근거\n\n기존 구조, DI, pinned 버전과 요청된 작업을 먼저 확인한다. SDK, emulator, Hilt와 앱 의존성을 자동 설치하거나 전체 앱을 재구성하지 않는다. 원본 예제의 버전과 API가 불명확하거나 프로젝트와 다르면 [find-docs](../find-docs/SKILL.md)에 라이브러리, 정확한 버전과 질문을 전달해 공식 API 근거를 확인한다. 도구가 없거나 지원 API를 확인하지 못하면 미확인으로 보고하며 추측한 API를 구현 완료로 제시하지 않는다. 필요한 테스트 종류와 명령만 선택하고 SDK, 기기, 권한이 없으면 실행 미검증으로 남긴다. 정적 코드 확인과 지침 모델 테스트는 Android 빌드, instrumented 테스트나 실기기 성공의 근거가 아니다.\n\n다른 skill 링크는 해당 작업이 필요할 때만 읽는 선택 참고다. 미선택 upstream skill은 배포되지 않았으며 링크 열람은 설치나 실행 승인이 아니다."
+
+[[replacements]]
+file = "SKILL.md"
+old = "- **MUST** prefer the v2 entry points `androidx.compose.ui.test.junit4.v2.createComposeRule` / `createAndroidComposeRule`. The v1 forms are `@Deprecated(level = WARNING)` because they use `UnconfinedTestDispatcher` instead of `StandardTestDispatcher` (skydoves directive #6)."
+new = "- **MUST** verify the pinned Compose version supports the shown v2 entry points before using them. Preserve compatible v1 APIs when v2 is unavailable; do not upgrade dependencies just to copy a sample. Confirm deprecation and dispatcher behavior against the selected version’s official API documentation."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "- [ ] **3. Declare exactly one rule.** Prefer the v2 entry point — it defaults the composition dispatcher to `StandardTestDispatcher`, matching `kotlinx.coroutines.test.runTest`."
+new = "- [ ] **3. Declare exactly one rule.** Check the project version first. Use the following v2 example only when the pinned Compose artifact supports it; otherwise use the compatible entry point verified in official docs."
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../finders/finding-nodes-by-tag-text-content/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/finders/finding-nodes-by-tag-text-content/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../setup/choosing-test-rule-vs-runtest/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/setup/choosing-test-rule-vs-runtest/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../setup/configuring-test-dependencies/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/setup/configuring-test-dependencies/SKILL.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../setup/setting-up-host-vs-device-tests/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/setup/setting-up-host-vs-device-tests/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "../../synchronization/synchronizing-with-idle/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/synchronization/synchronizing-with-idle/SKILL.md"
+count = 2
+
+[[replacements]]
+file = "SKILL.md"
+old = "../testing-lazy-lists/SKILL.md"
+new = "https://github.com/skydoves/android-testing-skills/blob/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/patterns/testing-lazy-lists/SKILL.md"
+count = 1
+
+[[replacements]]
+file = "SKILL.md"
+old = "description: Use this skill to structure a Jetpack Compose UI test class the way androidx itself writes them — `@MediumTest` + `@RunWith(AndroidJUnit4::class)`, a single `createComposeRule(StandardTestDispatcher())` rule, hoisted `mutableStateOf` declared above `setContent { }`, and the Test → Find → Assert → Act → Re-assert flow. Covers when to use `createAndroidComposeRule<MyActivity>()` for custom Activities, how to drive state from outside the composition via `runOnIdle { }`, why state must NOT be hoisted inside `setContent`, and why `@get:Rule createComposeRule()` and `runComposeUiTest { }` MUST NOT both appear in the same test. Use when the developer asks \"how do I write a Compose test\", \"where do I declare state\", \"how do I name the test class\", \"MediumTest vs LargeTest\", \"rule.setContent inside @Before\", or shows a test class that won't compile or doesn't drive state from outside."
+new = "description: Use this skill to structure a Jetpack Compose UI test class the way androidx itself writes them — `@MediumTest` + `@RunWith(AndroidJUnit4::class)`, a single `createComposeRule(StandardTestDispatcher())` rule, hoisted `mutableStateOf` declared above `setContent { }`, and the Test → Find → Assert → Act → Re-assert flow. Covers when to use `createAndroidComposeRule for MyActivity()` for custom Activities, how to drive state from outside the composition via `runOnIdle { }`, why state must NOT be hoisted inside `setContent`, and why `@get:Rule createComposeRule()` and `runComposeUiTest { }` MUST NOT both appear in the same test. Use when the developer asks \"how do I write a Compose test\", \"where do I declare state\", \"how do I name the test class\", \"MediumTest vs LargeTest\", \"rule.setContent inside @Before\", or shows a test class that won't compile or doesn't drive state from outside."
+count = 1

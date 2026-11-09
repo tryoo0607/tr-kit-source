@@ -1,6 +1,9 @@
 schema_version = 1
 
 [sources]
+android-architecture = "https://github.com/GuillemRoca/agent-skills-android.git"
+android-skills = "https://github.com/android/skills.git"
+android-testing-skills = "https://github.com/skydoves/android-testing-skills.git"
 archify = "https://github.com/tt-a1i/archify.git"
 anthropic-skills = "https://github.com/anthropics/skills.git"
 bmad-method = "https://github.com/bmad-code-org/BMAD-METHOD.git"
