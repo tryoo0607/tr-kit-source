@@ -67,8 +67,13 @@ source와 생성물 배포 저장소는 구분한다. 양 제품 게시는 원�
 두 제품을 같은 source commit으로 `out/codex`, `out/claude`에 조립한 뒤 실행한다. `SOURCE_COMMIT_SHA`는 실제 전체 40자리 SHA로 대체하고 clone 경로는 존재하지 않는 새 경로를 사용한다.
 
 ```bash
-python3 scripts/delivery.py --built-root out --clone-root /tmp/tr-kit-delivery-check --source-revision SOURCE_COMMIT_SHA
+python3 scripts/setup_git_guard.py --prefix /tmp/tr-kit-delivery-scanner
+python3 scripts/delivery.py --built-root out --clone-root /tmp/tr-kit-delivery-check --source-revision SOURCE_COMMIT_SHA --gitleaks /tmp/tr-kit-delivery-scanner/bin/gitleaks
 ```
+
+`--gitleaks`는 정본 도구 manifest에 고정된 native Gitleaks 실행 파일을 필수로 지정한다. 전체 package 무결성을 확인한 뒤, 새 clone의 실제 원격 main parent와 비교한 추가·변경 blob을 게시 대상으로 검사한다. 같은 경로와 blob OID가 모두 같은 기존 파일만 분리하며 변경·이름 변경·신규 secret은 차단한다. 전체 package의 기존 findings는 false positive로 분류하지 않고 별도로 집계한다. 검증된 `release.json`·`assembly.json`의 files-map digest만 redacted 결과와 정확히 대조해 분류하며, 값만 제거한 projection도 기본 규칙으로 검사한다.
+
+`original`·`classified`·`projection`은 게시 대상의 원본 finding·검증된 checksum finding·projection finding 수이며, `unresolved`는 미분류 원본과 projection finding의 합이다. `whole_package_original`은 전체 원본 finding 수, `unchanged_original`·`unchanged_projection`은 원격 parent와 같은 path/OID인 파일의 별도 finding 수다. parent·remote/ref·package·index와 단일 게시 commit을 결합해 두 제품의 검사와 commit 준비를 첫 push 전에 끝내며 이후 scanner를 다시 호출하지 않는다. scanner 실패와 미해결 finding은 게시 전에 별도로 실패한다. 게시 중 네트워크 오류나 원격 변경은 별개의 실패이며 두 저장소 push는 원자적이지 않다.
 
 기본 검증도 네트워크 clone과 임시 clone의 파일 교체·staging을 수행하지만 commit·push는 하지 않는다. 실제 게시에는 `--push`, `TR_KIT_ALLOW_PUSH=1`, clean source와 배포 권한이 필요하다. [CI](.github/workflows/build.yml)와 [delivery 구현](scripts/delivery.py)이 정본이며, 게시는 호스트 설치·활성화와 별개다.
 

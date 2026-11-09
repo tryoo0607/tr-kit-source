@@ -80,20 +80,22 @@ class DeliveryTests(unittest.TestCase):
     def test_dry_run_preserves_remote_and_push_keeps_history_then_noop(self):
         origin, before = self.repository()
         clone = self.root / 'delivery'
-        delivery.prepare(self.output / 'codex', clone, 'codex', self.revision, str(origin))
+        prepared = delivery.prepare(self.output / 'codex', clone, 'codex', self.revision, str(origin))
         self.assertFalse((clone / 'old-hook').exists())
         self.assertIn('plugins/tr-codex/skills/example/ignored.txt',
                       self.run_git('-C', clone, 'ls-files').splitlines())
         self.assertEqual(before, self.run_git('--git-dir', origin, 'rev-parse', 'main'))
         with patch.dict(os.environ, {'TR_KIT_ALLOW_PUSH': '0'}):
             with self.assertRaisesRegex(ValueError, 'requires'):
-                delivery.publish(clone, self.revision)
-        with patch.dict(os.environ, {'TR_KIT_ALLOW_PUSH': '1'}):
-            self.assertEqual('pushed', delivery.publish(clone, self.revision))
+                delivery.publish(delivery.Audited(prepared, None, {}))
+        with patch.dict(os.environ, {'TR_KIT_ALLOW_PUSH': '1'}), patch.object(delivery, 'scan'):
+            audited = delivery.audit(prepared, '/scanner', create_commit=True)
+            self.assertEqual('pushed', delivery.publish(audited))
             self.assertEqual(before, self.run_git('--git-dir', origin, 'rev-parse', 'main^'))
             again = self.root / 'again'
-            self.assertEqual('', delivery.prepare(self.output / 'codex', again, 'codex', self.revision, str(origin)))
-            self.assertEqual('no-op', delivery.publish(again, self.revision))
+            prepared_again = delivery.prepare(self.output / 'codex', again, 'codex', self.revision, str(origin))
+            self.assertEqual('', prepared_again.changed)
+            self.assertEqual('no-op', delivery.publish(delivery.audit(prepared_again, '/scanner', create_commit=True)))
         with self.assertRaisesRegex(ValueError, 'already exist'):
             delivery.prepare(self.output / 'codex', clone, 'codex', self.revision, str(origin))
 
