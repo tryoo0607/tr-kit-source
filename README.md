@@ -50,6 +50,7 @@ Wiki 진입점은 Codex `wiki`, Claude `wiki-manager`이며 `wiki-query`는 각�
 | 원본 보관·검색, 기록·경험·지식 연결 | document / Claude-Mem / LLM Wiki |
 | 저장소·worktree 배치, 세션 재개·인계 | project / Worktrunk, session / Orca CLI |
 | README 작성·갱신·감사 | github-readme-generator |
+| 문서·도표의 계정 전용 웹 게시 | artifact-publish / Codex Sites / Claude Code Artifact |
 | 로컬 연결·skill 저작 | profile-setup / skill-authoring / skill-creator |
 
 각 업무 skill이 분석·산출물·검증을 맡고 document는 보관·검색과 기록 연결을 맡는다. 요청 전달·수신 확인·실제 완료는 구분하며 전달로 수신 호스트 권한이 확대되지 않는다.
