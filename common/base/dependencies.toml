@@ -283,3 +283,9 @@ revision = "46d0a00548be54ed63df104894e86e39543733e0"
 path = "skills/orca-cli"
 wrapped = true
 license_files = ["LICENSE"]
+
+[[skills]]
+id = "github-readme-generator"
+source = "readme-generator"
+revision = "d8bdac94d1a9488751d65e55e78eeabd47895bd0"
+path = "skills/github-readme-generator"

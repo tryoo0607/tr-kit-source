@@ -30,7 +30,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install 'PyYAML==6.0.3'
+      - name: Provision pinned deployment scanner
+        run: python3 scripts/setup_git_guard.py --prefix "$RUNNER_TEMP/delivery-scanner"
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
+        env:
+          TR_KIT_TEST_GITLEAKS: ${{ runner.temp }}/delivery-scanner/bin/gitleaks
       - name: Fetch exact upstream revisions
         run: python3 scripts/fetch_sources.py
       - name: Build both existing marketplaces
@@ -45,7 +49,7 @@ jobs:
             done
           done
       - name: Verify delivery without remote writes
-        run: python3 scripts/delivery.py --built-root out --clone-root "$RUNNER_TEMP/delivery-check" --source-revision "$GITHUB_SHA"
+        run: python3 scripts/delivery.py --built-root out --clone-root "$RUNNER_TEMP/delivery-check" --source-revision "$GITHUB_SHA" --gitleaks "$RUNNER_TEMP/delivery-scanner/bin/gitleaks"
       - name: Configure existing repository-scoped deploy keys
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
         env:
@@ -80,7 +84,7 @@ jobs:
           TR_KIT_ALLOW_PUSH: '1'
           TR_KIT_CLAUDE_REPOSITORY_URL: git@github-tr-claude:tryoo0607/tr-claude.git
           TR_KIT_CODEX_REPOSITORY_URL: git@github-tr-codex:tryoo0607/tr-codex.git
-        run: python3 scripts/delivery.py --built-root out --clone-root "$RUNNER_TEMP/delivery-push" --source-revision "$GITHUB_SHA" --push
+        run: python3 scripts/delivery.py --built-root out --clone-root "$RUNNER_TEMP/delivery-push" --source-revision "$GITHUB_SHA" --gitleaks "$RUNNER_TEMP/delivery-scanner/bin/gitleaks" --push
       - name: Remove temporary deploy keys
         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
         run: rm -f "$HOME/.ssh/tr-claude" "$HOME/.ssh/tr-codex"

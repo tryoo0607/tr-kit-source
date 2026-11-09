@@ -18,6 +18,8 @@ staged 내용, 전송 commit의 비밀 또는 등록된 로컬 전용 산출물�
 
 검사 후보의 정확한 bytes를 권한 0700 임시 디렉터리 아래 0600 일반 파일로 저장하고 index 또는 전체 outgoing 범위당 Gitleaks `dir`를 한 번 실행한다. 논리 경로와 무관한 중립 파일명으로 filename allowlist에 의한 누락을 방지한다. 신뢰 설정·빈 ignore·redacted report는 payload 밖에 두며, report의 알 수 없는 경로와 잘못된 형식은 차단한다. 비밀 내용과 scanner 출력을 공개하지 않고 자체 임시 자료만 정리한다. 큰 이력과 대형 파일은 여전히 시간·메모리·임시 디스크 비용이 있다.
 
+Go 의존성의 `go.sum`은 전체 파일을 제외하지 않는다. 해당 후보의 중립 파일명과 정규형 Go SHA256 체크섬 한 줄을 함께 만족할 때만 Gitleaks `generic-api-key` 규칙의 allowlist를 신뢰 설정에 추가한다. 기본 규칙 상속과 `condition = "AND"`를 재사용하며 다른 서비스 토큰 규칙, 추가된 줄과 비정상 체크섬은 계속 검사한다. 원본 bytes와 다른 파일의 검사는 유지한다. 이는 체크섬의 형식 판별이며 실제 의존성 무결성 검증을 대신하지 않는다.
+
 후보 blob은 경로로 조합한 revision 대신 index·tree의 mode와 object ID로 읽는다. gitlink는 기록된 commit 포인터만 검사하며 submodule 작업 트리나 내부 object를 읽지 않는다. submodule 내용은 해당 저장소를 별도로 등록해야 검사된다. 로컬 전용 경로 정책은 gitlink 경로에도 적용한다.
 
 

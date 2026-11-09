@@ -1,0 +1,4 @@
+interface:
+  display_name: "아티팩트 게시"
+  short_description: "문서와 도표를 계정 전용 웹 페이지로 게시하고 접근 가능한 링크를 전달합니다"
+  default_prompt: "$artifact-publish로 이 결과물을 본인 계정 전용 페이지로 정리하고 게시해줘."
