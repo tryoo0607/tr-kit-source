@@ -5,8 +5,8 @@
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/fetch_sources.py
-./build.sh codex --output out/codex-review
-./build.sh claude --output out/claude-review
+./build.sh codex --plugin-hooks --output out/codex-review
+./build.sh claude --plugin-hooks --output out/claude-review
 git diff --check
 ```
 
