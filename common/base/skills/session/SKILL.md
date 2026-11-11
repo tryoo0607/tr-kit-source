@@ -2,7 +2,7 @@
 name: session
 metadata:
   tr-role: policy
-description: 기존 작업 기록으로 세션 재개를 연결하고, 이전 대화 원문 조회와 다른 주체에게 전달, Orca 에이전트 실행 및 runtime 진단을 진행한다.
+description: 세션 재개, 이전 대화 원문 조회와 위임, Orca 실행, 열린 세션의 플러그인 반영 조회와 갱신 및 runtime 진단에 사용한다.
 ---
 
 # session
@@ -21,7 +21,7 @@ description: 기존 작업 기록으로 세션 재개를 연결하고, 이전 �
 |---|---|---|
 | 같은 작업의 세션 전환·재개 또는 이전 대화 원문 조회 | 진단을 요청한 재개 실패가 아님 | [continuity.md](references/continuity.md) |
 | 다른 세션, 에이전트, 사람에게 작업 위임 | 해당 요청이 포함됨 | [delegation.md](references/delegation.md) |
-| 설치된 새 skill과 hook을 실행 중 세션에 반영 | 해당 요청이 포함됨 | [runtime-refresh.md](references/runtime-refresh.md) |
+| 열린 세션 플러그인 반영 조회, 보류 목록 또는 갱신 | 해당 요청이 포함됨 | [runtime-refresh.md](references/runtime-refresh.md) |
 | 세션 무응답, 연결 이상, 재개 실패 | 해당 요청이 포함됨 | [recovery.md](references/recovery.md) |
 | Orca의 기존 공간에서 에이전트 시작, 조회 또는 입력 전달 | 위 인계/위임/진단 절차 없이 해당 조작만 요청됨 | [orca-cli wrapper](../orca-cli/SKILL.md), 확인한 호스트/기존 공간/수신자와 승인 범위를 전달 |
 
