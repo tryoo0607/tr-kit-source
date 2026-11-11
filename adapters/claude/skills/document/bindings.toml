@@ -1,3 +1,5 @@
+# 의도: 문서의 Wiki 진입점을 claude 제품에 실제 배포된 skill로 연결한다.
+# 보존: target_skill과 상대경로를 유지하며 공통 문서 보관 정책을 제품 adapter에서 재정의하지 않는다.
 schema_version = 1
 [[replacements]]
 file = "references/implementations/tool-connections.md"

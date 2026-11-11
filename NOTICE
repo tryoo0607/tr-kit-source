@@ -18,3 +18,17 @@ Revision: 6654f6b60cd9d5be8b54c6fafe44346dabeb3b76
 License: MIT License
 Copyright (c) 2026 Matt Pocock
 https://github.com/mattpocock/skills
+
+Bundled Claude-Mem attribution
+Source: https://github.com/thedotmack/claude-mem
+Revision: d9b36b66dc68da92af9df238e4c4debab587ba62
+Upstream NOTICE follows verbatim:
+
+Claude-Mem
+Copyright 2026 Alex Newman
+
+This product includes software developed for the Claude-Mem project.
+
+Licensed under the Apache License, Version 2.0.
+
+If other attributions are required by dependencies or included code, add them here.

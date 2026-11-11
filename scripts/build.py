@@ -16,6 +16,20 @@ class BuildError(ValueError):
     pass
 
 
+MODIFICATION_NOTICE = (
+    '> tr-kit-source 변경 고지: 이 파일은 조립 시 로컬 binding으로 변경했습니다. '
+    '출처와 변환 내역은 플러그인 루트의 assembly.json을 확인합니다.\n\n'
+)
+
+
+def mark_modified_markdown(path):
+    content = path.read_text()
+    offset = 0
+    if content.startswith('---\n') and '\n---\n' in content[4:]:
+        offset = content.index('\n---\n', 4) + 5
+    path.write_text(content[:offset] + MODIFICATION_NOTICE + content[offset:])
+
+
 def inside(root, value):
     path = (root / value).resolve()
     if not path.is_relative_to(root.resolve()):
@@ -200,6 +214,7 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=
             if folder.exists():
                 copy_tree(folder, stage / 'scripts')
         report = []
+        external_markdown = {}
         for entry, selected, commit in records:
             destination = stage / 'skills' / entry['id']
             wrapped = entry.get('wrapped', False)
@@ -231,6 +246,13 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(origin, target)
+            copied = [payload] + [inside(stage, item['target'])
+                                  for item in entry.get('resources', [])]
+            for target in copied:
+                candidates = target.rglob('*.md') if target.is_dir() else [target]
+                for path in candidates:
+                    if path.suffix == '.md':
+                        external_markdown[path] = path.read_bytes()
             report.append({'id': entry['id'], 'revision': commit, 'path': entry['path'],
                            'requires': entry.get('requires', []),
                            'wrapped': wrapped,
@@ -257,6 +279,9 @@ def assemble(root, product, output, *, version='0.0.0', source_cache=None, name=
                 record = bind_skill(stage, path.parent.name, path)
                 record['scope'] = scope
                 bindings.append(record)
+        for path, original in external_markdown.items():
+            if path.read_bytes() != original:
+                mark_modified_markdown(path)
         filename = 'AGENTS.md' if product == 'codex' else 'CLAUDE.md'
         template = (adapter / (filename + '.template')).read_text()
         if template.count('{{COMMON_INSTRUCTIONS}}') != 1:

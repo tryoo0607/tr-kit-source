@@ -1,3 +1,5 @@
+# 의도: description을 명시적 Wiki workflow와 설정된 hub 중심으로 한정한다.
+# 보존: 일반적인 idea, read, review 요청을 Wiki로 넓게 가져가지 않으며 Wiki 전문 절차는 유지한다.
 schema_version = 1
 [[replacements]]
 file = "SKILL.md"
