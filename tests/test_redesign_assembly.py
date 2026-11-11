@@ -63,6 +63,21 @@ class AssemblyTests(unittest.TestCase):
         self.assertTrue((self.output / 'scripts/helper.py').is_file())
         self.assertFalse(list(self.output.rglob('*.pyc')))
 
+    def test_session_runtime_refresh_script_is_in_both_products(self):
+        (self.base / 'dependencies.toml').write_text('schema_version=1\n')
+        actual = SCRIPT.parents[1] / 'common/base/skills/session'
+        import shutil
+        shutil.copytree(actual, self.base / 'skills/session')
+        for product in ('claude', 'codex'):
+            with self.subTest(product=product):
+                output = self.output / product
+                build.assemble(self.root, product, output)
+                helper = output / 'skills/session/scripts/runtime_refresh.py'
+                self.assertEqual((actual / 'scripts/runtime_refresh.py').read_bytes(), helper.read_bytes())
+                result = subprocess.run(['python3', str(helper), '--help'], capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn('inspect', result.stdout)
+
     def test_repository_alias_resolves_only_in_selected_cache(self):
         declaration = self.declaration.replace(str(self.origin), self.origin.name)
         (self.base / 'dependencies.toml').write_text(declaration)
