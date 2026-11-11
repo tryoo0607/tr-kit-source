@@ -1,3 +1,5 @@
+# 의도: description을 YAML folded scalar로 보정한다.
+# 보존: 검색 동작과 description의 의미는 바꾸지 않는다. 변환은 형식 보정이며 upstream NOTICE를 함께 전달한다.
 schema_version = 1
 [[replacements]]
 file = "SKILL.md"

@@ -1,3 +1,5 @@
+# 의도: 원문 reference/config.md와 reference/list.md의 실제 앵커에 맞춰 링크만 보정한다.
+# 보존: custom column과 default_branch 동작을 변경하지 않고 원래 CLI 계약을 유지한다.
 schema_version = 1
 
 # Normalize site anchors only in the copied official documentation.

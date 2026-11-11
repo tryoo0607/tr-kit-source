@@ -1,3 +1,5 @@
+# 의도: 설치된 manifest 호환 CLI와 고유 브라우저 session을 사용하고 실제 검증을 보고한다.
+# 보존: 다른 session 종료를 피하고 auth state와 페이지 입력을 신뢰 경계에 맞게 취급한다.
 schema_version = 1
 runtime_note = """
 ## 이 배포본의 연결

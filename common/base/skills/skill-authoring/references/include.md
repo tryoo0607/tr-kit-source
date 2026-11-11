@@ -20,6 +20,14 @@
 7. 각 제품을 새 출력 경로로 조립하고 assembly.json, 포함 목록과 변경 결과를 확인한다. bindings.toml은 배포하지 않는다. 현재 조립기는 공통과 adapter의 동일 출력 파일 충돌을 거부하며 임의의 Markdown 병합을 하지 않는다. 대응 계층 유지가 지원되지 않는 덮어쓰기를 허용하지 않는다. 같은 산출물을 다시 덮어쓰거나 검증을 설치와 혼동하지 않는다.
    공통/제품 scripts와 adapter mcp.json도 조립한다. MCP 등록 자료는 포함된 원본 런타임을 실행하므로 실제 프로세스로 initialize와 tools/list, 저장/조회를 확인한다. 호스트 설정을 쓰거나 plugin hook을 자동 활성화하지 않는다.
 
+### 커스텀 의도와 업데이트 대조
+
+binding의 규칙 또는 관련 묶음 가까이에 변경 이유와 보존할 행동을 짧게 기록한다. 이 설명은 현재 변환의 계약이며 과거 사용자 승인 원문을 대신하지 않는다. 공통 판단은 공통 binding, 제품별 경로와 호출 차이는 해당 adapter가 소유한다. 이미 충분한 설명을 규칙마다 복제하지 않는다.
+
+원본 갱신 전에는 기존 고정 원문과 현재 커스텀 조립 결과를 보존하고 hash 및 source revision을 기록한다. 승인된 새 원문은 별도 clean checkout에서 확인해 세 자료를 함께 비교한다. 이전 원문에서 무엇이 바뀌었는지, 현재 커스텀이 보존하는 행동은 무엇인지, 새 원문의 개선을 기존 new 문구가 가리지 않는지 확인한다. 가능하면 새 커스텀 결과도 나란히 대조한다. 조립 count와 링크 및 형식 통과는 기계적 재적용 검사이며 요구 보존과 의미 검수 통과가 아니다. 중요한 차이가 있으면 영향받는 대표 사례만 실제 행동으로 재검증하고 미실행은 밝힌다. 새 원문을 확인하지 않았으면 실제 업데이트 검수 완료로 기록하지 않는다.
+
+원본 LICENSE와 NOTICE 및 파일별 조건을 먼저 확인한다. 저장소의 일부가 특정 라이선스라는 설명을 다른 파일에 자동 적용하지 않는다. 복제나 수정 권한이 미확정이면 해당 파일과 배포 범위를 미결로 알리고 임의로 제외하거나 대체하지 않는다. 조립기는 외부에서 복사된 Markdown의 실제 binding 변경에 파일 내 변경 고지를 추가한다. 이는 권리 허락을 새로 부여하거나 전체 적합성을 검사하는 기능이 아니다. 무변경 runtime과 로컬 자체 진입점은 구분한다. license_files와 resources 선언뿐 아니라 실제 양 제품 package의 고지 원문, 변경 표시와 원문 보존을 대조한 뒤 결과를 보고한다.
+
 개발 도구의 실행 버전은 common/base/scripts/dev-tools.toml에 둔다. source의 scripts/setup_dev_tools.py는 명시한 새 prefix에 CLI와 browser를 설치하고 env.sh, npm lockfile과 Python freeze를 남긴다. 기존 prefix와 전역 설정은 덮지 않는다. 설치는 skill 조립과 별도로 승인된 범위에서 실행하고 필요한 shell에서만 env.sh를 명시 적용한다. Python Playwright의 browser와 Node CLI의 preview engine 조합은 scripts/verify_dev_tools.py로 실제 검사한다. 현재 자동 provision은 Linux x86_64를 지원하며 다른 환경에서 검증 완료로 취급하지 않는다. toolchain 생성, host plugin 활성화와 모델의 skill 선택은 별도 완료 조건이다.
 
 조립 검수에서 표준 compatibility 필드 때문에 고정 creator validator가 거부하면 원본을 삭제/변형해 통과시키지 않는다. 이 repository의 scripts/validate.py에 배포 skill과 --creator 경로를 전달하면 해당 필드를 별도 검사하고 나머지는 임시 검사본으로 고정 validator에 전달한다. 원본과 배포본 metadata는 유지한다. 이 검사기는 Python/PyYAML이 필요하며 source에서 실행하는 검수 도구다. 제공되지 않는 환경에서는 해당 필드 수동 대조와 도구 미실행 범위를 구분한다.

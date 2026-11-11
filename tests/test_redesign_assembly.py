@@ -43,6 +43,7 @@ class AssemblyTests(unittest.TestCase):
         self.assertIn('hooks:', (self.output / 'skills/review/SKILL.md').read_text())
         self.assertTrue((self.output / 'skills/review/scripts/check.py').exists())
         self.assertEqual(0o755, (self.output / 'skills/review/scripts/check.py').stat().st_mode & 0o777)
+        self.assertNotIn(build.MODIFICATION_NOTICE, (self.output / 'skills/review/SKILL.md').read_text())
         self.assertFalse((self.output / 'hooks').exists())
         self.assertEqual('Shared rules\n\n', (self.output / 'CLAUDE.md').read_text())
         report = json.loads((self.output / 'assembly.json').read_text())
@@ -185,6 +186,7 @@ class AssemblyTests(unittest.TestCase):
         self.assertTrue(content.startswith('---\nname: review\n'))
         self.assertIn('hooks:', content)
         self.assertIn('Resolve skill_dir', content)
+        self.assertEqual(1, content.count(build.MODIFICATION_NOTICE))
         self.assertEqual(original, (self.origin / 'skills/review/SKILL.md').read_text())
         self.assertFalse((self.output / 'skills/review/bindings.toml').exists())
         self.assertEqual(1, len(json.loads((self.output / 'assembly.json').read_text())['bindings']))
@@ -219,15 +221,17 @@ class AssemblyTests(unittest.TestCase):
         build.assemble(self.root, 'claude', self.output)
         text = (self.output / 'skills/review/SKILL.md').read_text()
         self.assertIn('Shared policy with product call', text)
+        self.assertEqual(1, text.count(build.MODIFICATION_NOTICE))
         self.assertFalse(list(self.output.rglob('bindings.toml')))
         report = json.loads((self.output / 'assembly.json').read_text())
         self.assertEqual(['common', 'claude'], [item['scope'] for item in report['bindings']])
 
     def test_license_is_copied_from_verified_checkout(self):
-        (self.base / 'dependencies.toml').write_text(self.declaration + 'license_files=["AGREEMENT"]\n')
+        (self.base / 'dependencies.toml').write_text(self.declaration + 'license_files=["AGREEMENT", "NOTICE"]\n')
         # A file outside the selected skill but tracked by the pinned source.
         (self.origin / 'AGREEMENT').write_text('Preserve this license\n')
-        subprocess.run(['git', '-C', str(self.origin), 'add', 'AGREEMENT'], check=True, capture_output=True)
+        (self.origin / 'NOTICE').write_text('Upstream attribution\n')
+        subprocess.run(['git', '-C', str(self.origin), 'add', 'AGREEMENT', 'NOTICE'], check=True, capture_output=True)
         subprocess.run(['git', '-C', str(self.origin), '-c', 'user.name=Test', '-c',
                         'user.email=test@example.invalid', 'commit', '-m', 'license'], check=True, capture_output=True)
         commit = subprocess.check_output(['git', '-C', str(self.origin), 'rev-parse', 'HEAD'], text=True).strip()
@@ -235,6 +239,45 @@ class AssemblyTests(unittest.TestCase):
         (self.base / 'dependencies.toml').write_text(declaration)
         build.assemble(self.root, 'claude', self.output)
         self.assertEqual('Preserve this license\n', (self.output / 'skills/review/AGREEMENT').read_text())
+        self.assertEqual(b'Upstream attribution\n', (self.output / 'skills/review/NOTICE').read_bytes())
+
+    def test_metadata_only_change_has_notice_after_frontmatter(self):
+        self.binding('schema_version=1\n[[replacements]]\nfile="SKILL.md"\n'
+                     'old="description: Review"\nnew="description: >-\\n  Review"\ncount=1\n')
+        original = (self.origin / 'skills/review/SKILL.md').read_text()
+        build.assemble(self.root, 'claude', self.output)
+        result = (self.output / 'skills/review/SKILL.md').read_text()
+        expected = original.replace('description: Review', 'description: >-\n  Review')
+        self.assertEqual(expected, result.replace(build.MODIFICATION_NOTICE, '', 1))
+        self.assertGreater(result.index(build.MODIFICATION_NOTICE), result.index('\n---\n', 4))
+
+    def test_local_binding_does_not_claim_upstream_modification(self):
+        local = self.base / 'skills/local'
+        local.mkdir(parents=True)
+        (local / 'SKILL.md').write_text('---\nname: local\ndescription: Local\n---\nOwn text.\n')
+        (local / 'bindings.toml').write_text('schema_version=1\nruntime_note="Local product connection"\n')
+        build.assemble(self.root, 'claude', self.output)
+        result = (self.output / 'skills/local/SKILL.md').read_text()
+        self.assertIn('Local product connection', result)
+        self.assertNotIn(build.MODIFICATION_NOTICE, result)
+
+    def test_changed_resource_markdown_is_marked_without_changing_original(self):
+        (self.origin / 'README.md').write_text('# Upstream\nOriginal link.\n')
+        subprocess.run(['git', '-C', str(self.origin), 'add', 'README.md'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(self.origin), '-c', 'user.name=Test', '-c',
+                        'user.email=test@example.invalid', 'commit', '-m', 'resource'], check=True, capture_output=True)
+        revision = subprocess.check_output(['git', '-C', str(self.origin), 'rev-parse', 'HEAD'], text=True).strip()
+        declaration = self.declaration.replace(self.commit, revision)
+        declaration += 'resources=[{source="README.md",target="skills/review/UPSTREAM-README.md"}]\n'
+        (self.base / 'dependencies.toml').write_text(declaration)
+        self.binding('schema_version=1\n[[replacements]]\nfile="UPSTREAM-README.md"\n'
+                     'old="Original link."\nnew="Pinned link."\ncount=1\n')
+        build.assemble(self.root, 'claude', self.output)
+        result = (self.output / 'skills/review/UPSTREAM-README.md').read_text()
+        self.assertTrue(result.startswith(build.MODIFICATION_NOTICE))
+        self.assertEqual('# Upstream\nPinned link.\n', result.replace(build.MODIFICATION_NOTICE, '', 1))
+        self.assertEqual('# Upstream\nOriginal link.\n', (self.origin / 'README.md').read_text())
+        self.assertEqual('', subprocess.check_output(['git', '-C', str(self.origin), 'status', '--porcelain'], text=True))
 
     def test_invalid_license_inputs_leave_no_release(self):
         for value in ['../outside', '/etc/passwd', 'missing']:

@@ -1,3 +1,5 @@
+# 의도: README 명령의 entrypoint와 실제 호출 구현 및 제품 설정을 검증하도록 연결한다.
+# 보존: 문서 감사가 코드 수정, 설치, fetch/push나 실서버 실행 승인으로 확대되지 않도록 한다.
 schema_version = 1
 runtime_note = """
 ## 이 배포본의 검증 보완

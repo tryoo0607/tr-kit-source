@@ -265,7 +265,7 @@ id = "mem-search"
 source = "claude-mem"
 revision = "d9b36b66dc68da92af9df238e4c4debab587ba62"
 path = "plugin/skills/mem-search"
-license_files = ["LICENSE"]
+license_files = ["LICENSE", "NOTICE"]
 resources = [{source="plugin", target="runtimes/claude-mem"}]
 
 [[skills]]
