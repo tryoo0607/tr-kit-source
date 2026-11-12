@@ -764,17 +764,20 @@ def claude_plugin_listing(text, inventory):
     build = r'[0-9A-Za-z-]+'
     version = rf'{number}\.{number}\.{number}(?:-{prerelease}(?:\.{prerelease})*)?(?:\+{build}(?:\.{build})*)?'
     scope = r'user|project|local|managed|session|synced'
-    divider_seen = False
-    for line in text.splitlines():
+    lines = text.splitlines()
+    footer_seen = False
+    for index, line in enumerate(lines):
         ids = re.findall(r'(?<![\w.-])[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9_.-]+', line)
         if not ids:
             stripped = line.strip()
             if re.fullmatch(r'[─━╌═-]+', stripped):
-                divider_seen = True
                 continue
-            # Observed Claude2.1.322 screen chrome, below the response divider.
-            # Do not treat arbitrary footer text or effort values as listing data.
-            if divider_seen and re.fullmatch(r'\s{2,}◐ medium · /effort\s*', line):
+            # Observed Claude2.1.322 screen chrome: complete list, effort, divider.
+            following = next((s.strip() for s in lines[index + 1:] if s.strip()), '')
+            if (not footer_seen and set(found) == set(expected) and
+                    re.fullmatch(r'\s{2,}◐ medium · /effort\s*', line) and
+                    re.fullmatch(r'[─━╌═-]+', following)):
+                footer_seen = True
                 continue
             if (not stripped or re.fullmatch(r'(?:⎿\s*)?Installed plugins:', stripped) or
                     (not expected and stripped == 'No plugins installed.')):

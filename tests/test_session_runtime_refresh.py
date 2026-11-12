@@ -419,7 +419,7 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.installation['plugins'][0]['version'] = '2.0.0'
         for body in ('example@market 1.0.0 user enabled',
                      '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n────',
-                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n────\n'+' '*100+'◐ medium · /effort'):
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n'+' '*100+'◐ medium · /effort\n────'):
             client, plan = self.claude_plan()
             client.responses['/plugin list --enabled'] = [body]
             with tempfile.TemporaryDirectory() as directory:
@@ -444,6 +444,9 @@ class RuntimeRefreshTests(unittest.TestCase):
                      good.replace('1.0.0','1.0.0-..'), good.replace('1.0.0','1.0.0+_'),
                      good.replace('1.0.0','1.0.0-01'), good.replace('1.0.0','01.0.0'),
                      good+'\n  ◐ medium · /effort',
+                     good+'\n────\n  ◐ medium · /effort',
+                     '  ◐ medium · /effort\n────\n'+good,
+                     good+'\n  ◐ medium · /effort\n────\n  ◐ medium · /effort\n────',
                      good+'\n────\n  ◐ medium · /effort extra',
                      good+'\n────\n  ◐ unknown · /effort',
                      good+'\n• another (v1.0.0, user) ✔ enabled'):
