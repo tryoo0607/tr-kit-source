@@ -418,7 +418,9 @@ class RuntimeRefreshTests(unittest.TestCase):
     def test_claude_stale_listing_is_diagnostic_and_reloads(self):
         self.installation['plugins'][0]['version'] = '2.0.0'
         for body in ('example@market 1.0.0 user enabled',
-                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n────'):
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n────',
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n'+' '*100+'◐ medium · /effort\n────',
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n'+' '*58+'Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll\n────'):
             client, plan = self.claude_plan()
             client.responses['/plugin list --enabled'] = [body]
             with tempfile.TemporaryDirectory() as directory:
@@ -442,6 +444,14 @@ class RuntimeRefreshTests(unittest.TestCase):
                      good.replace('1.0.0','^1.0.0'), good.replace('(v1.0.0, user)','(user)'),
                      good.replace('1.0.0','1.0.0-..'), good.replace('1.0.0','1.0.0+_'),
                      good.replace('1.0.0','1.0.0-01'), good.replace('1.0.0','01.0.0'),
+                     good+'\n  ◐ medium · /effort',
+                     good+'\n────\n  ◐ medium · /effort',
+                     '  ◐ medium · /effort\n────\n'+good,
+                     good+'\n  ◐ medium · /effort\n────\n  ◐ medium · /effort\n────',
+                     good+'\n────\n  ◐ medium · /effort extra',
+                     good+'\n────\n  ◐ unknown · /effort',
+                     good+'\n  Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll extra\n────',
+                     good+'\n  Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll',
                      good+'\n• another (v1.0.0, user) ✔ enabled'):
             client,plan=self.claude_plan()
             client.responses['/plugin list --enabled']=body.splitlines()
@@ -487,6 +497,20 @@ class RuntimeRefreshTests(unittest.TestCase):
                 m.native_query(client,plan,target,self.self_pane,Mock(),'/plugin list --enabled','plugin-preflight',
                     completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
             completion.assert_not_called()
+
+    def test_claude_waits_for_new_screen_echo_after_incomplete_stream(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        client.responses['/plugin list --enabled']=['Installed plugins:']
+        before={'source':'screen','tail':['❯'],'latestCursor':'10'}
+        early=dict(before,latestCursor='11')
+        ready=dict(early,tail=['❯ /plugin list --enabled','• example@market (v1.0.0, user) ✔ enabled','❯'])
+        frames=[(client.target,frame) for frame in (before,early,ready)]
+        with patch.object(m,'guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
+            _,text=m.native_query(client,plan,target,self.self_pane,Mock(),'/plugin list --enabled','plugin-preflight',
+                completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
+        self.assertEqual({'example@market:user':'1.0.0'},m.claude_plugin_listing(text,self.installation))
+        self.assertEqual(3,guard.call_count)
+        self.assertEqual(1,len(client.sent))
 
     def test_claude_partial_reload_waits_for_summary_without_resending(self):
         client,plan=self.claude_plan();target=plan['targets'][0]
@@ -611,7 +635,8 @@ class RuntimeRefreshTests(unittest.TestCase):
             previous={'source':'screen','tail':[marker,body,'❯'],'latestCursor':'10'}
             for case, extra in (('repeat',[marker,body,'❯']),('echo-only',[marker,'❯']),('stale',[])):
                 current=dict(previous,tail=previous['tail']+extra)
-                with self.subTest(command=command,case=case), patch.object(m,'guard',side_effect=[(client.target,previous),(client.target,current)]):
+                first=iter([previous])
+                with self.subTest(command=command,case=case), patch.object(m,'guard',side_effect=lambda *a,**k:(client.target,next(first,current))),patch.object(m.time,'sleep'):
                     if case == 'repeat':
                         _, fresh=m.native_query(client,plan,target,self.self_pane,Mock(),command,'repeat')
                         self.assertEqual(body,fresh)
