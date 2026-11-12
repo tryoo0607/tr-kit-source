@@ -419,7 +419,8 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.installation['plugins'][0]['version'] = '2.0.0'
         for body in ('example@market 1.0.0 user enabled',
                      '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n────',
-                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n'+' '*100+'◐ medium · /effort\n────'):
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n'+' '*100+'◐ medium · /effort\n────',
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n'+' '*58+'Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll\n────'):
             client, plan = self.claude_plan()
             client.responses['/plugin list --enabled'] = [body]
             with tempfile.TemporaryDirectory() as directory:
@@ -449,6 +450,8 @@ class RuntimeRefreshTests(unittest.TestCase):
                      good+'\n  ◐ medium · /effort\n────\n  ◐ medium · /effort\n────',
                      good+'\n────\n  ◐ medium · /effort extra',
                      good+'\n────\n  ◐ unknown · /effort',
+                     good+'\n  Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll extra\n────',
+                     good+'\n  Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll',
                      good+'\n• another (v1.0.0, user) ✔ enabled'):
             client,plan=self.claude_plan()
             client.responses['/plugin list --enabled']=body.splitlines()

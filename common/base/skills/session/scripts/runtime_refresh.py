@@ -772,10 +772,11 @@ def claude_plugin_listing(text, inventory):
             stripped = line.strip()
             if re.fullmatch(r'[─━╌═-]+', stripped):
                 continue
-            # Observed Claude2.1.322 screen chrome: complete list, effort, divider.
+            # Observed Claude2.1.322 chrome: complete list, one known hint, divider.
             following = next((s.strip() for s in lines[index + 1:] if s.strip()), '')
             if (not footer_seen and set(found) == set(expected) and
-                    re.fullmatch(r'\s{2,}◐ medium · /effort\s*', line) and
+                    re.fullmatch(r'\s{2,}(?:◐ medium · /effort|'
+                                 r'Scroll wheel is sending arrow keys · use PgUp/PgDn to scroll)\s*', line) and
                     re.fullmatch(r'[─━╌═-]+', following)):
                 footer_seen = True
                 continue
