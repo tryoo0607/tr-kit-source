@@ -638,7 +638,7 @@ def claude_permission(text):
     raise Deferred('claude-permissions-unknown')
 
 
-def native_query(client, plan, target, self_pane, journal, command, phase):
+def native_query(client, plan, target, self_pane, journal, command, phase, completion=None):
     _, previous = guard(client, plan, target, self_pane)
     cursor = previous.get('latestCursor')
     if cursor is None:
@@ -692,6 +692,9 @@ def native_query(client, plan, target, self_pane, journal, command, phase):
                 response.append(line)
             fresh = '\n'.join(response)
             if fresh.strip() and (len(indices) > old_count or fresh not in previous_text):
+                if completion is not None:
+                    return claude_complete_response(client, plan, target, self_pane,
+                                                    command, current, fresh, *completion)
                 return text, fresh
     else:
         _, current = guard(client, plan, target, self_pane)
@@ -701,7 +704,11 @@ def native_query(client, plan, target, self_pane, journal, command, phase):
     tail = delta.get('tail')
     if delta.get('source') != 'stream' or not isinstance(tail, list) or any(not isinstance(x, str) for x in tail):
         raise Deferred('native-response-output-unknown')
-    return idle_screen(target['provider'], current), '\n'.join(tail)
+    fresh = '\n'.join(tail)
+    if completion is not None:
+        # Stream freshness cannot bind a later screen echo: validate this delta only.
+        completion[0](fresh)
+    return idle_screen(target['provider'], current), fresh
 
 
 def claude_plugin_listing(text, inventory):
@@ -753,6 +760,44 @@ def claude_reload_summary(text, inventory):
     return dict(zip(('plugins', 'skills', 'agents', 'hooks', 'mcpServers', 'lspServers'), counts))
 
 
+def claude_complete_response(client, plan, target, self_pane, command, initial_frame, text, validate, pending_reason):
+    # Only called for a proved fresh screen echo; retain its prefix/cursor.
+    initial = screen(initial_frame).splitlines()
+    marker = '❯ ' + command
+    indices = [i for i, line in enumerate(initial) if line.strip() == marker]
+    if not indices:
+        raise Deferred('claude-response-boundary-unknown')
+    prefix = initial[:indices[-1] + 1]
+    cursor = initial_frame.get('latestCursor')
+    if cursor is None:
+        raise Deferred('native-response-freshness-unknown')
+    frame = initial_frame
+    deadline = time.monotonic() + 3
+    for attempt in range(12):
+        try:
+            validate(text)
+            return screen(frame), text
+        except Deferred as error:
+            if str(error) != pending_reason or attempt == 11 or time.monotonic() >= deadline:
+                raise
+        time.sleep(0.05)
+        _, frame = guard(client, plan, target, self_pane)
+        lines = screen(frame).splitlines()
+        commands = [i for i, line in enumerate(lines) if line.lstrip().startswith('❯') and line.strip() != '❯']
+        current_prefix = lines[:commands[-1] + 1] if commands else []
+        count = sum(line.strip() == marker for line in lines)
+        if (not commands or lines[commands[-1]].strip() != marker or frame.get('latestCursor') != cursor or
+                count > len(indices) or len(current_prefix) > len(prefix) or
+                current_prefix != prefix[-len(current_prefix):]):
+            raise Deferred('claude-response-boundary-changed')
+        response = []
+        for line in lines[commands[-1] + 1:]:
+            if line.strip() == '❯':
+                break
+            response.append(line)
+        text = '\n'.join(response)
+
+
 def refresh_claude(client, plan, target, self_pane, journal):
     installation_before = installation_guard(target)
     version = installation_before.get('nativeVersion', '')
@@ -767,13 +812,17 @@ def refresh_claude(client, plan, target, self_pane, journal):
     _, help_output = native_query(client, plan, target, self_pane, journal, '/help', 'reload-support')
     if not re.search(r'(?m)^\s*(?:❯\s*)?/reload-plugins(?:\s|$)', help_output):
         raise Deferred('claude-reload-command-unsupported')
-    _, listing = native_query(client, plan, target, self_pane, journal, '/plugin list --enabled', 'plugin-preflight')
+    _, listing = native_query(client, plan, target, self_pane, journal, '/plugin list --enabled', 'plugin-preflight',
+                              completion=(lambda text: claude_plugin_listing(text, installation_before),
+                                          'claude-runtime-plugin-list-unknown'))
     listed_before = claude_plugin_listing(listing, installation_before)
     listing_matches = listed_before == {p['id'] + ':' + p['scope']: p['version']
                                        for p in installation_before['plugins'] if p['enabled']}
     journal.record('runtime-listing-before', handle=target['handle'],
                    versions=listed_before, matchesInstalled=listing_matches)
-    _, output = native_query(client, plan, target, self_pane, journal, '/reload-plugins', 'native-reload')
+    _, output = native_query(client, plan, target, self_pane, journal, '/reload-plugins', 'native-reload',
+                             completion=(lambda text: claude_reload_summary(text, installation_before),
+                                         'claude-reload-completion-unknown'))
     summary = claude_reload_summary(output, installation_before)
     journal.record('reload-completed', handle=target['handle'], counts=summary)
     after = native_status(client, plan, target, self_pane, journal)

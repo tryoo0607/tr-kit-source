@@ -453,6 +453,51 @@ class RuntimeRefreshTests(unittest.TestCase):
         with self.assertRaisesRegex(m.Deferred,'ambiguous'):
             m.claude_plugin_listing(good,ambiguous)
 
+    def test_claude_partial_listing_reads_until_complete_without_sending(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        heading=['❯ /plugin list --enabled','  ⎿  Installed plugins:','────','❯']
+        complete=heading[:2]+['• example@market (v1.0.0, user) ✔ enabled']+heading[2:]
+        frame=lambda rows:{'source':'screen','tail':rows,'latestCursor':'6'}
+        validate=lambda text:m.claude_plugin_listing(text,self.installation)
+        args=(client,plan,target,self.self_pane,'/plugin list --enabled',frame(heading),'────',validate,'claude-runtime-plugin-list-unknown')
+        frames=[(client.target,frame(rows)) for rows in (heading,complete)]
+        with patch.object(m,'guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
+            _,text=m.claude_complete_response(*args)
+        self.assertEqual({'example@market:user':'1.0.0'},validate(text))
+        self.assertEqual(2,guard.call_count)
+        self.assertEqual([],client.sent)
+        for changed in (frame(heading+['❯ /status','❯']),frame(heading+complete),dict(frame(complete),latestCursor='7')):
+            with patch.object(m,'guard',return_value=(client.target,changed)),patch.object(m.time,'sleep'):
+                with self.assertRaisesRegex(m.Deferred,'boundary-changed'):
+                    m.claude_complete_response(*args)
+
+    def test_claude_partial_stream_never_reuses_past_screen_listing(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        client.responses['/plugin list --enabled']=['Installed plugins:']
+        old=['❯ /plugin list --enabled','example@market (v1.0.0, user) ✔ enabled','❯']
+        client.read['tail']=old
+        original_call=client.call
+        def call(*args):
+            result=original_call(*args)
+            if args[:2]==('terminal','send'):client.read['tail']=old
+            return result
+        client.call=call
+        with patch.object(m,'claude_complete_response') as completion:
+            with self.assertRaisesRegex(m.Deferred,'plugin-list-unknown'):
+                m.native_query(client,plan,target,self.self_pane,Mock(),'/plugin list --enabled','plugin-preflight',
+                    completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
+            completion.assert_not_called()
+
+    def test_claude_partial_reload_waits_for_summary_without_resending(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        initial={'source':'screen','tail':['❯ /reload-plugins','────','❯'],'latestCursor':'6'}
+        complete=dict(initial,tail=['❯ /reload-plugins',*client.responses['/reload-plugins'],'────','❯'])
+        with patch.object(m,'guard',return_value=(client.target,complete)),patch.object(m.time,'sleep'):
+            _,text=m.claude_complete_response(client,plan,target,self.self_pane,'/reload-plugins',initial,'────',
+                lambda text:m.claude_reload_summary(text,self.installation),'claude-reload-completion-unknown')
+        self.assertEqual(1,m.claude_reload_summary(text,self.installation)['plugins'])
+        self.assertEqual([],client.sent)
+
     def test_claude_positive_contract_with_omitted_empty_roster(self):
         client, _ = self.claude_plan()
         client.agents[1].pop('children')
