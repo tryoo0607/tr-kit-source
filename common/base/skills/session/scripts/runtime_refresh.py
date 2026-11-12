@@ -609,12 +609,22 @@ def modal_key(client, plan, target, self_pane, journal, command, key):
         raise Deferred('claude-modal-boundary-unknown')
     journal.record('sending', handle=target['handle'], step='modal-navigation')
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', key)
-    if obj(result.get('send')).get('accepted') is not True or not token(obj(result.get('mutation')).get('requestId')):
+    receipt = obj(result.get('send'))
+    if (receipt.get('handle') != target['handle'] or receipt.get('accepted') is not True or
+            type(receipt.get('bytesWritten')) is not int or receipt['bytesWritten'] != len(key.encode('utf-8'))):
         raise Deferred('send-receipt-unknown')
-    prompt = obj(result.get('send')).get('prompt')
-    if prompt is not None and obj(prompt).get('processIncarnation') != target['identity']['incarnationId']:
-        raise Deferred('send-incarnation-mismatch')
-    journal.record('accepted', handle=target['handle'], step='modal-navigation')
+    metadata = {'handle': receipt['handle'], 'accepted': True, 'bytesWritten': receipt['bytesWritten']}
+    if 'prompt' in receipt:
+        incarnation = obj(receipt['prompt']).get('processIncarnation')
+        if incarnation != target['identity']['incarnationId']:
+            raise Deferred('send-incarnation-mismatch')
+        metadata['processIncarnation'] = incarnation
+    if 'mutation' in result:
+        request = obj(result['mutation']).get('requestId')
+        if not token(request):
+            raise Deferred('send-receipt-unknown')
+        metadata['requestId'] = request
+    journal.record('accepted', step='modal-navigation', receiptKind='raw-key', **metadata)
     wait_idle(client, target)
     return guard(client, plan, target, self_pane, modal=True)[1]
 

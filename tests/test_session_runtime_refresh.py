@@ -125,7 +125,9 @@ class ClaudeModalFake(ClaudeFake):
             response=(['example@market (v1.0.0, user) ✔ enabled']
                       if text == '/plugin list --enabled' else self.responses[text])
             self.read['tail']=['❯ '+text]+response+['❯','  ⏵⏵ bypass permissions on (shift+tab to cycle)']
-        # Native UI may change while stream cursor remains unchanged.
+        # Raw keys use the observed no-mutation receipt; commands retain request IDs.
+        if '--enter' not in args:
+            return {'send':{'handle':self.target['handle'],'accepted':True,'bytesWritten':len(text.encode('utf-8'))}}
         return {'send':{'accepted':True},'mutation':{'requestId':'request'}}
 
 
@@ -453,7 +455,61 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual(result['results'][0]['before'],result['results'][0]['after'])
         self.assertEqual('bypass permissions',result['results'][0]['before']['permissions'])
         self.assertEqual(3,client.help_page)
+        events=json.loads((Path(self.temp.name)/(plan['operationId']+'.json')).read_text())['events']
+        raw=[event for event in events if event.get('receiptKind') == 'raw-key']
+        self.assertTrue(raw)
+        self.assertEqual({1,3,30},{event['bytesWritten'] for event in raw})
+        self.assertTrue(all(event['handle'] == client.target['handle'] and event['accepted'] is True for event in raw))
+        self.assertTrue(all('requestId' not in event for event in raw))
         self.assertTrue(all('--enter' not in args for args in client.sent if args[args.index('--text')+1].startswith('\x1b')))
+
+    def test_modal_raw_receipt_malformed_or_mismatched_stops_without_resend(self):
+        client, plan=self.claude_plan()
+        target=plan['targets'][0]
+        modal={'source':'screen','tail':['Settings  Status   Config   Usage   Stats','Esc to cancel']}
+        valid={'handle':target['handle'],'accepted':True,'bytesWritten':1}
+        bad=[{},dict(valid,handle='term_other'),dict(valid,accepted=False),
+             dict(valid,bytesWritten=0),dict(valid,bytesWritten=True),dict(valid,bytesWritten='1'),
+             dict(valid,prompt={'processIncarnation':'changed'}),dict(valid,prompt=None)]
+        payloads=[{'send':receipt} for receipt in bad]+[
+            {'send':valid,'mutation':None},{'send':valid,'mutation':{}},
+            {'send':valid,'mutation':{'requestId':''}}]
+        for response in payloads:
+            journal=Mock()
+            with self.subTest(response=response), patch.object(m,'guard',return_value=(client.target,modal)) as guard, patch.object(client,'call',return_value=response) as call:
+                with self.assertRaises(m.Deferred):
+                    m.modal_key(client,plan,target,self.self_pane,journal,'/status','\x1b')
+                self.assertEqual(1,call.call_count)
+                self.assertEqual(1,guard.call_count)
+                self.assertEqual(['sending'],[entry.args[0] for entry in journal.record.call_args_list])
+
+    def test_modal_raw_optional_metadata_and_post_guard_are_validated(self):
+        client, plan=self.claude_plan()
+        target=plan['targets'][0]
+        modal={'source':'screen','tail':['Settings  Status   Config   Usage   Stats','Esc to cancel']}
+        receipt={'send':{'handle':target['handle'],'accepted':True,'bytesWritten':1,
+                         'prompt':{'processIncarnation':target['identity']['incarnationId']}},
+                 'mutation':{'requestId':'actual-request'}}
+        journal=Mock()
+        with patch.object(m,'guard',return_value=(client.target,modal)) as guard, patch.object(client,'call',side_effect=[receipt,{'wait':{'satisfied':True}}]) as call:
+            m.modal_key(client,plan,target,self.self_pane,journal,'/status','\x1b')
+            self.assertEqual(2,guard.call_count)
+            self.assertEqual(2,call.call_count)
+            metadata=journal.record.call_args.kwargs
+            self.assertEqual('actual-request',metadata['requestId'])
+            self.assertEqual(target['identity']['incarnationId'],metadata['processIncarnation'])
+        with patch.object(m,'guard',side_effect=[(client.target,modal),m.Deferred('target-changed')]), patch.object(client,'call',side_effect=[receipt,{'wait':{'satisfied':True}}]) as call:
+            with self.assertRaisesRegex(m.Deferred,'target-changed'):
+                m.modal_key(client,plan,target,self.self_pane,Mock(),'/status','\x1b')
+            self.assertEqual(1,sum(args.args[:2] == ('terminal','send') for args in call.call_args_list))
+
+    def test_command_enter_still_requires_mutation_request_id(self):
+        receipt={'send':{'handle':self.client.target['handle'],'accepted':True,'bytesWritten':7}}
+        with patch.object(self.client,'call',return_value=receipt) as call:
+            with self.assertRaises(m.Deferred):
+                m.send(self.client,Mock(),self.plan['targets'][0],'/status','status')
+            self.assertEqual(1,call.call_count)
+            self.assertIn('--enter',call.call_args.args)
 
     def test_claude_stale_screen_never_counts_as_new_response(self):
         self.installation.update(nativeVersion='2.1.322',dependenciesReady=True)
