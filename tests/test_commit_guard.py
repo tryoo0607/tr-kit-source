@@ -17,6 +17,7 @@ def module(name, filename):
     return result
 
 guard = module('commit_guard', 'commit-guard.py')
+REAL_TRUSTED_SCANNER = guard.trusted_scanner
 
 
 class GuardFixture(unittest.TestCase):
@@ -47,6 +48,9 @@ Path(sys.argv[sys.argv.index('--report-path')+1]).write_text(json.dumps([{'File'
 sys.exit(42 if files else 0)
 ''')
         self.scanner.chmod(0o755)
+        scanner_patch = mock.patch.object(guard, 'trusted_scanner', side_effect=lambda: self.scanner)
+        scanner_patch.start()
+        self.addCleanup(scanner_patch.stop)
         self.policy = self.base / 'policy.json'
         self.entry = {'path': str(self.repo), 'local_only': ['evidence/**'], 'allow_artifacts': []}
         self.save_policy()
@@ -285,6 +289,177 @@ class CommitGuardTests(GuardFixture):
                         result = guard.agent(product, {'tool_input': {'command': command}})
                         self.assertEqual('deny', result['hookSpecificOutput']['permissionDecision'])
 
+    def test_oversized_and_malformed_native_stdin_emit_fixed_stop(self):
+        script=ROOT/'common/base/scripts/commit-guard.py'
+        for raw in (b'{invalid', b'x' * (guard.MAX_NATIVE_BYTES+1)):
+            for event in ('PostToolUse','PostToolUseFailure'):
+                result=subprocess.run(['python3',str(script),'output','--event',event],input=raw,capture_output=True)
+                self.assertEqual(0,result.returncode)
+                response=json.loads(result.stdout)
+                self.assertFalse(response['continue'])
+                self.assertNotIn('invalid',result.stdout.decode())
+                if event == 'PostToolUse':
+                    self.assertEqual('block',response['decision'])
+                    self.assertIn('failed',response['reason'])
+                    self.assertNotIn('hookSpecificOutput',response)
+                else:self.assertNotIn('hookSpecificOutput',response)
+        for raw in (b'{invalid', b'x' * (guard.MAX_NATIVE_BYTES+1)):
+            result=subprocess.run(['python3',str(script),'output','--product','claude'],input=raw,capture_output=True)
+            self.assertEqual(0,result.returncode)
+            response=json.loads(result.stdout)
+            self.assertFalse(response['continue'])
+            self.assertIn('unsupported',response['stopReason'])
+            self.assertNotIn('hookSpecificOutput',response)
+
+    def test_git_engine_import_has_no_native_tomllib_dependency(self):
+        import builtins
+        original=builtins.__import__
+        def without_tomllib(name,*args,**kwargs):
+            if name == 'tomllib':raise ImportError('simulated Python 3.10')
+            return original(name,*args,**kwargs)
+        with mock.patch('builtins.__import__',side_effect=without_tomllib):
+            imported=module('commit_guard_python310','commit-guard.py')
+            imported.scan([b'clean'],self.scanner)
+            with self.assertRaisesRegex(imported.GuardError,'Python 3.11'):
+                imported.trusted_scanner()
+
+    def test_native_scanner_receipt_pin_and_hash_contract(self):
+        import hashlib
+        import tomllib
+        config=tomllib.loads((ROOT/'common/base/scripts/dev-tools.toml').read_text())['gitleaks']
+        prefix=self.base/'.local/share/tr-kit/gitleaks'/config['version']
+        (prefix/'bin').mkdir(parents=True)
+        binary=prefix/'bin/gitleaks';binary.write_bytes(self.scanner.read_bytes());binary.chmod(0o755)
+        receipt={'version':config['version'],'archive_sha256':config['linux_x64_sha256'],
+                 'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest()}
+        record=prefix/'provisioned.json';record.write_text(json.dumps(receipt))
+        with mock.patch.object(guard.Path,'home',return_value=self.base):
+            self.assertEqual(binary,REAL_TRUSTED_SCANNER())
+            for key in ('version','archive_sha256','binary_sha256'):
+                record.write_text(json.dumps(dict(receipt,**{key:'incorrect'})))
+                with self.assertRaises(guard.GuardError):REAL_TRUSTED_SCANNER()
+            record.write_text(json.dumps(receipt));binary.write_text('changed')
+            with self.assertRaises(guard.GuardError):REAL_TRUSTED_SCANNER()
+
+    def test_literal_disclosure_and_safe_queries_matrix(self):
+        blocked = ['echo \"$TOKEN\"', '''printf '%s' \"$API_KEY\"''', '''python3 -c 'import os; print(os.getenv("TOKEN"))' ''', '''node -e 'console.log(process.env)' ''', 'env', 'printenv', 'env -0', 'env -u REMOVED', 'export -p', 'declare -x',
+                   'cat ~/.codex/auth.json', 'jq . ~/.claude/.credentials.json',
+                   'sed -n 1,3p .env.local', 'cat /proc/self/environ',
+                   'bash -lc "printenv"', 'python3 -c "import os; print(dict(os.environ))"']
+        allowed = ['''echo '$TOKEN' ''', '''python3 -c 'import os; print(bool(os.environ.get("TOKEN")))' ''', '''python3 -c 'import os; print("TOKEN" in os.environ)' ''', '''python3 -c 'source="print(os.environ)"; print(source)' ''', 'printenv PATH', 'cat .env.example', 'echo git add .', 'BUILD=release make', 'env BUILD=release make', 'test -f ~/.codex/auth.json',
+                   'stat ~/.codex/auth.json', 'sha256sum ~/.codex/auth.json',
+                   'echo "printenv"', 'python3 -c "source=\"printenv\"; print(source)"',
+                   'rg "os.environ" source.py']
+        for product in ('codex','claude'):
+            for command in blocked:
+                with self.subTest(product=product, command=command):
+                    self.assertEqual('deny', guard.agent(product, {'tool_name':'Bash','tool_input':{'command':command}})['hookSpecificOutput']['permissionDecision'])
+            for command in allowed:
+                with self.subTest(product=product, command=command):
+                    self.assertEqual({},guard.agent(product,{'tool_name':'Bash','tool_input':{'command':command}}))
+            self.assertEqual('deny',guard.agent(product,{'tool_name':'Read','tool_input':{'file_path':'/tmp/.env'}})['hookSpecificOutput']['permissionDecision'])
+
+    def test_env_prefixed_secret_output_preserves_literal_quoting(self):
+        blocked = ['env echo "$TOKEN"', "env BUILD=release printf '%s' \"$API_KEY\"",
+                   'env -u REMOVED -- echo "$TOKEN"']
+        allowed = ["env echo '$TOKEN'", "env BUILD=release printf '%s' '$API_KEY'",
+                   'env BUILD=release make', 'env echo "$PATH"',
+                   "env echo 'printf token prose'"]
+        for product in ('codex', 'claude'):
+            for command in blocked:
+                with self.subTest(product=product, command=command):
+                    result=guard.agent(product,{'tool_name':'Bash','tool_input':{'command':command}})
+                    self.assertEqual('deny',result['hookSpecificOutput']['permissionDecision'])
+            for command in allowed:
+                with self.subTest(product=product, command=command):
+                    self.assertEqual({},guard.agent(product,{'tool_name':'Bash','tool_input':{'command':command}}))
+
+    def test_single_nonsecret_environment_keys_remain_allowed(self):
+        allowed = ["node -e 'console.log(process.env.PATH)'",
+                   "node -e \"console.log(process.env['PATH'])\"",
+                   "python3 -c \"import os; print(os.environ['PATH'])\"",
+                   "python3 -c \"import os; print(os.environ.get('PATH'))\"",
+                   "python3 -c \"import os; print(bool(os.environ.get('TOKEN')))\"",
+                   "python3 -c \"import os; print('TOKEN' in os.environ)\""]
+        blocked = ["node -e 'console.log(process.env)'",
+                   "node -e 'console.log(process.env.TOKEN)'",
+                   "node -e \"console.log(process.env['API_KEY'])\"",
+                   "python3 -c \"import os; print(os.environ['TOKEN'])\"",
+                   "python3 -c \"import os; print(os.environ.get('TOKEN'))\"",
+                   "python3 -c 'import os; print(os.environ)'"]
+        for product in ('codex', 'claude'):
+            for command in allowed:
+                with self.subTest(product=product, command=command):
+                    self.assertEqual({},guard.agent(product,{'tool_name':'Bash','tool_input':{'command':command}}))
+            for command in blocked:
+                with self.subTest(product=product, command=command):
+                    result=guard.agent(product,{'tool_name':'Bash','tool_input':{'command':command}})
+                    self.assertEqual('deny',result['hookSpecificOutput']['permissionDecision'])
+
+    def test_literal_input_scan_and_output_replacement_both_products(self):
+        for product in ('codex','claude'):
+            self.assertEqual('deny',guard.agent(product,{'tool_name':'Edit','tool_input':{'text':'SYNTHETIC_SECRET'}})['hookSpecificOutput']['permissionDecision'])
+            for response in ({'stdout':'SYNTHETIC_SECRET','stderr':'clean'},
+                             {'stdout':'clean','stderr':'SYNTHETIC_SECRET'}):
+                result=guard.output(product,{'tool_name':'Bash','tool_response':response})
+                self.assert_guard_replacement(product,result)
+                self.assertNotIn('SYNTHETIC_SECRET',json.dumps(result))
+            self.assertEqual({},guard.output(product,{'tool_name':'exec_command','tool_response':{'stdout':'clean','exit_code':0}}))
+            unsupported=guard.output(product,{'tool_name':'Unknown','tool_response':'SYNTHETIC_SECRET'})
+            self.assertFalse(unsupported['continue'])
+            failed=guard.output(product,{'hook_event_name':'PostToolUseFailure','tool_name':'Bash','error':'SYNTHETIC_SECRET'})
+            self.assertFalse(failed['continue'])
+            self.assertNotIn('SYNTHETIC_SECRET',json.dumps(failed))
+            self.assertEqual({},guard.output(product,{'hook_event_name':'PostToolUseFailure','tool_name':'Bash','error':'exit code 1; ordinary build error'}))
+
+    def assert_guard_replacement(self, product, result):
+        if product == 'codex':
+            self.assertEqual({'decision':'block','reason':guard.SAFE_NOTICE},result)
+            self.assertNotIn('hookSpecificOutput',result)
+        else:
+            self.assertEqual({'hookSpecificOutput':{'hookEventName':'PostToolUse',
+                'updatedToolOutput':{'stdout':guard.SAFE_NOTICE,'stderr':'','interrupted':False,'isImage':False}}},result)
+
+    def test_mcp_and_local_results_use_product_specific_contract(self):
+        for product in ('codex','claude'):
+            for tool in ('mcp__fixture__get_document','apply_patch','read_mcp_resource','Grep','Edit'):
+                with self.subTest(product=product,tool=tool):
+                    self.assertEqual({},guard.output(product,{'tool_name':tool,'tool_response':{'content':[{'type':'text','text':'clean'}]}}))
+                    result=guard.output(product,{'tool_name':tool,'tool_response':{'content':[{'type':'text','text':'SYNTHETIC_SECRET'}]}})
+                    if product == 'codex':self.assert_guard_replacement(product,result)
+                    elif tool.startswith('mcp__'):
+                        self.assertEqual(guard.SAFE_NOTICE,result['hookSpecificOutput']['updatedToolOutput'])
+                    else:
+                        self.assertFalse(result['continue'])
+                        self.assertIn('unsupported',result['stopReason'])
+                    self.assertNotIn('SYNTHETIC_SECRET',json.dumps(result))
+        for original_mcp in ('SYNTHETIC_SECRET', [{'type':'text','text':'SYNTHETIC_SECRET'}], {'arbitrary':'SYNTHETIC_SECRET'}):
+            result=guard.output('claude',{'tool_name':'mcp__fixture__get_document','tool_response':original_mcp})
+            self.assertEqual(guard.SAFE_NOTICE,result['hookSpecificOutput']['updatedToolOutput'])
+            self.assertNotIn('SYNTHETIC_SECRET',json.dumps(result))
+        original={'type':'text','file':{'filePath':'fixture','content':'SYNTHETIC_SECRET','numLines':1,'startLine':1,'totalLines':1}}
+        result=guard.output('claude',{'tool_name':'Read','tool_response':original})
+        self.assertEqual({'type':'text','file':{'filePath':'[withheld]','content':guard.SAFE_NOTICE,'numLines':1,'startLine':1,'totalLines':1}},result['hookSpecificOutput']['updatedToolOutput'])
+        self.assertNotIn('SYNTHETIC_SECRET',json.dumps(result))
+        for product in ('codex','claude'):
+            hook=json.loads((ROOT/f'adapters/{product}/hooks/hooks.json').read_text())['hooks']['PostToolUse'][0]
+            self.assertIn('mcp__.*',hook['matcher'])
+            self.assertGreater(hook['hooks'][0]['timeout'],35)
+
+    def test_native_scanner_failure_timeout_size_and_missing_contract_stop(self):
+        payload={'tool_name':'Bash','tool_response':'clean'}
+        for error in (OSError('PRIVATE ERROR'), subprocess.TimeoutExpired('PRIVATE',35), guard.GuardError('scanner failed')):
+            with mock.patch.object(guard,'trusted_scanner',side_effect=error):
+                self.assertEqual('deny',guard.agent('codex',{'tool_input':{}})['hookSpecificOutput']['permissionDecision'])
+                result=guard.output('codex',payload)
+                self.assertFalse(result['continue'])
+                self.assertNotIn('PRIVATE',json.dumps(result))
+        with mock.patch.object(guard,'MAX_NATIVE_BYTES',1):
+            self.assertFalse(guard.output('claude',payload)['continue'])
+            self.assertEqual('deny',guard.agent('claude',{'tool_input':{'text':'a'}})['hookSpecificOutput']['permissionDecision'])
+        self.assertFalse(guard.output('codex',{'tool_name':'Bash'})['continue'])
+
+
 
 @unittest.skipUnless(os.environ.get('TR_GITLEAKS_TEST_BINARY'), 'set TR_GITLEAKS_TEST_BINARY for pinned real-scanner integration')
 class RealGitleaksTests(GuardFixture):
@@ -300,6 +475,18 @@ class RealGitleaksTests(GuardFixture):
         with mock.patch.dict(os.environ, {'GITLEAKS_CONFIG_TOML': 'title="disable"'}):
             with self.assertRaisesRegex(guard.GuardError, 'secret detected'):
                 guard.check_index(self.repo, self.policy)
+
+    def test_actual_native_input_stdout_stderr_and_nonzero_result(self):
+        self.scanner=Path(os.environ['TR_GITLEAKS_TEST_BINARY'])
+        token='ghp_'+'F7zR4mN8qT2vL6cX9bW3sH5kJ1dP0eA4rU8i'
+        for product in ('claude','codex'):
+            self.assertEqual('deny',guard.agent(product,{'tool_name':'Edit','tool_input':{'text':token}})['hookSpecificOutput']['permissionDecision'])
+            for key in ('stdout','stderr'):
+                result=guard.output(product,{'tool_name':'Bash','tool_response':{key:token,'exit_code':1}})
+                if product == 'codex':self.assertEqual({'decision':'block','reason':guard.SAFE_NOTICE},result)
+                else:self.assertEqual({'stdout':guard.SAFE_NOTICE,'stderr':'','interrupted':False,'isImage':False},result['hookSpecificOutput']['updatedToolOutput'])
+                self.assertNotIn(token,json.dumps(result))
+            self.assertEqual({},guard.output(product,{'tool_name':'Bash','tool_response':{'stdout':'clean','exit_code':1}}))
 
     def test_actual_arbitrary_filenames_and_binary_adjacent_credentials(self):
         self.scanner = Path(os.environ['TR_GITLEAKS_TEST_BINARY'])

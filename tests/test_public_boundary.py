@@ -17,7 +17,7 @@ class PublicBoundaryTests(unittest.TestCase):
         import json
         for product in ('claude', 'codex'):
             hooks = json.loads((ROOT / f'adapters/{product}/hooks/hooks.json').read_text())
-            self.assertEqual({'PreToolUse'}, set(hooks['hooks']))
+            self.assertEqual({'PreToolUse','PostToolUse'} | ({'PostToolUseFailure'} if product == 'claude' else set()), set(hooks['hooks']))
             self.assertIn('commit-guard.py', hooks['hooks']['PreToolUse'][0]['hooks'][0]['command'])
             self.assertNotIn('backup', str(hooks))
         self.assertFalse(list((ROOT/'common/base/scripts').glob('*backup*')))

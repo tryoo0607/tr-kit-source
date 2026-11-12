@@ -141,7 +141,7 @@ def agent_for(ps, t):
     return found[0]
 
 
-def eligible(t, read, ps, self_pane, self_found):
+def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False):
     fingerprint(t)
     if not self_found:
         raise Deferred('self-unidentified')
@@ -158,18 +158,22 @@ def eligible(t, read, ps, self_pane, self_found):
     if a.get('parentPaneKey') or a.get('children') or a.get('subagents'):
         raise Deferred('child-work')
     main = obj(a.get('mainAgent'))
-    program = obj(a.get('programStatus'))
+    missing_claude_program = provider == 'claude' and a.get('programStatus') is None
+    program = {} if missing_claude_program else obj(a.get('programStatus'))
+    claude_completion = (missing_claude_program and tui_idle and
+                         a.get('state') == main.get('state') == 'done')
     observation = a.get('subagentObservation')
     # Native Codex and Claude omit empty rosters; their aggregate state folds tracked work.
     omitted_empty_native = (provider in ('codex', 'claude') and observation is None and
                            'children' not in a and 'subagents' not in a and
                            a.get('state') == main.get('state') == 'done' and
-                           program.get('state') in ('done', 'idle'))
+                           (program.get('state') in ('done', 'idle') or claude_completion))
     if observation != 'live' and not omitted_empty_native:
         raise Deferred('child-state-unknown')
-    if a.get('state') not in ('idle', 'done') or main.get('state') not in ('idle', 'done') or program.get('state') not in ('idle', 'done'):
+    if a.get('state') not in ('idle', 'done') or main.get('state') not in ('idle', 'done') or (program.get('state') not in ('idle', 'done') and not claude_completion):
         raise Deferred('busy-or-state-unknown')
-    idle_screen(provider, read)
+    if not modal:
+        idle_screen(provider, read)
     return provider
 
 
@@ -324,7 +328,11 @@ def inspect(client, self_pane):
                     installations[key] = (plugin_inventory(*key) if not getattr(client, 'remote_configured', False) and t['executionHostId'] == 'local' else
                                           {'state': 'unverified', 'reason': 'remote-installation-delegate-to-host-session'})
                 row['installation'] = installations[key]
-            row['provider'] = eligible(t, r, ps, self_pane, self_found)
+            observed_idle = False
+            if provider == 'claude' and pane(t) != self_pane and self_found and agent_for(ps, t).get('programStatus') is None:
+                wait_idle(client, {'handle': t['handle']})
+                observed_idle = True
+            row['provider'] = eligible(t, r, ps, self_pane, self_found, tui_idle=observed_idle)
             row['identity'] = fingerprint(t)
             row['state'] = 'idle'
             row['reason'] = None
@@ -483,7 +491,7 @@ class Journal:
             self.directory_fd = None
 
 
-def guard(client, plan, target, self_pane):
+def guard(client, plan, target, self_pane, modal=False):
     installation_guard(target)
     wait_idle(client, target)
     ts, ps = client.inventory()
@@ -497,7 +505,7 @@ def guard(client, plan, target, self_pane):
     t, read = client.observe(target['handle'])
     if fingerprint(t) != target['identity']:
         raise Deferred('target-changed')
-    if eligible(t, read, ps, self_pane, self_found) != target['provider']:
+    if eligible(t, read, ps, self_pane, self_found, tui_idle=True, modal=modal) != target['provider']:
         raise Deferred('provider-changed')
     return t, read
 
@@ -583,17 +591,112 @@ def shell_guard(client, plan, target, normal_exit):
     return t
 
 
+def claude_modal(text, command):
+    if re.search(r'(?im)((?<![-\w])approve\b|allow once|trust this|select an option|enter to confirm|yes, proceed)', text):
+        return False
+    if command == '/status':
+        return bool(re.search(r'(?m)^\s*Settings\s+Status\s+Config\s+Usage\s+Stats\s*$', text) and
+                    'Esc to cancel' in text)
+    if command == '/help':
+        return bool(re.search(r'(?m)^\s*Help\s+General\s+Commands\s+Custom commands\s*$', text) and
+                    'Esc to cancel' in text)
+    return False
+
+
+def modal_key(client, plan, target, self_pane, journal, command, key):
+    _, read = guard(client, plan, target, self_pane, modal=True)
+    if not claude_modal(screen(read), command):
+        raise Deferred('claude-modal-boundary-unknown')
+    journal.record('sending', handle=target['handle'], step='modal-navigation')
+    result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', key)
+    receipt = obj(result.get('send'))
+    if (receipt.get('handle') != target['handle'] or receipt.get('accepted') is not True or
+            type(receipt.get('bytesWritten')) is not int or receipt['bytesWritten'] != len(key.encode('utf-8'))):
+        raise Deferred('send-receipt-unknown')
+    metadata = {'handle': receipt['handle'], 'accepted': True, 'bytesWritten': receipt['bytesWritten']}
+    if 'prompt' in receipt:
+        incarnation = obj(receipt['prompt']).get('processIncarnation')
+        if incarnation != target['identity']['incarnationId']:
+            raise Deferred('send-incarnation-mismatch')
+        metadata['processIncarnation'] = incarnation
+    if 'mutation' in result:
+        request = obj(result['mutation']).get('requestId')
+        if not token(request):
+            raise Deferred('send-receipt-unknown')
+        metadata['requestId'] = request
+    journal.record('accepted', step='modal-navigation', receiptKind='raw-key', **metadata)
+    wait_idle(client, target)
+    return guard(client, plan, target, self_pane, modal=True)[1]
+
+
+def claude_permission(text):
+    fields = re.findall(r'(?im)^\s*(?:Permission mode|Permissions)\s*:\s*(.+)$', text)
+    if fields:
+        return fields[-1].strip()
+    if re.search(r'(?m)^\s*⏵⏵ bypass permissions on \(shift\+tab to cycle\)\s*$', text):
+        return 'bypass permissions'
+    raise Deferred('claude-permissions-unknown')
+
+
 def native_query(client, plan, target, self_pane, journal, command, phase):
     _, previous = guard(client, plan, target, self_pane)
     cursor = previous.get('latestCursor')
     if cursor is None:
         raise Deferred('native-response-freshness-unknown')
+    previous_text = screen(previous)
     send(client, journal, target, command, phase)
     wait_idle(client, target)
-    _, current = guard(client, plan, target, self_pane)
+    if target['provider'] == 'claude':
+        _, current = guard(client, plan, target, self_pane, modal=True)
+        text = screen(current)
+        if claude_modal(text, command):
+            if claude_modal(previous_text, command) or text == previous_text:
+                raise Deferred('native-response-freshness-unknown')
+            if command == '/status':
+                output = text + '\nPermission mode: ' + claude_permission(previous_text)
+            else:
+                # The Commands tab and list are bounded native UI navigation.
+                current = modal_key(client, plan, target, self_pane, journal, command, '\x1b[C')
+                output = ''
+                for _ in range(16):
+                    frame = screen(current)
+                    if not claude_modal(frame, command):
+                        raise Deferred('claude-modal-boundary-unknown')
+                    if 'Browse default commands' in frame:
+                        output += '\n' + frame
+                        if re.search(r'(?m)^\s*(?:❯\s*)?/reload-plugins(?:\s|$)', frame):
+                            break
+                    current = modal_key(client, plan, target, self_pane, journal, command, '\x1b[B' * 10)
+                else:
+                    raise Deferred('claude-reload-command-unsupported')
+            modal_key(client, plan, target, self_pane, journal, command, '\x1b')
+            _, closed = guard(client, plan, target, self_pane)
+            if claude_modal(screen(closed), command):
+                raise Deferred('claude-modal-close-unconfirmed')
+            return screen(closed), output
+        idle_screen('claude', current)
+        # For screen-only responses require a new latest command echo, then use
+        # only the response bounded by that echo and the next empty prompt.
+        marker = '❯ ' + command
+        lines = text.splitlines()
+        indices = [i for i, line in enumerate(lines) if line.strip() == marker]
+        if indices:
+            index = indices[-1]
+            old_count = sum(line.strip() == marker for line in previous_text.splitlines())
+            if len(indices) <= old_count and current.get('latestCursor') == cursor:
+                raise Deferred('native-response-freshness-unknown')
+            response = []
+            for line in lines[index + 1:]:
+                if line.strip() == '❯':
+                    break
+                response.append(line)
+            fresh = '\n'.join(response)
+            if fresh.strip() and (len(indices) > old_count or fresh not in previous_text):
+                return text, fresh
+    else:
+        _, current = guard(client, plan, target, self_pane)
     if current.get('latestCursor') in (None, cursor):
         raise Deferred('native-response-freshness-unknown')
-    # A summary left in screen scrollback is not evidence of this operation.
     delta = obj(client.call('terminal', 'read', '--terminal', target['handle'], '--cursor', str(cursor)).get('terminal'))
     tail = delta.get('tail')
     if delta.get('source') != 'stream' or not isinstance(tail, list) or any(not isinstance(x, str) for x in tail):
@@ -607,7 +710,7 @@ def claude_plugin_listing(text, inventory):
     for line in text.splitlines():
         ids = re.findall(r'(?<![\w.-])[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9_.-]+', line)
         for ident in ids:
-            if ident not in expected or ident in found or not re.search(r'(?<![A-Za-z0-9_.+-])' + re.escape(expected[ident]) + r'(?![A-Za-z0-9_.+-])', line):
+            if ident not in expected or ident in found or not re.search(r'(?<![A-Za-z0-9_.+-])v?' + re.escape(expected[ident]) + r'(?![A-Za-z0-9_.+-])', line):
                 raise Deferred('claude-runtime-plugin-list-mismatch')
             found[ident] = expected[ident]
     if found != expected or (not expected and 'No plugins installed.' not in text):
@@ -641,7 +744,7 @@ def refresh_claude(client, plan, target, self_pane, journal):
         raise Deferred('claude-native-version-mismatch')
     journal.record('identity-before', handle=target['handle'], **before)
     _, help_output = native_query(client, plan, target, self_pane, journal, '/help', 'reload-support')
-    if not re.search(r'(?m)^\s*/reload-plugins(?:\s|$)', help_output):
+    if not re.search(r'(?m)^\s*(?:❯\s*)?/reload-plugins(?:\s|$)', help_output):
         raise Deferred('claude-reload-command-unsupported')
     _, listing = native_query(client, plan, target, self_pane, journal, '/plugin list --enabled', 'plugin-preflight')
     claude_plugin_listing(listing, installation_before)

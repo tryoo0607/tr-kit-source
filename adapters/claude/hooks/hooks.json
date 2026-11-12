@@ -2,12 +2,36 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|exec_command",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/commit-guard.py\" agent --product claude",
-            "timeout": 5
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|exec_command|write_stdin|Read|read_file|Write|Edit|MultiEdit|Glob|Grep|NotebookEdit|WebFetch|WebSearch|apply_patch|list_mcp_resources|list_mcp_resource_templates|read_mcp_resource|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/commit-guard.py\" output --product claude",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|exec_command|write_stdin|Read|read_file|Write|Edit|MultiEdit|Glob|Grep|NotebookEdit|WebFetch|WebSearch|apply_patch|list_mcp_resources|list_mcp_resource_templates|read_mcp_resource|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/commit-guard.py\" output --product claude --event PostToolUseFailure",
+            "timeout": 45
           }
         ]
       }

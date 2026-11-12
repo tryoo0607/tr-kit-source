@@ -35,6 +35,7 @@ jobs:
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
         env:
           TR_KIT_TEST_GITLEAKS: ${{ runner.temp }}/delivery-scanner/bin/gitleaks
+          TR_GITLEAKS_TEST_BINARY: ${{ runner.temp }}/delivery-scanner/bin/gitleaks
       - name: Fetch exact upstream revisions
         run: python3 scripts/fetch_sources.py
       - name: Build both existing marketplaces

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Local, explicitly enrolled Git checks. Never changes the index or executes shell input."""
 import argparse
+import ast
 import fnmatch
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -217,6 +219,14 @@ def command_reason(command):
     for i, token in enumerate(tokens):
         if Path(token).name != 'git':
             continue
+        start = i
+        while start and tokens[start-1] not in {';', '&&', '||', '|', '&', '(', ')', '\n'}:
+            start -= 1
+        prefix = tokens[start:i]
+        if prefix and prefix[0] == 'env':
+            prefix = prefix[1:]
+        if any(not re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', part) for part in prefix):
+            continue
         rest = []
         for t in tokens[i+1:]:
             if t in {';', '&&', '||', '|', '&', '(', ')', '\n'}:
@@ -290,36 +300,318 @@ def command_reason(command):
     return None
 
 
+MAX_NATIVE_BYTES = 8 * 1024 * 1024
+SAFE_NOTICE = 'tr-kit: tool output withheld by secret inspection; original content is not disclosed.'
+SHELL_TOOLS = {'Bash', 'exec_command', 'write_stdin'}
+READ_TOOLS = {'Read', 'read_file'}
+RESULT_TOOLS = SHELL_TOOLS | READ_TOOLS | {'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep',
+    'NotebookEdit', 'WebFetch', 'WebSearch', 'apply_patch', 'list_mcp_resources',
+    'list_mcp_resource_templates', 'read_mcp_resource'}
+
+
+def supported_result_tool(name):
+    return isinstance(name, str) and (name in RESULT_TOOLS or bool(re.fullmatch(r'mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+', name)))
+
+
+def trusted_scanner():
+    """Use only our provisioned, manifest-pinned scanner; never PATH/repo config."""
+    try:
+        import tomllib
+    except ImportError:
+        raise GuardError('native inspection requires Python 3.11; operation blocked') from None
+    config = tomllib.loads(Path(__file__).with_name('dev-tools.toml').read_text())['gitleaks']
+    version = config['version']
+    prefix = Path.home() / '.local/share/tr-kit/gitleaks' / version
+    scanner = prefix / 'bin/gitleaks'
+    receipt = json.loads((prefix / 'provisioned.json').read_text())
+    if (not isinstance(receipt, dict) or not isinstance(receipt.get('version'), str) or
+            receipt['version'].lstrip('v') != version or
+            receipt.get('archive_sha256') != config['linux_x64_sha256'] or
+            receipt.get('binary_sha256') != hashlib.sha256(scanner.read_bytes()).hexdigest() or
+            not os.access(scanner, os.X_OK)):
+        raise GuardError('trusted scanner identity failed; operation blocked')
+    return scanner
+
+
+def sensitive_path(value):
+    if not isinstance(value, str):
+        return False
+    path = value.rstrip('/')
+    name = Path(path).name.lower()
+    if name in {'.env.example', '.env.sample', '.env.template'}:
+        return False
+    return (name in {'.env', 'auth.json', 'credentials.json', '.credentials.json',
+                     '.claude.json', '.netrc', '.npmrc', '.pypirc'} or
+            name.startswith('.env.') or
+            bool(re.search(r'(?:^|/)(?:\.aws/credentials|proc/(?:self|[0-9]+)/environ)$', path)))
+
+
+def secret_variable(name):
+    return bool(re.search(r'(?i)(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH|API_KEY)', name))
+
+
+def unwrap_env_args(args):
+    # Keep argument quoting intact for the literal echo/printf inspection.
+    while args:
+        if re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', args[0]) or args[0] in {'-0', '--null', '-i', '--ignore-environment'} or args[0].startswith(('--unset=', '--chdir=')):
+            args = args[1:]
+        elif args[0] in {'-u', '--unset', '-C', '--chdir'} and len(args) >= 2:
+            args = args[2:]
+        elif args[0] == '--':
+            return args[1:]
+        else:
+            break
+    return args
+
+
+def literal_shell_secret_output(command):
+    lexer = shlex.shlex(command, posix=False, punctuation_chars=';&|()\n')
+    lexer.whitespace_split = True
+    try:
+        words = list(lexer)
+    except ValueError:
+        return False
+    segments, current = [], []
+    for word in words + [';']:
+        if word in {';', '&&', '||', '|', '&', '(', ')', '\n'}:
+            segments.append(current)
+            current = []
+        else:
+            current.append(word)
+    for words in segments:
+        while words and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', words[0]):
+            words = words[1:]
+        if words and Path(words[0].strip('"\'')).name == 'env':
+            words = unwrap_env_args(words[1:])
+        if not words or Path(words[0].strip('"\'')).name not in {'echo', 'printf'}:
+            continue
+        for word in words[1:]:
+            if word.startswith("'"):
+                continue
+            for name in re.findall(r'(?<!\\)\$\{?([A-Za-z_][A-Za-z0-9_]*)', word):
+                if secret_variable(name):
+                    return True
+    return False
+
+
+def disclosure_reason(command):
+    """Inspect literal command positions only; quoted source/prose stays data."""
+    if literal_shell_secret_output(command):
+        return 'secret environment value disclosure blocked'
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=';&|()\n')
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    segments, current = [], []
+    for item in tokens + [';']:
+        if item in {';', '&&', '||', '|', '&', '(', ')', '\n'}:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(item)
+    for words in segments:
+        while words and re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', words[0]):
+            words = words[1:]
+        if not words:
+            continue
+        executable = Path(words[0]).name
+        args = words[1:]
+        if executable == 'env':
+            args = unwrap_env_args(args)
+            if not args:
+                return 'whole environment disclosure blocked'
+            # env assignments before a normal command are preserved.
+            executable, args = Path(args[0]).name, args[1:]
+        if (executable == 'printenv' and (not args or all(arg in {'-0','--null'} for arg in args) or
+                any(re.search(r'(?i)(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH|API_KEY)', arg) for arg in args)) or
+                (executable in {'set', 'export', 'declare', 'typeset'} and
+                 (not args or args in [['-p'], ['-x'], ['-xp'], ['-px']]))):
+            return 'whole environment disclosure blocked'
+        if executable in {'cat', 'head', 'tail', 'sed', 'awk', 'jq', 'bat', 'less', 'more', 'strings', 'base64'} and any(sensitive_path(arg) for arg in args):
+            return 'authentication or environment file disclosure blocked'
+        if executable in {'sh', 'bash', 'zsh'} and len(args) >= 2 and args[0] in {'-c', '-lc'}:
+            if disclosure_reason(args[1]):
+                return 'nested environment or authentication disclosure blocked'
+        if executable in {'node', 'nodejs'} and len(args) >= 2 and args[0] in {'-e', '--eval', '-p', '--print'}:
+            match = re.fullmatch(r'\s*(?:console\.log\(\s*(?:JSON\.stringify\(\s*)?)?process\.env(?P<access>\.[A-Za-z_][A-Za-z0-9_]*|\[[^]]+\])?\s*\)*\s*;?\s*', args[1])
+            if match:
+                access = match['access']
+                try:
+                    key = access[1:] if access and access.startswith('.') else ast.literal_eval(access[1:-1]) if access else None
+                except (ValueError, SyntaxError):
+                    key = None
+                if not isinstance(key, str) or secret_variable(key):
+                    return 'environment value disclosure blocked'
+        if executable in {'python', 'python3'} and len(args) >= 2 and args[0] == '-c':
+            try:
+                source = ast.parse(args[1])
+            except (SyntaxError, ValueError):
+                continue
+            for statement in source.body:
+                if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+                    continue
+                call = statement.value
+                name = call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, 'attr', '')
+                if name not in {'print', 'pprint'}:
+                    continue
+                for argument in call.args:
+                    if isinstance(argument, ast.Compare) or (isinstance(argument, ast.Call) and isinstance(argument.func, ast.Name) and argument.func.id in {'bool', 'len', 'hash'}):
+                        continue
+                    parents = {child: parent for parent in ast.walk(argument) for child in ast.iter_child_nodes(parent)}
+                    for node in ast.walk(argument):
+                        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and
+                                isinstance(node.func.value, ast.Name) and node.func.value.id == 'os' and
+                                node.func.attr == 'getenv' and node.args and isinstance(node.args[0], ast.Constant) and
+                                isinstance(node.args[0].value, str) and secret_variable(node.args[0].value)):
+                            return 'secret environment value disclosure blocked'
+                        if (isinstance(node, ast.Attribute) and node.attr == 'environ' and
+                                isinstance(node.value, ast.Name) and node.value.id == 'os'):
+                            parent = parents.get(node)
+                            key = None
+                            if isinstance(parent, ast.Subscript) and parent.value is node and isinstance(parent.slice, ast.Constant):
+                                key = parent.slice.value
+                            elif isinstance(parent, ast.Attribute) and parent.attr == 'get':
+                                lookup = parents.get(parent)
+                                if isinstance(lookup, ast.Call) and lookup.func is parent and lookup.args and isinstance(lookup.args[0], ast.Constant):
+                                    key = lookup.args[0].value
+                            if isinstance(key, str) and not secret_variable(key):
+                                continue
+                            return 'whole environment disclosure blocked'
+                        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and
+                                node.func.id == 'open' and node.args and
+                                isinstance(node.args[0], ast.Constant) and sensitive_path(node.args[0].value)):
+                            return 'authentication or environment file disclosure blocked'
+    return None
+
+
+def deny(reason):
+    return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                                   'permissionDecisionReason': reason}}
+
+
 def agent(product, payload):
+    if not isinstance(payload, dict):
+        raise GuardError('invalid native payload; operation blocked')
     tool = payload.get('tool_name', '')
     data = payload.get('tool_input', {})
     command = data.get('command', data.get('cmd', '')) if isinstance(data, dict) else ''
     if isinstance(command, list):
         command = shlex.join(command)
     reason = command_reason(command) if isinstance(command, str) else None
-    if product == 'claude':
-        return ({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
-                                       'permissionDecisionReason': reason}} if reason else {})
-    return ({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
-                                   'permissionDecisionReason': reason}} if reason else {})
+    if not reason and tool in SHELL_TOOLS and isinstance(command, str):
+        reason = disclosure_reason(command)
+    if not reason and tool in READ_TOOLS and isinstance(data, dict):
+        if sensitive_path(data.get('file_path', data.get('path'))):
+            reason = 'authentication or environment file disclosure blocked'
+    if reason:
+        return deny(reason)
+    # Scan all literal input, including source snippets and non-shell tools.
+    literal = json.dumps(data, ensure_ascii=False).encode()
+    if len(literal) > MAX_NATIVE_BYTES:
+        return deny('native input exceeds inspection limit; operation blocked')
+    try:
+        scan([literal], trusted_scanner())
+    except GuardError as error:
+        return deny('secret detected in literal input; operation blocked' if str(error).startswith('secret detected') else
+                    'secret inspection failed; operation blocked')
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return deny('secret inspection failed; operation blocked')
+    return {}
+
+
+def protected_output(product, payload, failed=False):
+    notice = ('tr-kit: secret inspection failed; tool output withheld and execution stopped.'
+              if failed else SAFE_NOTICE)
+    if payload.get('hook_event_name') == 'PostToolUseFailure':
+        return {'continue': False, 'stopReason': 'tr-kit: ' + ('inspection failed; ' if failed else 'secret detected; ') + 'failure result replacement is unsupported; stopped.'}
+    if product == 'codex':
+        # Codex PostToolUse uses a blocking reason as the replacement tool result.
+        result = {'decision': 'block', 'reason': notice}
+    else:
+        tool = payload.get('tool_name')
+        original = payload.get('tool_response')
+        if tool == 'Bash':
+            replacement = {'stdout': notice, 'stderr': '', 'interrupted': False, 'isImage': False}
+        elif tool == 'Read' and isinstance(original, dict) and original.get('type') == 'text' and isinstance(original.get('file'), dict):
+            replacement = {'type': 'text', 'file': {'filePath': '[withheld]', 'content': notice,
+                           'numLines': 1, 'startLine': 1, 'totalLines': 1}}
+        elif isinstance(tool, str) and tool.startswith('mcp__'):
+            # Official McpOutput admits string, block array and plain-object
+            # variants. A fixed string is valid independently of original shape.
+            replacement = notice
+        else:
+            return {'continue': False, 'stopReason': 'tr-kit: result replacement contract is unsupported; stopped.'}
+        result = {'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'updatedToolOutput': replacement}}
+    if failed:
+        result.update({'continue': False, 'stopReason': 'tr-kit: secret inspection failed; stopped.'})
+    return result
+
+
+def output(product, payload):
+    if not isinstance(payload, dict):
+        raise GuardError('invalid native payload; operation blocked')
+    event = payload.get('hook_event_name', 'PostToolUse')
+    if event not in {'PostToolUse', 'PostToolUseFailure'}:
+        return {'continue': False, 'stopReason': 'tr-kit: tool event contract is unsupported; stopped.'}
+    if not supported_result_tool(payload.get('tool_name')):
+        return {'continue': False, 'stopReason': 'tr-kit: tool output protection is unsupported; stopped.'}
+    result = {k: payload[k] for k in ('tool_response', 'tool_result', 'tool_output', 'error') if k in payload}
+    if not result:
+        return {'continue': False, 'stopReason': 'tr-kit: tool result contract is unknown; stopped.'}
+    raw = json.dumps(result, ensure_ascii=False).encode()
+    try:
+        if len(raw) > MAX_NATIVE_BYTES:
+            raise GuardError('native output exceeds inspection limit')
+        scan([raw], trusted_scanner())
+    except GuardError as error:
+        return protected_output(product, payload, failed=not str(error).startswith('secret detected'))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return protected_output(product, payload, failed=True)
+    return {}
+
+
+def native_payload():
+    raw = sys.stdin.buffer.read(MAX_NATIVE_BYTES + 1)
+    if len(raw) > MAX_NATIVE_BYTES:
+        raise GuardError('native payload exceeds inspection limit; operation blocked')
+    return json.loads(raw)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['index', 'push', 'agent'])
+    parser.add_argument('mode', choices=['index', 'push', 'agent', 'output'])
     parser.add_argument('--repo', default='.')
+    parser.add_argument('--event', choices=['PostToolUse', 'PostToolUseFailure'], default='PostToolUse')
     parser.add_argument('--policy', type=Path)
     parser.add_argument('--product', choices=['codex', 'claude'], default='codex')
     args = parser.parse_args()
     try:
-        if args.mode == 'agent':
-            print(json.dumps(agent(args.product, json.load(sys.stdin))))
+        if args.mode in {'agent', 'output'}:
+            payload = native_payload()
+            if args.mode == 'output' and (not isinstance(payload, dict) or payload.get('hook_event_name') != args.event):
+                raise GuardError('native event contract mismatch; operation blocked')
+            print(json.dumps((agent if args.mode == 'agent' else output)(args.product, payload)))
         elif args.mode == 'index':
             check_index(args.repo, args.policy)
         else:
             check_push(args.repo, args.policy, sys.stdin.read())
-    except (GuardError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+    except (GuardError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
         # Never expose subprocess stdout/stderr, blob content or JSON input.
+        if args.mode == 'agent':
+            print(json.dumps(deny('native input inspection failed; operation blocked')))
+        elif args.mode == 'output':
+            stopped = {'continue': False, 'stopReason': 'tr-kit: output inspection failed; stopped.'}
+            if args.event == 'PostToolUse':
+                if args.product == 'codex':
+                    stopped.update({'decision': 'block', 'reason': 'tr-kit: output inspection failed; result blocked.'})
+                else:
+                    # No tool-specific replacement is safe without a parsed envelope.
+                    stopped['stopReason'] = 'tr-kit: output contract unknown; replacement unsupported; stopped.'
+            print(json.dumps(stopped))
+            return 0
         print('commit-guard: ' + (str(error) if isinstance(error, GuardError) else 'inspection error; operation blocked'), file=sys.stderr)
         return 2
     return 0

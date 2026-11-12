@@ -25,6 +25,8 @@ manifest = json.loads((payload / '.codex-plugin/plugin.json').read_text())
 if manifest['name'] != 'tr-codex' or not (payload / 'assembly.json').is_file():
     raise SystemExit('missing or unexpected verified payload')
 assembly = json.loads((payload / 'assembly.json').read_text())
+if 'PreToolUse' in assembly.get('plugin_hooks', []) and sys.version_info < (3, 11):
+    raise SystemExit('native secret inspection requires Python 3.11 or newer')
 for name, expected in assembly['files'].items():
     path = (payload / name).resolve()
     if not path.is_relative_to(payload.resolve()) or not path.is_file():
