@@ -415,6 +415,89 @@ class RuntimeRefreshTests(unittest.TestCase):
         commands = [a[a.index('--text')+1] for a in client.sent]
         self.assertEqual(['/status', '/help', '/plugin list --enabled', '/reload-plugins', '/status'], commands)
 
+    def test_claude_stale_listing_is_diagnostic_and_reloads(self):
+        self.installation['plugins'][0]['version'] = '2.0.0'
+        for body in ('example@market 1.0.0 user enabled',
+                     '  ⎿  Installed plugins:\n  • example@market (v1.0.0, user) ✔ enabled\n────'):
+            client, plan = self.claude_plan()
+            client.responses['/plugin list --enabled'] = [body]
+            with tempfile.TemporaryDirectory() as directory:
+                result = m.apply(client, plan, self.self_pane, directory)
+                self.assertEqual([], result['remaining'], result)
+                row = result['results'][0]
+                self.assertEqual({'example@market:user':'1.0.0'}, row['runtimeListedVersionsBefore'])
+                self.assertEqual({'example@market:user':'2.0.0'}, row['installedVersion'])
+                self.assertFalse(row['runtimeListingMatchesInstalledBefore'])
+                self.assertIsNone(row['consumedVersion'])
+                self.assertEqual('unverified', row['consumption'])
+                events=json.loads((Path(directory)/(plan['operationId']+'.json')).read_text())['events']
+                self.assertTrue(any(e.get('phase')=='runtime-listing-before' and e['matchesInstalled'] is False for e in events))
+
+    def test_claude_invalid_runtime_listing_never_reloads(self):
+        good='example@market (v1.0.0, user) ✔ enabled'
+        for body in ('', 'No plugins installed.', good+'\n'+good,
+                     good+'\nother@market (v1.0.0, user) ✔ enabled',
+                     good.replace('user','project'), good.replace('enabled','disabled'),
+                     good.replace('✔ enabled',''), good.replace('1.0.0','unknown'),
+                     good.replace('1.0.0','^1.0.0'), good.replace('(v1.0.0, user)','(user)'),
+                     good.replace('1.0.0','1.0.0-..'), good.replace('1.0.0','1.0.0+_'),
+                     good.replace('1.0.0','1.0.0-01'), good.replace('1.0.0','01.0.0'),
+                     good+'\n• another (v1.0.0, user) ✔ enabled'):
+            client,plan=self.claude_plan()
+            client.responses['/plugin list --enabled']=body.splitlines()
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:
+                result=m.apply(client,plan,self.self_pane,directory)
+                self.assertTrue(result.get('stopped'),result)
+                self.assertFalse(any(a[a.index('--text')+1]=='/reload-plugins' for a in client.sent))
+        ambiguous=dict(self.installation,plugins=[self.installation['plugins'][0],dict(self.installation['plugins'][0],scope='project')])
+        with self.assertRaisesRegex(m.Deferred,'ambiguous'):
+            m.claude_plugin_listing(good,ambiguous)
+
+    def test_claude_partial_listing_reads_until_complete_without_sending(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        heading=['❯ /plugin list --enabled','  ⎿  Installed plugins:','────','❯']
+        complete=heading[:2]+['• example@market (v1.0.0, user) ✔ enabled']+heading[2:]
+        frame=lambda rows:{'source':'screen','tail':rows,'latestCursor':'6'}
+        validate=lambda text:m.claude_plugin_listing(text,self.installation)
+        args=(client,plan,target,self.self_pane,'/plugin list --enabled',frame(heading),'────',validate,'claude-runtime-plugin-list-unknown')
+        frames=[(client.target,frame(rows)) for rows in (heading,complete)]
+        with patch.object(m,'guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
+            _,text=m.claude_complete_response(*args)
+        self.assertEqual({'example@market:user':'1.0.0'},validate(text))
+        self.assertEqual(2,guard.call_count)
+        self.assertEqual([],client.sent)
+        for changed in (frame(heading+['❯ /status','❯']),frame(heading+complete),dict(frame(complete),latestCursor='7')):
+            with patch.object(m,'guard',return_value=(client.target,changed)),patch.object(m.time,'sleep'):
+                with self.assertRaisesRegex(m.Deferred,'boundary-changed'):
+                    m.claude_complete_response(*args)
+
+    def test_claude_partial_stream_never_reuses_past_screen_listing(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        client.responses['/plugin list --enabled']=['Installed plugins:']
+        old=['❯ /plugin list --enabled','example@market (v1.0.0, user) ✔ enabled','❯']
+        client.read['tail']=old
+        original_call=client.call
+        def call(*args):
+            result=original_call(*args)
+            if args[:2]==('terminal','send'):client.read['tail']=old
+            return result
+        client.call=call
+        with patch.object(m,'claude_complete_response') as completion:
+            with self.assertRaisesRegex(m.Deferred,'plugin-list-unknown'):
+                m.native_query(client,plan,target,self.self_pane,Mock(),'/plugin list --enabled','plugin-preflight',
+                    completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
+            completion.assert_not_called()
+
+    def test_claude_partial_reload_waits_for_summary_without_resending(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        initial={'source':'screen','tail':['❯ /reload-plugins','────','❯'],'latestCursor':'6'}
+        complete=dict(initial,tail=['❯ /reload-plugins',*client.responses['/reload-plugins'],'────','❯'])
+        with patch.object(m,'guard',return_value=(client.target,complete)),patch.object(m.time,'sleep'):
+            _,text=m.claude_complete_response(client,plan,target,self.self_pane,'/reload-plugins',initial,'────',
+                lambda text:m.claude_reload_summary(text,self.installation),'claude-reload-completion-unknown')
+        self.assertEqual(1,m.claude_reload_summary(text,self.installation)['plugins'])
+        self.assertEqual([],client.sent)
+
     def test_claude_positive_contract_with_omitted_empty_roster(self):
         client, _ = self.claude_plan()
         client.agents[1].pop('children')
