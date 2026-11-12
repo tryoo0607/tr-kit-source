@@ -488,6 +488,20 @@ class RuntimeRefreshTests(unittest.TestCase):
                     completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
             completion.assert_not_called()
 
+    def test_claude_waits_for_new_screen_echo_after_incomplete_stream(self):
+        client,plan=self.claude_plan();target=plan['targets'][0]
+        client.responses['/plugin list --enabled']=['Installed plugins:']
+        before={'source':'screen','tail':['❯'],'latestCursor':'10'}
+        early=dict(before,latestCursor='11')
+        ready=dict(early,tail=['❯ /plugin list --enabled','• example@market (v1.0.0, user) ✔ enabled','❯'])
+        frames=[(client.target,frame) for frame in (before,early,ready)]
+        with patch.object(m,'guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
+            _,text=m.native_query(client,plan,target,self.self_pane,Mock(),'/plugin list --enabled','plugin-preflight',
+                completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
+        self.assertEqual({'example@market:user':'1.0.0'},m.claude_plugin_listing(text,self.installation))
+        self.assertEqual(3,guard.call_count)
+        self.assertEqual(1,len(client.sent))
+
     def test_claude_partial_reload_waits_for_summary_without_resending(self):
         client,plan=self.claude_plan();target=plan['targets'][0]
         initial={'source':'screen','tail':['❯ /reload-plugins','────','❯'],'latestCursor':'6'}
@@ -611,7 +625,8 @@ class RuntimeRefreshTests(unittest.TestCase):
             previous={'source':'screen','tail':[marker,body,'❯'],'latestCursor':'10'}
             for case, extra in (('repeat',[marker,body,'❯']),('echo-only',[marker,'❯']),('stale',[])):
                 current=dict(previous,tail=previous['tail']+extra)
-                with self.subTest(command=command,case=case), patch.object(m,'guard',side_effect=[(client.target,previous),(client.target,current)]):
+                first=iter([previous])
+                with self.subTest(command=command,case=case), patch.object(m,'guard',side_effect=lambda *a,**k:(client.target,next(first,current))),patch.object(m.time,'sleep'):
                     if case == 'repeat':
                         _, fresh=m.native_query(client,plan,target,self.self_pane,Mock(),command,'repeat')
                         self.assertEqual(body,fresh)

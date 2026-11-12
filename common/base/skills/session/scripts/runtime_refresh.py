@@ -647,7 +647,49 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
     send(client, journal, target, command, phase)
     wait_idle(client, target)
     if target['provider'] == 'claude':
-        _, current = guard(client, plan, target, self_pane, modal=True)
+        marker = '❯ ' + command
+        old_count = sum(line.strip() == marker for line in previous_text.splitlines())
+        deadline = time.monotonic() + 3
+        pending = None
+        for attempt in range(12):
+            _, current = guard(client, plan, target, self_pane, modal=True)
+            text = screen(current)
+            if claude_modal(text, command):
+                break
+            idle_screen('claude', current)
+            echoes = [line.strip() for line in text.splitlines()
+                      if line.lstrip().startswith('❯') and line.strip() != '❯']
+            if sum(line == marker for line in echoes) > old_count:
+                if echoes[-1] != marker:
+                    raise Deferred('native-response-boundary-changed')
+                break
+            if current.get('latestCursor') not in (None, cursor):
+                delta = obj(client.call('terminal', 'read', '--terminal', target['handle'], '--cursor', str(cursor)).get('terminal'))
+                tail = delta.get('tail')
+                if delta.get('source') != 'stream' or not isinstance(tail, list) or any(not isinstance(x, str) for x in tail):
+                    raise Deferred('native-response-output-unknown')
+                fresh = '\n'.join(tail)
+                try:
+                    if completion is not None:
+                        completion[0](fresh)
+                    elif command == '/status':
+                        status('claude', fresh)
+                    elif command == '/help':
+                        if not re.search(r'(?m)^\s*/reload-plugins(?:\s|$)', fresh):
+                            raise Deferred('claude-reload-command-unsupported')
+                    elif not fresh.strip():
+                        raise Deferred('native-response-output-unknown')
+                except Deferred as error:
+                    if completion is not None and str(error) != completion[1]:
+                        raise
+                    pending = error
+                else:
+                    return text, fresh
+            if attempt == 11 or time.monotonic() >= deadline:
+                raise pending or Deferred('native-response-freshness-unknown')
+            journal.record('awaiting-native-response', handle=target['handle'], step=phase,
+                           expectedEchoAdded=False, streamComplete=False)
+            time.sleep(0.05)
         text = screen(current)
         if claude_modal(text, command):
             if claude_modal(previous_text, command) or text == previous_text:
@@ -691,10 +733,10 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
                     break
                 response.append(line)
             fresh = '\n'.join(response)
+            if completion is not None and len(indices) > old_count:
+                return claude_complete_response(client, plan, target, self_pane,
+                                                command, current, fresh, *completion)
             if fresh.strip() and (len(indices) > old_count or fresh not in previous_text):
-                if completion is not None:
-                    return claude_complete_response(client, plan, target, self_pane,
-                                                    command, current, fresh, *completion)
                 return text, fresh
     else:
         _, current = guard(client, plan, target, self_pane)
