@@ -2,12 +2,24 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|exec_command",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/scripts/commit-guard.py\" agent --product codex",
-            "timeout": 5
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|exec_command|write_stdin|Read|read_file|Write|Edit|MultiEdit|Glob|Grep|NotebookEdit|WebFetch|WebSearch|apply_patch|list_mcp_resources|list_mcp_resource_templates|read_mcp_resource|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/scripts/commit-guard.py\" output --product codex",
+            "timeout": 45
           }
         ]
       }

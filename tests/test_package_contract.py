@@ -41,7 +41,7 @@ class PackageContractTests(unittest.TestCase):
             output=self.out/product
             assemble(self.root,product,output,plugin_hooks=True)
             report=json.loads((output/'assembly.json').read_text())
-            self.assertEqual(['PreToolUse'],report['plugin_hooks'])
+            self.assertEqual(sorted(['PreToolUse','PostToolUse'] + (['PostToolUseFailure'] if product == 'claude' else [])),report['plugin_hooks'])
             self.assertEqual(hashlib.sha256((scripts/'commit-guard.py').read_bytes()).hexdigest(),report['files']['scripts/commit-guard.py'])
             self.assertTrue((output/'hooks/hooks.json').is_file())
 
