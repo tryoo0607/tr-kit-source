@@ -705,16 +705,37 @@ def native_query(client, plan, target, self_pane, journal, command, phase):
 
 
 def claude_plugin_listing(text, inventory):
-    expected = {p['id']: p['version'] for p in inventory['plugins'] if p['enabled']}
+    enabled = [p for p in inventory['plugins'] if p['enabled']]
+    expected = {p['id']: p for p in enabled}
+    if len(expected) != len(enabled):
+        raise Deferred('claude-runtime-plugin-list-ambiguous')
     found = {}
+    number = r'(?:0|[1-9][0-9]*)'
+    prerelease = rf'(?:{number}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+    build = r'[0-9A-Za-z-]+'
+    version = rf'{number}\.{number}\.{number}(?:-{prerelease}(?:\.{prerelease})*)?(?:\+{build}(?:\.{build})*)?'
+    scope = r'user|project|local|managed|session|synced'
     for line in text.splitlines():
         ids = re.findall(r'(?<![\w.-])[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9_.-]+', line)
-        for ident in ids:
-            if ident not in expected or ident in found or not re.search(r'(?<![A-Za-z0-9_.+-])v?' + re.escape(expected[ident]) + r'(?![A-Za-z0-9_.+-])', line):
-                raise Deferred('claude-runtime-plugin-list-mismatch')
-            found[ident] = expected[ident]
-    if found != expected or (not expected and 'No plugins installed.' not in text):
+        if not ids:
+            stripped = line.strip()
+            if (not stripped or re.fullmatch(r'(?:⎿\s*)?Installed plugins:', stripped) or
+                    re.fullmatch(r'[─━╌═-]+', stripped) or
+                    (not expected and stripped == 'No plugins installed.')):
+                continue
+            raise Deferred('claude-runtime-plugin-list-unknown')
+        if len(ids) != 1 or ids[0] not in expected or ids[0] in found:
+            raise Deferred('claude-runtime-plugin-list-mismatch')
+        ident = ids[0]
+        prefix = r'^\s*(?:[•*-]\s*)?' + re.escape(ident) + r'\s+'
+        match = (re.fullmatch(prefix + rf'\(v({version}),\s*({scope})\)\s*✔\s*enabled\s*', line) or
+                 re.fullmatch(prefix + rf'v?({version})\s+({scope})\s+enabled\s*', line))
+        if match is None or match[2] != expected[ident]['scope']:
+            raise Deferred('claude-runtime-plugin-list-mismatch')
+        found[ident] = match[1]
+    if set(found) != set(expected) or (not expected and 'No plugins installed.' not in text):
         raise Deferred('claude-runtime-plugin-list-unknown')
+    return {ident + ':' + expected[ident]['scope']: value for ident, value in found.items()}
 
 
 def claude_reload_summary(text, inventory):
@@ -747,7 +768,11 @@ def refresh_claude(client, plan, target, self_pane, journal):
     if not re.search(r'(?m)^\s*(?:❯\s*)?/reload-plugins(?:\s|$)', help_output):
         raise Deferred('claude-reload-command-unsupported')
     _, listing = native_query(client, plan, target, self_pane, journal, '/plugin list --enabled', 'plugin-preflight')
-    claude_plugin_listing(listing, installation_before)
+    listed_before = claude_plugin_listing(listing, installation_before)
+    listing_matches = listed_before == {p['id'] + ':' + p['scope']: p['version']
+                                       for p in installation_before['plugins'] if p['enabled']}
+    journal.record('runtime-listing-before', handle=target['handle'],
+                   versions=listed_before, matchesInstalled=listing_matches)
     _, output = native_query(client, plan, target, self_pane, journal, '/reload-plugins', 'native-reload')
     summary = claude_reload_summary(output, installation_before)
     journal.record('reload-completed', handle=target['handle'], counts=summary)
@@ -759,6 +784,7 @@ def refresh_claude(client, plan, target, self_pane, journal):
     journal.record('installation-after', handle=target['handle'], installation=installation_after)
     return {'handle': target['handle'], 'before': before, 'after': after,
             'refresh': 'native-reload-observed', 'reloadSummary': summary, 'consumption': 'unverified',
+            'runtimeListedVersionsBefore': listed_before, 'runtimeListingMatchesInstalledBefore': listing_matches,
             'installedVersion': installed_versions(installation_after), 'consumedVersion': None,
             'installationBefore': installation_before, 'installationAfter': installation_after}
 
