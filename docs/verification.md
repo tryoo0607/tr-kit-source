@@ -6,6 +6,7 @@
 
 | 대상 | 확인한 범위·시점 | 현재 남은 범위 |
 | --- | --- | --- |
+| R-52 조회·복원 보완 | [결정·한계](decisions/20261123-session-query-hardening.md): 최종 전체 CI **627개/skip0**(session 161개 포함), 실제 Codex0.171.0 목록56.403초·재조회1.139초·소유 새 창 status와 응답 증거 유지·정리 확인 | 공통 native0.8.2/private native0.8.3 및 양 제품 source/native **8묶음**의 exact byte·fresh Gitleaks·전송 가드·pin4개 일치. 실제 호스트 배포·새 버전 소비·Claude native 재검증·재부팅은 미실행. 비원자적 최종 관측/create 경합 잔존 |
 | R-52 재시작 배치 | [배포 전 검수](#재시작-배치-배포-전-검수--2026-11-23): durable 배치·수동 목록, Codex0.171.0 helper restart/restore·Claude2.1.330 helper cold restore·새 모델 prepare/list, 최종 공통600/private129개·8묶음·pin4개 통과 | Claude 즉시 restart는 수동. 실제 reboot/운영 rollout·새 묶음의 소비 증거는 미실행 또는 미확인 |
 | 공통·private 구조 | 공통53/private9 자체 skill과 양 제품 adapter. [전체 감사](decisions/20261120-whole-kit-audit.md)에서 관계·기초 형식·연결 대조 | 전62개 모든 분기의 의미/실제 업무·원문 요구 전체 대조가 완료된 것은 아님 |
 | A-01 캐시 | 11월20일2개를 외부 보존 후 제거. 원래 공통 source516개 회귀·양 제품 source 조립 | 미래 재생성 방지 보장 아님. 이번 검수는 source의 새 pyc 유무 확인 |

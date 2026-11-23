@@ -49,7 +49,8 @@ tests/
   → 나중 명시 요청에서 수행자가 session_restart.py restart/restore/verify 호출
     → 실행: 현재 Orca inventory/guard → 선택 native identity 대조
       → restart: 검증된 Codex 정상 종료/exact resume; Claude 즉시 종료·shell 전이 자동 검증은 미지원으로 수동
-      → restore: 이미 실행 중이면 확인; 부재 시 원 workspace의 소유 terminal create
+      → restore: 이미 실행 중이면 확인; 부재 시 선택 status의 frame/cursor 증거 보존
+        → 마지막 설치 조회 → fresh list/ps·선택 frame 증거 대조 → durable 기록 → 원 workspace 소유 create
       → verify: 실행 중 identity와 재시작 증거를 분리
     → 입력 전 atomic 로컬 기록 → 실제 접수/UUID/cwd/권한 확인 → 수행자가 결과 보고
 ```
@@ -61,6 +62,8 @@ native CLI 업데이트 연결은 session reference의 단일 계약이 소유�
 `runtime_refresh.status`가 제한된 native resumeMode를 기록하고 `runtime_refresh.resume_command`가 두 관측 모드의 고정 argv를 구성한다. 기존 refresh와 session_restart의 restart/restore가 같은 함수를 호출한다. 미확인 모드는 exit/create 전에 수동 처리하며, mode 없는 부재 배치나 저장 command/flag/환경으로 옵션을 추정하지 않는다. raw command는 배치에 저장하지 않는다.
 
 Codex의 headerless placeholder는 조회 조건이며 native 버전 증명이 아니다. fresh status에서 파싱한 known nativeVersion과 기존 native inventory의 현재 CLI 버전을 resume 전에 대조하고, 부재 restore도 create 직전 설치 snapshot을 확인한다. Claude project/local 설치 snapshot은 절대 projectPath를 검증한 context SHA256을 identity·정렬·installed_versions key에 사용하며 다른 프로젝트의 설치를 필터링하지 않는다. 같은 context 중복과 enabled 의존성 모호성은 계속 보류한다.
+
+세션 native 조회 runner는 기존 `runtime_refresh.py` 한 곳에서 refresh/restart/restore가 재사용한다. Codex inventory만180초, 다른 native 명령은15초이며 stdout/stderr 동시 제한·엄격한 진단 거부·소유 group 정리를 수행한다. 진행은 caller flags를 유지하는 비차단 stderr write로만 시도한다. 부재 restore의 마지막 passive 검사는 현재 응답 경계에서 일치하는 frame/stream 신원과 같은 관측의 cursor/화면 hash를 유지해 같은 pane의 출력 변화도 거부한다. status 뒤 응답 대기는 설치 재조회 없이 passive guard로 수행한다. Claude 부재 증명만 선택 status 모달을 생성/거부 결정까지 유지하고, 이후 원 proof와 fresh full guard로 닫으며 불명확하면 수동 정리를 기록하고 중단한다. 새 파일 배치·외부 provider·private 의존은 없다. [세부 결정·검증 한계](decisions/20261123-session-query-hardening.md)를 따른다.
 
 ## 2026-11-20 hook 보완의 배치
 

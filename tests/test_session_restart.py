@@ -137,6 +137,35 @@ class Fake:
         self.runtime = 'runtime-2'
 
 
+class ModalFake(Fake):
+    """Owned Claude status modals; closing discards the identity-bearing frame."""
+    def __init__(self):
+        super().__init__('claude')
+        self.modals = set()
+
+    def call(self, *args):
+        if args[:2] == ('terminal', 'send'):
+            handle = args[args.index('--terminal')+1]
+            text = args[args.index('--text')+1]
+            if text == '\x1b':
+                self.sent.append(args)
+                self.modals.discard(handle)
+                frame = self.frames[handle]
+                frame.update(tail=['❯', '  ⏵⏵ bypass permissions on (shift+tab to cycle)'],
+                             latestCursor=str(int(frame['latestCursor'])+1))
+                return {'send': {'handle': handle, 'accepted': True, 'bytesWritten': 1}}
+            result = super().call(*args)
+            if text == '/status' and self.terms[handle]['agentIdentity'] == 'claude':
+                self.modals.add(handle)
+                identity = self.identities[handle]
+                self.frames[handle]['tail'] = [
+                    ' Settings  Status  Config  Usage  Stats', ' Version: 2.1.330',
+                    ' Session ID: '+identity['sessionId'], ' cwd: '+identity['cwd'],
+                    ' ←/→ to switch · Esc to close']
+            return result
+        return super().call(*args)
+
+
 class Restart(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -307,7 +336,7 @@ class Restart(unittest.TestCase):
         self.assertEqual(prior, self.load(ident)['targets'][0]['attempt'])
         self.assertEqual(1, len(self.client.created))
 
-    def test_headerless_readonly_status_unknown_version_is_manual_without_exit(self):
+    def test_headerless_status_without_current_identity_is_unverified_without_exit(self):
         ident = self.prepare()
         self.client.sent.clear()
         self.client.codex_version = '0.172.0'
@@ -320,7 +349,8 @@ class Restart(unittest.TestCase):
             return result
         with patch.object(self.client, 'call', side_effect=headerless_screen):
             row = self.execute(ident, 'restart')['targets'][0]
-        self.assertEqual('manual-restart-required', row['state'])
+        self.assertEqual('failed', row['state'])
+        self.assertEqual('native-identity-unknown', row['reason'])
         self.assertEqual(['/status'], self.texts())
         self.assertEqual([], self.client.created)
 
@@ -731,6 +761,386 @@ class Restart(unittest.TestCase):
                 with m.Store(self.root):
                     pass
         self.assertEqual(ident, self.load(ident)['batchId'])
+
+    def test_restore_rechecks_last_lookup_before_create_for_appeared_candidates(self):
+        for kind in ('selected', 'native', 'unknown', 'other-provider', 'ps-only'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = Fake()
+                ident = self.prepare()
+                orphan = copy.deepcopy(self.client.agents['term_target'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                lookup, inventory = m.rr.installation_guard, self.client.inventory
+                injected = []
+                observed = []
+                observe = self.client.observe
+                def guarded(target):
+                    result = lookup(target)
+                    if target['identity']['handle'] == 'term_target':
+                        if not injected:
+                            injected.append(True)
+                            if kind != 'ps-only':
+                                name = 'target' if kind == 'selected' else 'new'
+                                h = self.client.add(name, '/work', None if kind == 'unknown' else 'claude' if kind == 'other-provider' else 'codex')
+                                self.client.identities[h]['sessionId'] = SESSION
+                    return result
+                def fresh():
+                    ts, ps = inventory()
+                    if injected and kind == 'ps-only':
+                        next(w for w in ps['worktrees'] if w['worktreeId'] == 'repo::/work')['agents'].append(orphan)
+                    return ts, ps
+                def read(handle):
+                    if injected:
+                        observed.append(handle)
+                    return observe(handle)
+                with patch.object(m.rr, 'installation_guard', side_effect=guarded), \
+                     patch.object(self.client, 'inventory', side_effect=fresh), patch.object(self.client, 'observe', side_effect=read):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual([True], injected)
+                self.assertEqual('restore-safety-state-changed', row['reason'])
+                self.assertEqual([], self.client.created)
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], observed)
+                self.assertEqual('not-submitted', self.load(ident)['targets'][0]['attempt']['state'])
+
+    def test_restore_rechecks_runtime_workspace_self_and_selected_state_after_last_lookup(self):
+        for change in ('runtime', 'self', 'workspace-path', 'workspace-host', 'busy', 'draft', 'fingerprint', 'permissions'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = Fake()
+                self.client.add('other', '/work')
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                lookup, inventory = m.rr.installation_guard, self.client.inventory
+                injected = []
+                def guarded(target):
+                    result = lookup(target)
+                    if target['identity']['handle'] == 'term_target' and not injected:
+                        injected.append(True)
+                        if change == 'runtime':
+                            self.client.runtime = 'new'
+                        elif change == 'self':
+                            self.client.terms['term_self']['leafId'] = 'new'
+                        elif change == 'busy':
+                            self.client.agents['term_other']['state'] = 'working'
+                        elif change == 'draft':
+                            self.client.frames['term_other'].update(draft='SECRET pending', tail=['› pending'])
+                        elif change == 'fingerprint':
+                            self.client.terms['term_other']['incarnationId'] = 'new'
+                        elif change == 'permissions':
+                            frame = self.client.frames['term_other']
+                            frame['latestCursor'] = str(int(frame['latestCursor']) + 1)
+                            frame['tail'] = ['Permissions: Custom', '›']
+                    return result
+                def fresh():
+                    ts, ps = inventory()
+                    if injected and change in ('workspace-path', 'workspace-host'):
+                        w = next(w for w in ps['worktrees'] if w['worktreeId'] == 'repo::/work')
+                        w['path' if change == 'workspace-path' else 'hostId'] = 'changed'
+                    return ts, ps
+                with patch.object(m.rr, 'installation_guard', side_effect=guarded), patch.object(self.client, 'inventory', side_effect=fresh):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual([True], injected)
+                self.assertEqual('failed', row['state'])  # Earlier status already has a durable sending receipt.
+                self.assertEqual([], self.client.created)
+                self.assertTrue(all(a[a.index('--terminal')+1] == 'term_other' for a in self.client.sent))
+                self.assertTrue(all(text == '/status' for text in self.texts()))
+                self.assertNotIn('SECRET', json.dumps(row))
+
+    def test_selected_same_pane_uuid_change_during_last_lookup_uses_bound_response_proof(self):
+        for changed in ('cursor-and-output', 'cursor-only', 'output-only', 'missing-cursor'):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = Fake()
+                self.client.add('other', '/work')
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                before_term = copy.deepcopy(self.client.terms['term_other'])
+                before_agent = copy.deepcopy(self.client.agents['term_other'])
+                lookup = m.rr.installation_guard
+                injected = []
+                def guarded(target):
+                    result = lookup(target)
+                    if target['identity']['handle'] == 'term_target' and not injected:
+                        injected.append(True)
+                        self.client.identities['term_other']['sessionId'] = SESSION
+                        frame = self.client.frames['term_other']
+                        if changed != 'output-only':
+                            frame['latestCursor'] = None if changed == 'missing-cursor' else str(int(frame['latestCursor']) + 1)
+                        if changed != 'cursor-only':
+                            frame['tail'] = ['Session ID: '+SESSION, 'cwd: /work', 'Permissions: Full Access', '›']
+                    return result
+                send = self.client.call
+                def no_new_input(*args):
+                    if injected and args[:2] == ('terminal', 'send'):
+                        self.fail('status input after final lookup')
+                    return send(*args)
+                with patch.object(m.rr, 'installation_guard', side_effect=guarded), patch.object(self.client, 'call', side_effect=no_new_input):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual([True], injected)
+                self.assertIn(row['reason'], ('native-response-proof-changed', 'native-response-proof-unknown'))
+                self.assertEqual(before_term, self.client.terms['term_other'])
+                self.assertEqual(before_agent, self.client.agents['term_other'])
+                self.assertEqual([], self.client.created)
+                self.assertEqual(1, sum(i['sessionId'] == SESSION for i in self.client.identities.values()))
+                self.assertTrue(all(text == '/status' for text in self.texts()))
+
+    def test_selected_empty_shell_output_change_during_lookup_never_creates_duplicate(self):
+        ident = self.prepare()
+        self.client.terms['term_target']['agentIdentity'] = None
+        self.client.agents['term_target']['agentType'] = None
+        self.client.frames['term_target']['tail'] = ['owned@host:/work$']
+        self.client.sent.clear()
+        guard = m.rr.installation_guard
+        injected = []
+        def changed(target):
+            result = guard(target)
+            if not injected:
+                injected.append(True)
+                self.client.frames['term_target'].update(latestCursor='11', tail=['Session ID: '+SESSION, '›'])
+            return result
+        with patch.object(m.rr, 'installation_guard', side_effect=changed):
+            row = self.execute(ident, 'restore')['targets'][0]
+        self.assertEqual('native-response-proof-changed', row['reason'])
+        self.assertEqual([], self.client.created)
+        self.assertEqual([], self.client.sent)
+
+    def test_missing_response_bound_proof_is_not_replaced_by_new_cursor_baseline(self):
+        self.client.add('other', '/work')
+        ident = self.prepare(['term_target', 'term_other'])
+        self.client.remove('term_target')
+        self.client.sent.clear()
+        status = m.rr.native_status
+        def without_proof(client, plan, target, *args, **kwargs):
+            result = status(client, plan, target, *args, **kwargs)
+            target.pop('nativeProof', None)
+            return result
+        with patch.object(m.rr, 'native_status', side_effect=without_proof):
+            row = self.execute(ident, 'restore')['targets'][0]
+        self.assertEqual('native-response-proof-unknown', row['reason'])
+        self.assertEqual([], self.client.created)
+
+    def test_unselected_native_unknown_panes_never_receive_observe_or_input(self):
+        for provider in (None, 'codex'):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = Fake()
+                ident = self.prepare()
+                self.client.remove('term_target')
+                self.client.add('unselected', '/work', provider)
+                self.client.sent.clear()
+                with patch.object(self.client, 'observe', side_effect=AssertionError('unselected screen')):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual('unselected-or-uncertain-native-candidate', row['reason'])
+                self.assertEqual([], self.client.created)
+                self.assertEqual([], self.client.sent)
+
+    def test_post_status_wait_uuid_switch_and_stale_startup_never_create(self):
+        for changed in ('uuid', 'startup', 'another-command', 'missing-identity', 'during-stream'):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = Fake()
+                self.client.add('other', '/work')
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                call = self.client.call
+                switched = []
+                def switch():
+                    switched.append(True)
+                    self.client.identities['term_other']['sessionId'] = SESSION
+                    frame = self.client.frames['term_other']
+                    frame['latestCursor'] = str(int(frame['latestCursor'])+1)
+                    if changed in ('uuid', 'during-stream'):
+                        frame['tail'] = ['OpenAI Codex (v0.171.0)', 'Session ID: '+SESSION,
+                                         'cwd: /work', 'Permissions: Full Access', '›']
+                    elif changed == 'startup':
+                        frame['tail'] += ['OpenAI Codex (v0.171.0)', '› Ask Codex to do anything']
+                    elif changed == 'another-command':
+                        frame['tail'] += ['› /help', 'Native help', '›']
+                    else:
+                        frame['tail'] = ['OpenAI Codex (v0.171.0)', '›']
+                def interleave(*args):
+                    result = call(*args)
+                    status_sent = self.texts() == ['/status']
+                    trigger = ('terminal', 'read') if changed == 'during-stream' else ('terminal', 'wait')
+                    if status_sent and args[:2] == trigger and not switched:
+                        switch()
+                    return result
+                with patch.object(self.client, 'call', side_effect=interleave):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual([True], switched)
+                self.assertIn(row['reason'], ('native-response-identity-changed', 'native-identity-unknown',
+                                              'native-response-boundary-changed', 'native-response-proof-changed'))
+                self.assertEqual([], self.client.created)
+                self.assertEqual(['/status'], self.texts())
+                self.assertEqual(1, sum(i['sessionId'] == SESSION for i in self.client.identities.values()))
+
+    def test_positive_multi_selected_restore_for_codex_and_claude_modal(self):
+        for provider in ('codex', 'claude'):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = Fake() if provider == 'codex' else ModalFake()
+                self.client.add('other', '/work', provider)
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                call = self.client.call
+                decision = []
+                def at_create(*args):
+                    if args[:2] == ('terminal', 'create'):
+                        decision.append(True)
+                        if provider == 'claude':
+                            self.assertEqual({'term_other'}, self.client.modals)
+                    return call(*args)
+                with patch.object(self.client, 'call', side_effect=at_create):
+                    report = self.execute(ident, 'restore')
+                self.assertEqual(['restarted', 'already-running'], [r['state'] for r in report['targets'][:2]])
+                self.assertEqual([True], decision)
+                self.assertEqual(1, len(self.client.created))
+                self.assertEqual(1, sum(i['sessionId'] == SESSION for i in self.client.identities.values()))
+                if provider == 'claude':
+                    self.assertFalse(self.client.modals)
+                    self.assertEqual(self.texts().count('/status'), self.texts().count('\x1b'))
+                    self.assertTrue(any(e['phase'] == 'owned-status-modal-closed' for e in self.load(ident)['events']))
+
+    def test_claude_modal_retained_lookup_switch_defers_without_escape_or_create(self):
+        for changed in ('uuid', 'closed', 'busy', 'draft', 'installation'):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = ModalFake()
+                self.client.add('other', '/work', 'claude')
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                original_uuid = self.client.identities['term_other']['sessionId']
+                lookup = m.rr.installation_guard
+                switched = []
+                def interleave(target):
+                    result = lookup(target)
+                    if target['identity']['handle'] == 'term_target' and not switched:
+                        self.assertEqual({'term_other'}, self.client.modals)
+                        switched.append(True)
+                        frame = self.client.frames['term_other']
+                        if changed == 'uuid':
+                            self.client.identities['term_other']['sessionId'] = SESSION
+                            frame['tail'] = [line.replace(original_uuid, SESSION)
+                                             for line in frame['tail']]
+                        elif changed == 'closed':
+                            self.client.modals.clear()
+                            frame['tail'] = ['❯', 'Permission mode: bypass permissions']
+                        elif changed == 'busy':
+                            self.client.agents['term_other']['state'] = 'working'
+                        elif changed == 'draft':
+                            frame['draft'] = 'SECRET draft'
+                        else:
+                            self.client.installed_claude_version = 'changed'
+                            raise m.Deferred('installation-changed')
+                    return result
+                with patch.object(m.rr, 'installation_guard', side_effect=interleave):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual([True], switched)
+                self.assertEqual([], self.client.created)
+                # Initial locate closed its own modal; the retained modal never gets an Esc.
+                self.assertEqual(['/status', '\x1b', '/status'], self.texts())
+                self.assertEqual('failed', row['state'])
+                events = self.load(ident)['events']
+                self.assertTrue(any(e['phase'] == 'manual-status-modal-cleanup-required' for e in events))
+                self.assertNotIn('SECRET', json.dumps(row))
+
+    def test_claude_owned_modal_partial_failure_cleanup_and_lost_escape_never_replay(self):
+        for failure in ('create', 'identity', 'lost-escape', 'changed-after-create'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = ModalFake()
+                self.client.add('other', '/work', 'claude')
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                call, lookup = self.client.call, m.rr.installation_guard
+                pending = []
+                def interleave(*args):
+                    if args[:2] == ('terminal', 'create'):
+                        pending.append(True)
+                        if failure == 'create':
+                            self.client.created.append(args)
+                            raise m.Deferred('cli-unavailable-or-timeout')
+                    result = call(*args)
+                    if pending and args[:2] == ('terminal', 'create') and failure == 'changed-after-create':
+                        self.client.frames['term_other']['tail'] = ['SECRET changed UI']
+                    if (pending and failure == 'lost-escape' and args[:2] == ('terminal', 'send')
+                            and args[args.index('--text')+1] == '\x1b'):
+                        raise m.Deferred('cli-unavailable-or-timeout')
+                    return result
+                def identity_change(target):
+                    result = lookup(target)
+                    # The first closed modal belongs to initial locate. Switch the
+                    # second response itself, then let finally close its exact frame.
+                    if (failure == 'identity' and self.texts() == ['/status', '\x1b']
+                            and target['identity']['handle'] == 'term_other'):
+                        self.client.identities['term_other']['sessionId'] = str(uuid.uuid4())
+                    return result
+                with patch.object(self.client, 'call', side_effect=interleave), \
+                     patch.object(m.rr, 'installation_guard', side_effect=identity_change):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual('failed', row['state'])
+                events = self.load(ident)['events']
+                if failure in ('create', 'identity'):
+                    self.assertFalse(self.client.modals)
+                    self.assertTrue(any(e['phase'] == 'owned-status-modal-closed' for e in events))
+                else:
+                    self.assertEqual('owned-status-modal-cleanup-unverified', row['reason'])
+                    self.assertTrue(any(e['phase'] == 'manual-status-modal-cleanup-required' for e in events))
+                    self.assertEqual('term_restored', self.load(ident)['targets'][0]['ownedHandle'])
+                before = (len(self.client.created), len(self.client.sent))
+                self.execute(ident, 'restore')
+                self.assertEqual(before, (len(self.client.created), len(self.client.sent)))
+                if failure == 'changed-after-create':
+                    self.assertEqual(['/status', '\x1b', '/status'], self.texts())
+                self.assertNotIn('SECRET', json.dumps(row))
+
+    def test_claude_pre_escape_uuid_switch_and_post_escape_switch_never_duplicate(self):
+        for when in ('pre', 'post'):
+            with self.subTest(when=when), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                self.client = ModalFake()
+                self.client.add('other', '/work', 'claude')
+                ident = self.prepare(['term_target', 'term_other'])
+                self.client.remove('term_target')
+                self.client.sent.clear()
+                lookup, call = m.rr.installation_guard, self.client.call
+                switched = []
+                def switch():
+                    switched.append(True)
+                    old = self.client.identities['term_other']['sessionId']
+                    self.client.identities['term_other']['sessionId'] = SESSION
+                    frame = self.client.frames['term_other']
+                    frame['tail'] = [line.replace(old, SESSION) for line in frame['tail']]
+                    frame['latestCursor'] = str(int(frame['latestCursor'])+1)
+                def pre(target):
+                    result = lookup(target)
+                    if when == 'pre' and self.client.modals and not switched:
+                        switch()
+                    return result
+                def post(*args):
+                    result = call(*args)
+                    if (when == 'post' and args[:2] == ('terminal', 'send')
+                            and args[args.index('--text')+1] == '\x1b' and not switched):
+                        switch()
+                    return result
+                with patch.object(m.rr, 'installation_guard', side_effect=pre), patch.object(self.client, 'call', side_effect=post):
+                    row = self.execute(ident, 'restore')['targets'][0]
+                self.assertEqual([True], switched)
+                self.assertEqual([], self.client.created)
+                self.assertEqual(1, sum(i['sessionId'] == SESSION for i in self.client.identities.values()))
+                if when == 'pre':
+                    self.assertEqual(['/status'], self.texts())
+                    self.assertEqual('native-response-proof-changed', row['reason'])
+                else:
+                    self.assertIn(row['reason'], ('native-identity-or-permissions-mismatch', 'session-appeared-before-launch'))
 
     def test_unknown_foreground_and_unverified_workspace_never_launch(self):
         ident = self.prepare()
