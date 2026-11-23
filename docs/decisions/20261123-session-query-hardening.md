@@ -47,6 +47,6 @@ Claude 일반 status/prepare는 원 모달 proof를 guarded Esc 직전에 확인
 
 ## 배포물 준비 결과
 
-공통 native0.8.2/private native0.8.3, source/native×양 제품8묶음을 새 출력에 준비했다. source 인터페이스에는 release version이 내장되지 않는다. 각 묶음의 현재 source byte·provider 선언·fresh 전송 가드·실제 Gitleaks와 private의 common pin4개를 대조했다. private129개 회귀도 통과했다. 최종 receipt는 `/data/projects/_scratch/tr-kit-query-release-0.8.2-a230161ef5/receipt.json`이다. 실제 파일 수는 common source153/native154, private source53/native54(제품별)이며 이전 묶음 대비 경로 추가·누락은 없다.
+공통 native0.8.2/private native0.8.3, source/native×양 제품8묶음을 새 출력에 준비했다. source 인터페이스에는 release version이 내장되지 않는다. 각 묶음의 현재 source byte·provider 선언·fresh 전송 가드·실제 Gitleaks와 private의 common pin4개를 대조했다. private129개 회귀도 통과했다. 최종 receipt는 `/data/projects/_scratch/tr-kit-query-release-0.8.2-a230161ef5/receipt.json`이다. inventory 항목 수는 common source153/native154, private source53/native54(제품별, 생성된 inventory 자체는 별도)이며 이전 묶음 대비 경로 추가·누락은 없다.
 
 세 차례 독립 리뷰에서 발견한 보안·응답 결합·입력 경계/파서 오류는 실제 재현 또는 명시한 inspection 범위로 분류해 보완했다. 마지막 일반 prompt·깊은 JSON 수정은 root가 diff·추가3개 시험·전체627개·소유 native로 확인했으며, 최종 수정본에 대해 네 번째 독립 리뷰를 실행했다고 주장하지 않는다. 기존 게시물은 덮어쓰지 않았고 운영 배포·native 업데이트·실제 사용자 세션 재시작·새 kit 소비/재부팅은 실행하지 않았다.
