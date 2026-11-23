@@ -6,6 +6,7 @@
 
 | 대상 | 확인한 범위·시점 | 현재 남은 범위 |
 | --- | --- | --- |
+| R-52 재시작 배치 | [배포 전 검수](#재시작-배치-배포-전-검수--2026-11-23): durable 배치·수동 목록, Codex0.171.0 helper restart/restore·Claude2.1.330 helper cold restore·새 모델 prepare/list, 최종 공통600/private129개·8묶음·pin4개 통과 | Claude 즉시 restart는 수동. 실제 reboot/운영 rollout·새 묶음의 소비 증거는 미실행 또는 미확인 |
 | 공통·private 구조 | 공통53/private9 자체 skill과 양 제품 adapter. [전체 감사](decisions/20261120-whole-kit-audit.md)에서 관계·기초 형식·연결 대조 | 전62개 모든 분기의 의미/실제 업무·원문 요구 전체 대조가 완료된 것은 아님 |
 | A-01 캐시 | 11월20일2개를 외부 보존 후 제거. 원래 공통 source516개 회귀·양 제품 source 조립 | 미래 재생성 방지 보장 아님. 이번 검수는 source의 새 pyc 유무 확인 |
 | A-02 형식 전달 | 기존 교정과 후속5번 새 묶음·118개 회귀, 설치된 private의 doctor/document10쌍 확인 | 실제 helper/capture 실행과 실자료 수집·운영 적용은 별도 |
@@ -16,6 +17,27 @@
 | 현재 후보 계약·운영 | [5번 검증](decisions/20261123-candidate-pin-native-validation.md): 새source/native8개 조립·pin4개 정렬·공통516/private118개 회귀·native34사례·양 제품53/62개 실제 노출·공식 entry/resource47개씩 대조 | 시험 버전과 운영 버전 구분.[6번 운영 적용](decisions/20261123-host-runtime-connection.md#운영-적용-결과--2026-11-23): 세 호스트 native 설치·공식 provider47개 연결·Codex 개별 trust·새 지침 전달 확인. dev01/Claude 명령 성공, nas-vm 명령은 sandbox loopback 오류로 미실행. 전체 운영 적합은 보류 |
 
 4번 문서 검수는 전체 회귀가 아니며, 5번516/118개와 6번 공통525/private129개를 각 변경 후보에 실제 재실행했다. BMAD 자동 갱신404 미지원, 실제 개인 자료/NAS/기존 DB·timer·capture·운영 복구와 후속 신규 도입은 각 원래 범위에 남긴다. [현재 후속 순서](migration-status.md#현재-후속-순서--2026-11-23)를 따른다.
+
+## 재시작 배치 배포 전 검수 — 2026-11-23
+
+기준 revision은 `55c4498e274ea5fbf6199878c3e9ed339c2e89c6`이다. [요구·실제 보완·지원 한계](decisions/20261123-session-restart.md)를 기준으로 자체 source와 소유 canary만 검수했다. 기존 사용자 대화에는 입력하지 않았다. 세부 로그·원시 metadata는 로컬 `/data/projects/_scratch/tr-kit-session-restart-20261123`에 보존하며 Git/배포물에 포함하지 않는다.
+
+| 층위 | 확인한 결과 | 남은 범위·판정 한계 |
+| --- | --- | --- |
+| 현재 source 자동 시험 | 관측 footer와 anchored header 보완 후 전체 공통 CI **600개** 통과(skip0). 집중 runtime84개+restart50개=134개는 같은 최종 코드로 전체 회귀에 포함. pinned Gitleaks8.30.1과 기존 ci-check 사용 | transport double·실제 pinned scanner 검사를 포함한 로컬 CI이며 실제 모델·native 성공과 별개 |
+| 실제 Codex0.171.0 | dev01 기존 공식 npm 방식으로0.167.2→0.171.0 업데이트. 소유 helper prepare/restart/부재 restore에서 같은 UUID/cwd/Full Access/mode 확인, explicit 예외와 요청자 입력0 | 정상 종료·terminal close로 만든 부재 시험이며 OS reboot 아님. 자동 재개는 지원한 기존 모드만 해당 |
+| 실제 Claude2.1.330 | inno-desktop 소유 prepare/list, native clean exit·exact UUID 재개와 기존 bypass 확인. 최종 코드 helper cold restore가 한 번의 실행에서 exit0/restarted 및 같은 UUID/cwd/bypass/mode/2.1.330을 확인 | 관측 spy는 원래 parser의 반환/예외를 바꾸지 않고 header/footer만 기록. Claude 즉시 restart는 자동 종료·shell 전이 미지원으로 수동 |
+| 새로운 모델의 분기 | 소유 Codex 실제 세션에서 candidate SKILL→배치 reference→prepare-only 호출과 예외 입력0 확인. 별도 headless list는 실제 helper 호출 전후 bytes/mtime 무변경 | 이전 headless prepare 실패는 성공으로 세지 않음. 최종 suffix patch의 실제 모델 선택·자연 발동, 실제 압축/재개는 미실행 |
+| 정적·독립 검수 | BMAD quick 독립 review의 초기3건과 후속 orphan 부재1건을 재현·보완. orphan 및 권한 대기 후속 review에서 잔여 발견 없음. 공식 skill-creator session/orca-update 형식, 파일·참조·읽기 경로 대조 | suffix의 본문-version 오인도 anchored 실제 header로 보완한 뒤 독립 재검수에서 잔여 발견 없음. 전62개 skill의 모든 분기 감사로 확대하지 않음 |
+| 공통/private 패키지 | 최종 공통 native0.8.1/private native0.8.2와 source/native×양 제품 **8묶음**의 source byte 대조·fresh transfer guard·pinned Gitleaks 통과. private pin4개와 최신 contract 일치, private **129개** 통과 | source 인터페이스에는 release version이 내장되지 않아 source 버전은 준비 맥락. synthetic catalog는 공식 원문 출처 인증이 아니며 native operational_ready=false 유지 |
+
+최종 CI는 `/tmp/tr-kit-session-restart-ci-final134-20261123`, 패키지·pin·source 보존 receipt는 `/data/projects/_scratch/tr-kit-session-restart-release-0.8.1-final-860a946923/receipt.json`에 보관한다. 빌드 직전/직후 공통217파일 불변, private77파일 중 contract 네 pin 외 불변을 확인했다. 이후 검수 요약 문서 갱신은 배포 payload inventory에 포함되지 않으며 별도 바이트 대조로 확인한다. 소유 native canary와 transfer/admin terminal은 정상 종료·close했고 현재 요청 대화는 유지했다.
+
+설치 inventory, 접수, UUID/cwd/권한과 플러그인 실제 소비는 분리한다. 이 시험의 `consumption`은 unverified, `consumedVersion`은 null이다. 실제 OS reboot·다른 계정/플랫폼·사용자 실자료·모든 skill의 업무 성공은 확인하지 않았다. Orca1.4.242(dev01)/1.4.237(inno-desktop)에서 시험했으며 이후 Orca 업데이트 버전의 호스트 검증을 대신하지 않는다. 운영 kit 적용·Orca 업데이트·세 호스트 운영 세션 일괄 재시작은 아직 실행하지 않았다.
+
+초기 Full Access→Custom drift, Orca canonical 순서 거부, header scroll-out, Claude context와 권한 footer 실패를 성공으로 덮지 않았다. 실패 배치와 별도 verify/재시험을 보존한다. 상세 관측·보완은 결정 기록에서 추적한다. CLI error/request ID의 journal 누락과 비원자적 조회→입력·부재→launch 사이 경합은 잔여 한계다.
+
+이전 전체 CI559/561/576/584/594개와 집중97/98/110/119/125/128/132개는 서로 다른 source snapshot이다. 최종 source와 합산하지 않는다. 최종 reference의 선언한 읽기 경로 측정은 continuity3903자·runtime inventory10742자·delegation4067자·배치9349자이며 동일 파일 중복0자다. baseline 대비 각각164/1105/164/7742자가 증가했다. 새 배치 기능은 이전 동일 경로가 없었으며 중요한 제약을 줄여 분량을 맞추지 않았다. 이 수치는 실제 모델의 읽기·토큰·native 주입량이 아니다. 외부 공식 지침/Orca guide/실제 응답·작업 데이터·환경 주입은 미측정이다.
 
 ## 검증 이력 — 각 시점의 원래 범위
 
