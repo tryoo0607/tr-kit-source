@@ -21,5 +21,17 @@ jobs:
           python3 -B -c 'import os,sys; from pathlib import Path; sys.path.insert(0,"common/base/scripts"); import toolchain; p=toolchain.plan("gitleaks",Path(os.environ["RUNNER_TEMP"])/"g5-scanner",Path.cwd()); toolchain.apply(p,toolchain.plan_id(p))'
       - name: Run local CI equivalent
         run: python3 -B scripts/ci-check.py --gitleaks "$RUNNER_TEMP/g5-scanner/bin/gitleaks" --output "$RUNNER_TEMP/g5-verification"
+      - name: Report test failure identifiers
+        if: failure()
+        run: |
+          python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP'])/'g5-verification/tests.log'
+          if path.is_file():
+              for line in path.read_text(errors='replace').splitlines():
+                  if line.startswith(('FAIL: ', 'ERROR: ', 'Ran ', 'FAILED (')):
+                      print(line)
+          PY
       # Deliberately no push trigger, credentials, source fetch/vendor step,
       # artifact upload, deployment keys or delivery/publishing job.
