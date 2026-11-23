@@ -136,6 +136,7 @@ class NativePackage(unittest.TestCase):
 
     def test_missing_upstream_binding_denies_pre(self):
         env=dict(os.environ);env.pop('TR_KIT_UPSTREAM_BINDING',None)
+        env['TR_KIT_RUNTIME_CONFIG']=str(self.base/'missing-runtime.json')
         r=subprocess.run([sys.executable,'-B',str(ROOT/'scripts/plugin-runtime.py'),'upstream','--product','codex','--event','PreToolUse'],
             input='{"hook_event_name":"PreToolUse"}',text=True,capture_output=True,env=env)
         self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['permissionDecision'],'deny')

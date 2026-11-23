@@ -5,10 +5,29 @@
 - 소스 구조는 common/base·adapters·scripts를 유지한다. 외부 본문·runtime은 포함하지 않는다. native manifest는 제품이 지원하는 skill 경로를 직접 선택한다.
 - `scripts/package.py build`는 명시 product/version/profile·catalog/scope/providers로 새 출력 하나를 만든다. source 밖 output과 모든 실제 입력·산출물을 scope에 등록해야 한다. `verify`는 현재 전체 파일/hash와 Gitleaks를 다시 검사한다. 자체 명세 일치는 서명·공식 출처 인증이 아니다.
 - `review`: SessionStart를 통해 자체 공통 원칙을 전달하는 검토용. secret/upstream 가드의 native 등록은 포함하지 않는다. 운영용 보호가 준비됐다고 판단하지 않는다.
-- `guarded`: 기존 secret/upstream hook을 제품별로 함께 등록한다. secret scanner는 기존 pin/receipt가 필요하다. upstream은 로컬 `TR_KIT_UPSTREAM_BINDING` 파일의 정확한 `root`, `catalog`, `scope` canonical 절대 경로를 사용한다. binding 부재·오류는 Pre에서 명시 deny, Post에서 실패를 보고한다. 등록 전 실제 scope·scanner·native event/신뢰를 검증한다. review로 다시 만들기를 보호 우회로 사용하지 않는다.
+- `guarded`: 기존 secret/upstream hook을 제품별로 함께 등록한다. secret scanner는 기존 pin/receipt가 필요하다. upstream은 아래 호스트 runtime 연결에서 선택한 binding 파일의 정확한 `root`, `catalog`, `scope` canonical 절대 경로를 사용한다. binding 부재·오류는 Pre에서 명시 deny, Post에서 실패를 보고한다. 등록 전 실제 scope·scanner·native event/신뢰를 검증한다. review로 다시 만들기를 보호 우회로 사용하지 않는다.
 - G4의 MCP template는 비활성 source 자료로 유지한다. runtime/data 경로·공식 출처/resources를 확인하지 않은 채 `.mcp.json`을 생성하거나 worker를 시작하지 않는다. 별도 G4/G7 준비와 native 연결 검증이 필요하다.
 
 ## 공식 설치·제거 수단
+
+### 호스트 runtime 연결
+
+- 제품별 기본 설정은 `~/.config/tr-kit/runtime-codex.json` 또는 `runtime-claude.json`이다. 명시한 `TR_KIT_RUNTIME_CONFIG`가 있으면 그 파일만 선택하며 오류 시 기본 파일로 대체하지 않는다. 기존 프로젝트 설정 `config.toml`과는 별개다.
+- 설정은 현재 사용자 소유의 일반 파일이어야 하며 group/world 쓰기와 symlink를 허용하지 않는다. 모든 경로는 canonical 절대 경로다. 예시의 경로는 실제 공식 설치·검수 후 해당 호스트에 맞춰 정한다.
+
+```json
+{
+  "schema_version": 1,
+  "product": "codex",
+  "providers": "/absolute/providers.json",
+  "provider_reviews": {"sample": "/absolute/reviews/sample.json"},
+  "upstream_binding": "/absolute/upstream-binding.json"
+}
+```
+
+- SessionStart는 공통 원칙과 위 설정·provider 선언 위치만 전달한다. 전체 provider 본문·검수 기록을 주입하지 않는다. 선택한 provider는 기존 resolver/provider-review로 entry와 resource를 확인한다. 설정 파일 존재만으로 공식 설치·실행 성공을 주장하지 않는다.
+- upstream hook은 명시한 `TR_KIT_UPSTREAM_BINDING`이 있으면 이를 우선하며, 없을 때만 runtime 설정의 `upstream_binding`을 사용한다. binding의 `root`, `catalog`, `scope`와 실제 scope에 등록한 kit component/artifact가 보호 대상이다. 새 worktree와 다른 프로젝트를 자동 등록하지 않는다. 잘못된 명시 binding을 다른 설정으로 대체하지 않는다.
+- 설정이 없거나 잘못되면 시작 context는 not-ready, upstream Pre는 deny를 반환한다. 활성화 전에 실제 호스트 설정과 공식 provider, 대상 scope·scanner 및 제품별 callback을 검증한다. 셸 설정·실행기 수정이나 개인 자료 수집은 이 연결에 포함되지 않는다.
 
 - Codex: [공식 패키징 문서](https://developers.openai.com/plugins/build/plugins)와 현재 `codex plugin --help`를 따른다. `plugin marketplace add <package>` 후 `plugin add tr-codex@tr-codex`; 제거는 `plugin remove tr-codex@tr-codex`와 해당 `plugin marketplace remove tr-codex`다. hook trust는 native UI에서 검토한다. 신뢰 DB 편집·Trust all 자동 수행은 하지 않는다.
 - Claude: [공식 plugin CLI](https://code.claude.com/docs/en/plugins/cli-reference)의 `plugin marketplace add <package>`, `plugin install tr-claude@tr-claude --scope user`를 따른다. 제거 시 `plugin uninstall ... --scope user --keep-data`로 data 보존을 명시한다. marketplace 제거와 runtime/data 제거는 다르다.

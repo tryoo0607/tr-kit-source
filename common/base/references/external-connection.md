@@ -8,6 +8,7 @@
 ## 입력과 전제
 
 - 실제 kit root, 현재 제품(codex/claude), 명시 선택한 host-local provider 선언 파일, 호출 wrapper의 provider ID·종류를 받는다. 실제 프로젝트 cwd와 공식 설치본의 지침/CLI 위치를 구분한다.
+- 운영 세션에 공통 시작 hook이 host runtime 설정과 provider 선언 경로를 전달했다면 그 명시 입력을 재사용한다. 선택 provider 검수 파일은 해당 runtime 설정의 `provider_reviews[ID]`에서 확인한다. 전체 registry·미선택 provider를 매 요청마다 읽거나 설치하지 않는다.
 - 선언 형식은 common/base/scripts/provider_links.py가 검증하는 version1 계약을 사용한다. 임의 전역 기본 경로·자동 탐색·여러 선언 병합을 만들지 않는다. 선언이 없으면 필요한 입력의 부재로 보고한다.
 - 제공된 path·source·version과 pin만으로 공식 설치를 인증하지 않는다. 공식 관리 수단의 설치 근거와 제품 지원·필수 resources를 확인한 기존 근거를 재사용한다. 원문 대조용 checkout, 구 kit이 동봉/치환한 사본, 자기 wrapper는 공식 실행 provider로 사용하지 않는다. 설치 근거가 없으면 해당 외부 수행을 보류하며 공식 설치를 자동으로 실행하지 않는다.
 

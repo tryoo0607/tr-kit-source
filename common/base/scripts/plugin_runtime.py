@@ -20,7 +20,12 @@ def context(root, payload):
 
 
 def upstream(root, product, event, payload):
-    binding=Path(os.environ.get('TR_KIT_UPSTREAM_BINDING',''))
+    selected=os.environ.get('TR_KIT_UPSTREAM_BINDING')
+    if selected is None:
+        from runtime_config import load
+        _, data=load(product)
+        selected=data['upstream_binding']
+    binding=Path(selected)
     if not binding.is_absolute() or binding.resolve()!=binding or binding.is_symlink():raise ValueError('explicit local upstream binding required')
     doc=json.loads(binding.read_bytes())
     if not isinstance(doc,dict) or set(doc)!= {'root','catalog','scope'}:raise ValueError('unsupported upstream binding')
@@ -40,7 +45,11 @@ def main():
         if len(raw)>1_048_576:raise ValueError('hook input too large')
         payload=json.loads(raw)
         if not isinstance(payload,dict):raise ValueError('native object payload required')
-        if a.action=='context':result=context(root_path(),payload)
+        if a.action=='context':
+            from runtime_config import load,note
+            selected,data=load(a.product)
+            result=context(root_path(),payload)
+            result['hookSpecificOutput']['additionalContext']+=note(selected,data)
         else:
             if a.event not in ('PreToolUse','PostToolUse','PostToolUseFailure') or payload.get('hook_event_name')!=a.event:
                 raise ValueError('hook event mismatch')
