@@ -1,17 +1,22 @@
 import copy
 from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, contextmanager
 import fcntl
 import io
 import importlib.util
 import json
 import os
+import pty
 from pathlib import Path
 import subprocess
 import signal
+import select
+import shlex
 import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'common/base/skills/session/scripts/runtime_refresh.py'
@@ -2001,6 +2006,285 @@ class NativeInventoryBounds(unittest.TestCase):
                 with self.subTest(sink=type(sink)), redirect_stderr(sink), patch.object(m, 'INVENTORY_PROGRESS_INTERVAL', 0.01):
                     self.assertEqual('observed', self.inventory()['state'])
             self.assertEqual(flags, fcntl.fcntl(write_fd, fcntl.F_GETFL))
+
+
+class ManagementBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        self.client = Fake()
+        self.client.self['agentIdentity'] = None
+        self.client.agents = [self.client.agents[1]]
+        original = self.client.inventory
+        def complete_inventory():
+            ts, ps = original()
+            ps.update(truncated=False, hostScope={'hostIds': ['local']})
+            return ts, ps
+        self.client.inventory = complete_inventory
+        self.evidence = {'generation': 1}
+        process = patch.object(m, 'management_process_proof', side_effect=lambda: copy.deepcopy(self.evidence))
+        process.start()
+        self.addCleanup(process.stop)
+        ts, ps = self.client.inventory()
+        self.client.management_self = m.management_observation(self.client, 'tab:self', ts['terminals'], ps)
+        self.plan = {'runtimeId': self.client.runtime, 'selfPane': 'tab:self'}
+        self.target = {'handle': self.client.target['handle'], 'identity': m.fingerprint(self.client.target),
+                       'provider': 'codex'}
+
+    def test_passive_guard_reads_self_before_final_target_and_then_only_local_proof(self):
+        events = []
+        observe, inventory = self.client.observe, self.client.inventory
+        def traced_inventory():
+            events.append('inventory')
+            return inventory()
+        def traced_observe(handle):
+            events.append(handle)
+            return observe(handle)
+        with patch.object(self.client, 'inventory', side_effect=traced_inventory), \
+             patch.object(self.client, 'observe', side_effect=traced_observe):
+            m.passive_guard(self.client, self.plan, self.target, 'tab:self')
+            m.send(self.client, Mock(), self.target, '/status', 'status')
+        self.assertEqual(['inventory', 'term_self', 'term_target'], events)
+        self.assertEqual(1, len(self.client.sent))
+
+    def test_passive_guard_rechecks_process_after_target_observation(self):
+        observe = self.client.observe
+        def drift(handle):
+            value = observe(handle)
+            if handle == 'term_target':
+                self.evidence['generation'] = 2
+            return value
+        with patch.object(self.client, 'observe', side_effect=drift):
+            with self.assertRaisesRegex(m.Deferred, 'management-self-changed'):
+                m.passive_guard(self.client, self.plan, self.target, 'tab:self')
+        self.assertEqual([], self.client.sent)
+
+    def test_sending_checks_before_record_and_again_after_record(self):
+        journal = Mock()
+        self.evidence['generation'] = 2
+        with self.assertRaises(m.Deferred):
+            m.send(self.client, journal, self.target, '/status', 'status')
+        journal.record.assert_not_called()
+        self.evidence['generation'] = 1
+        journal.record.side_effect = lambda *args, **kwargs: self.evidence.update(generation=2)
+        with self.assertRaises(m.Deferred):
+            m.send(self.client, journal, self.target, '/status', 'status')
+        journal.record.assert_called_once()
+        self.assertEqual([], self.client.sent)
+
+    def test_modal_key_checks_fixed_proof_at_both_durable_boundaries(self):
+        self.client.target['agentIdentity'] = 'claude'
+        self.client.agents[0]['agentType'] = 'claude'
+        self.target['provider'] = 'claude'
+        self.client.read['tail'] = [' Settings Status Config Usage Stats', ' Version: 2.1.330',
+                                    ' ←/→ to switch · Esc to close']
+        journal = Mock()
+        with patch.object(m, 'installation_guard'), patch.object(m, 'wait_idle'):
+            def drift_before_record(*args):
+                self.evidence['generation'] = 2
+                return True
+            with patch.object(m, 'claude_modal', side_effect=drift_before_record):
+                with self.assertRaises(m.Deferred):
+                    m.modal_key(self.client, self.plan, self.target, 'tab:self', journal, '/status', '\x1b')
+            journal.record.assert_not_called()
+            self.evidence['generation'] = 1
+            journal.record.side_effect = lambda *args, **kwargs: self.evidence.update(generation=2)
+            with self.assertRaises(m.Deferred):
+                m.modal_key(self.client, self.plan, self.target, 'tab:self', journal, '/status', '\x1b')
+        journal.record.assert_called_once()
+        self.assertEqual([], self.client.sent)
+
+
+class ManagementProcessTests(unittest.TestCase):
+    @contextmanager
+    def proc_fixture(self, mutate=None):
+        uid = os.getuid()
+        processes = {
+            42: dict(ppid=40, pgrp=42, sid=40, tty=1234, foreground=42, starttime=100),
+            40: dict(ppid=1, pgrp=40, sid=40, tty=1234, foreground=42, starttime=90),
+            # A detached shell/gitstatus-style background job on the same tty
+            # is not foreground group membership and must not be overclaimed.
+            60: dict(ppid=40, pgrp=60, sid=40, tty=1234, foreground=42, starttime=95)}
+        exes = {42: os.path.realpath(sys.executable), 40: '/usr/bin/bash'}
+        if mutate:
+            mutate(processes, exes)
+        read_text, path_stat, iterdir = Path.read_text, Path.stat, Path.iterdir
+        readlink, os_stat = os.readlink, os.stat
+        def read(path, *args, **kwargs):
+            if path.parent.parent == Path('/proc') and path.name == 'stat':
+                row = processes[int(path.parent.name)]
+                if isinstance(row, Exception):
+                    raise row
+                if isinstance(row, str):
+                    return row
+                fields = ['S'] + ['0'] * 49
+                for index, key in zip((1, 2, 3, 4, 5, 19), ('ppid', 'pgrp', 'sid', 'tty', 'foreground', 'starttime')):
+                    fields[index] = str(row[key])
+                return path.parent.name + ' (name with ) spaces) ' + ' '.join(fields)
+            return read_text(path, *args, **kwargs)
+        def metadata(path, *args, **kwargs):
+            if path.parent == Path('/proc') and path.name.isdecimal():
+                return SimpleNamespace(st_uid=uid)
+            return path_stat(path, *args, **kwargs)
+        def entries(path):
+            if path == Path('/proc'):
+                return iter(Path('/proc') / str(pid) for pid in processes)
+            return iterdir(path)
+        def executable(path, *args, **kwargs):
+            value = str(path)
+            if value.startswith('/proc/') and value.endswith('/exe'):
+                return exes[int(value.split('/')[2])]
+            return readlink(path, *args, **kwargs)
+        def executable_stat(path, *args, **kwargs):
+            value = str(path)
+            if value.startswith('/proc/') and value.endswith('/exe'):
+                pid = int(value.split('/')[2])
+                return SimpleNamespace(st_dev=1, st_ino=pid, st_uid=0 if pid == 40 else uid,
+                                       st_mode=0o100755, st_mtime_ns=100)
+            return os_stat(path, *args, **kwargs)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(m.os, 'getpid', return_value=42))
+            stack.enter_context(patch.object(m.Path, 'read_text', autospec=True, side_effect=read))
+            stack.enter_context(patch.object(m.Path, 'stat', autospec=True, side_effect=metadata))
+            stack.enter_context(patch.object(m.Path, 'iterdir', autospec=True, side_effect=entries))
+            stack.enter_context(patch.object(m.os, 'readlink', side_effect=executable))
+            stack.enter_context(patch.object(m.os, 'stat', side_effect=executable_stat))
+            yield
+
+    def test_proc_proves_executables_and_foreground_while_allowing_background_tty_job(self):
+        with self.proc_fixture():
+            proof = m.management_process_proof()
+        self.assertEqual(42, proof['helper']['pid'])
+        self.assertEqual(100, proof['helper']['starttime'])
+        self.assertEqual('/usr/bin/bash', proof['parentExecutable']['path'])
+
+    def test_proc_missing_tty_foreground_parent_or_executable_fails_closed(self):
+        for unsafe in ('tty', 'pgrp', 'foreground', 'sid', 'parent-sid', 'parent-tty',
+                       'parent-exe', 'helper-exe', 'member', 'malformed', 'permission'):
+            def mutate(rows, exes):
+                if unsafe in ('tty', 'pgrp', 'foreground', 'sid'):
+                    rows[42][unsafe] = 0
+                elif unsafe.startswith('parent-') and unsafe != 'parent-exe':
+                    rows[40][unsafe[7:]] = 0
+                elif unsafe == 'parent-exe':
+                    exes[40] = '/tmp/bash'
+                elif unsafe == 'helper-exe':
+                    exes[42] = '/tmp/python3'
+                elif unsafe == 'member':
+                    rows[60]['pgrp'] = 42
+                elif unsafe == 'malformed':
+                    rows[60] = '60 (broken) invalid'
+                else:
+                    rows[60] = PermissionError('unreadable process')
+            with self.subTest(unsafe=unsafe), self.proc_fixture(mutate):
+                with self.assertRaises(m.Deferred):
+                    m.management_process_proof()
+
+    def test_vanished_scan_pid_is_distinct_from_unreadable_evidence(self):
+        with self.proc_fixture(lambda rows, exes: rows.update({60: FileNotFoundError()})):
+            self.assertEqual(42, m.management_process_proof()['helper']['pid'])
+
+    def test_non_linux_is_unsupported_and_current_tool_without_tty_is_rejected(self):
+        with patch.object(m.sys, 'platform', 'darwin'):
+            with self.assertRaisesRegex(m.Deferred, 'management-process-unsupported'):
+                m.management_process_proof()
+        # Owned subprocess inherits no controlling TTY; it is not an eligible
+        # management shell merely because it runs Python and has no native hint.
+        code = ('import importlib.util; s=importlib.util.spec_from_file_location("rr", '+repr(str(SCRIPT))+'); '
+                'm=importlib.util.module_from_spec(s); s.loader.exec_module(m); '
+                '\ntry: m.management_process_proof()\nexcept m.Deferred: print("rejected")\n')
+        result = subprocess.run([sys.executable, '-B', '-c', code], capture_output=True, text=True, timeout=10,
+                                start_new_session=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('rejected', result.stdout.strip())
+
+    def test_real_owned_pty_heredoc_helper_and_foreground_group_conflict(self):
+        helper = '''import importlib.util, json, os, signal
+spec = importlib.util.spec_from_file_location('owned_rr', SCRIPT_PATH)
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+proof = m.management_process_proof()
+print('OWNED_PROOF_OK', proof['helper']['pid'] == os.getpid(), os.isatty(0), flush=True)
+# A separate process group on this tty is allowed.
+read_fd, write_fd = os.pipe()
+background = os.fork()
+if background == 0:
+    os.close(read_fd)
+    os.setpgid(0, 0)
+    os.write(write_fd, b'x')
+    signal.pause()
+    os._exit(0)
+os.close(write_fd)
+os.read(read_fd, 1)
+os.close(read_fd)
+try:
+    m.management_process_proof()
+    print('OWNED_BACKGROUND_OK', flush=True)
+finally:
+    os.kill(background, signal.SIGKILL)
+    os.waitpid(background, 0)
+# Another member of the foreground group makes sole ownership unprovable.
+read_fd, write_fd = os.pipe()
+member = os.fork()
+if member == 0:
+    os.close(read_fd)
+    os.write(write_fd, b'x')
+    signal.pause()
+    os._exit(0)
+os.close(write_fd)
+os.read(read_fd, 1)
+os.close(read_fd)
+try:
+    try:
+        m.management_process_proof()
+        print('UNSAFE_ACCEPTED', flush=True)
+    except m.Deferred:
+        print('OWNED_GROUP_REJECTED', flush=True)
+finally:
+    os.kill(member, signal.SIGKILL)
+    os.waitpid(member, 0)
+'''.replace('SCRIPT_PATH', repr(str(SCRIPT)))
+        pid, master = pty.fork()
+        if pid == 0:
+            os.execv('/bin/bash', ['bash', '--noprofile', '--norc', '-i'])
+        output = bytearray()
+        try:
+            # Disable echo so only executed evidence can satisfy assertions.
+            os.write(master, b"stty -echo; printf '\\nOWNED_READY\\n'\n")
+            deadline = time.monotonic() + 5
+            while b'\r\nOWNED_READY\r\n' not in output:
+                if time.monotonic() >= deadline:
+                    self.fail('owned PTY shell did not become ready')
+                ready, _, _ = select.select([master], [], [], 0.1)
+                if ready:
+                    output.extend(os.read(master, 65536))
+            output.clear()
+            command = shlex.quote(sys.executable) + " -B - <<'OWNED_PROOF'\n" + helper + 'OWNED_PROOF\nexit\n'
+            os.write(master, command.encode())
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select([master], [], [], 0.1)
+                if ready:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+            else:
+                self.fail('owned PTY exceeded deadline')
+            _, status = os.waitpid(pid, 0)
+            pid = None
+            self.assertEqual(0, os.waitstatus_to_exitcode(status), output.decode(errors='replace'))
+        finally:
+            os.close(master)
+            if pid is not None:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+        text = output.decode(errors='replace')
+        self.assertIn('OWNED_PROOF_OK True False', text)
+        self.assertIn('OWNED_BACKGROUND_OK', text)
+        self.assertIn('OWNED_GROUP_REJECTED', text)
+        self.assertNotIn('UNSAFE_ACCEPTED', text)
 
 
 if __name__ == '__main__':

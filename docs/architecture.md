@@ -65,6 +65,24 @@ Codex의 headerless placeholder는 조회 조건이며 native 버전 증명이 �
 
 세션 native 조회 runner는 기존 `runtime_refresh.py` 한 곳에서 refresh/restart/restore가 재사용한다. Codex inventory만180초, 다른 native 명령은15초이며 stdout/stderr 동시 제한·엄격한 진단 거부·소유 group 정리를 수행한다. 진행은 caller flags를 유지하는 비차단 stderr write로만 시도한다. 부재 restore의 마지막 passive 검사는 현재 응답 경계에서 일치하는 frame/stream 신원과 같은 관측의 cursor/화면 hash를 유지해 같은 pane의 출력 변화도 거부한다. status 뒤 응답 대기는 설치 재조회 없이 passive guard로 수행한다. Claude 부재 증명만 선택 status 모달을 생성/거부 결정까지 유지하고, 이후 원 proof와 fresh full guard로 닫으며 불명확하면 수동 정리를 기록하고 중단한다. 새 파일 배치·외부 provider·private 의존은 없다. [세부 결정·검증 한계](decisions/20261123-session-query-hardening.md)를 따른다.
 
+## 자기 관리 helper 구분 — 2026-11-24
+
+파일 배치는 위 세션 재시작 트리와 같다. runtime_refresh.py에 관리 process·metadata 증명/고정 비교를 두고, session_restart.py가 명시 예외 판정 후 현재 호출자의 좁은 적용 조건을 선택한다. 기존 local transport와 입력 guard를 재사용하며 private 역할·제품 hook 등록은 바뀌지 않는다.
+
+실제 실행 흐름은 다음과 같다.
+
+```text
+session_restart.execute → 기존 배치·binding·선택 읽기
+  → locate: 명시 예외/native self 보호
+    → runtime 교체 + 같은 workspace의 현재 관리 helper이면 독립 증명
+    → 선택 native 후보만 기존 guard/status/UUID 대조
+  → runtime_refresh passive/shell guard: own metadata → target 최종 관측 → 고정 process 비교
+  → status/exit/resume/modal/create: durable 기록 전·후 고정 process 비교 → 기존 입력 수단
+  → 기존 batch에 실제 접수·결과 기록
+```
+
+상세 판정은 [단일 실행 계약](../common/base/skills/session/references/session-restart.md#runtime-교체-뒤-현재-관리-helper-증명)이 소유한다. 구조 설명이 native 실행 성공이나 추가 승인 예외를 뜻하지 않는다.
+
 ## 2026-11-20 hook 보완의 배치
 
 Python stdin 오탐 보완은 기존 common/base/scripts/secret_guard.py 안의 검사 표현과 판별만 바꿨다. 제품 adapter·등록·적용 범위는 유지한다. 실제 흐름은 [후속 결정 기록](decisions/20261120-hook-bmad-native-validation.md)에 있으며 임시 native 검증 설정을 배포 구조로 채택한 것은 아니다. 당시 미결이던 private native 계약/패키징은 [다음 연결 검증](decisions/20261120-native-private-interface.md)에서 구현·격리 검증했다. 이후 수정한 후보 전체의 재패키징·통합은 별도로 남는다.

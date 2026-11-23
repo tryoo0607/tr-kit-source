@@ -26,6 +26,14 @@
 
 Claude `/status`는 명령 전에 기존 `claude_permission` 문법으로 권한 표시가 확인돼야 한다. 표시만 없으면 최대3초/12회 안에서 full guard를 다시 읽으며 기다리고, 다른 guard 오류는 즉시 중단한다. 마지막으로 확인한 frame의 cursor/text를 새 응답 경계로 사용한다. 끝내 권한이 불명이면 `/status`를 보내지 않아 모달도 남기지 않는다. 저장 flags나 mode로 화면 권한을 추정하지 않으며 일반 prepare/native query에도 같은 거부를 적용한다.
 
+### runtime 교체 뒤 현재 관리 helper 증명
+
+원래 배치의 runtime이 바뀌고 현재 호출자의 pane이 선택 대상과 같은 workspace에 있을 때만, native 대화가 아닌 자기 관리 Python helper를 별도로 증명할 수 있다. 명시 예외와 원래 native self의 보호를 먼저 적용하며, UUID가 없는 예외의 이동 가능성을 이 증명으로 무시하지 않는다. 후보 terminal 목록의 순서와 무관하게 첫 native 조회 전에 현재 self를 유일하게 찾고, 완전한 local list/ps·새 show/screen에서 fingerprint·접근·연결·대기 없음·draft 없음을 확인한다. 전체 ps의 관측된 `paneKey` 또는 `parentPaneKey`가 self와 연결된 agent/child가 없어야 한다. provider hint가 null이거나 화면이 비어 있다는 사실만으로는 충분하지 않으며, 실행 중인 helper에 빈 shell prompt가 보일 필요는 없다.
+
+독립 증거는 Linux `/proc/<pid>/stat`와 실행 파일 metadata다. 현재 Python3 실행 파일의 helper가 자기 process group의 leader이자 controlling TTY의 foreground group이어야 하고, 그 group에는 helper 하나만 있어야 한다. 직접 부모는 같은 계정·같은 TTY의 session leader인 system bash/zsh/dash 실행 파일이어야 한다. `/bin` 또는 `/usr/bin`의 해당 shell로 해석되는 root 소유·group/other 쓰기 불가 실행 파일만 지원하며 comm 표시로 shell을 판단하지 않는다. helper/부모 PID와 starttime·pgrp/sid/TTY/foreground 및 실행 파일 identity를 고정한다. stdin이 heredoc이어도 controlling TTY로 증명할 수 있지만, controlling TTY 없는 native agent tool subprocess·추가 foreground group 구성원·다른 부모·미지원 OS/shell·proc 권한 거부나 잘못된 자료는 보류한다. 스캔 중 사라진 다른 PID만 별도로 취급한다. 같은 TTY를 쓰는 별도 background group은 있을 수 있으며, foreground 소유 증명은 모든 background 작업 부재를 증명하지 않는다.
+
+증거는 현재 client 메모리에만 runtime·self pane·fingerprint·process identity와 묶고 갱신해 새 권한으로 바꾸지 않는다. `execute` 진입마다 초기화하며 signed 배치·key·선택·예외·기존 event/실패 receipt나 출력 proof schema에 저장하지 않는다. 느린 조회 뒤 passive/shell guard와 create의 마지막 검증에서 이미 확보한 완전한 inventory를 재사용해 self metadata를 먼저 관측하고, target의 마지막 frame/proof를 확인한 뒤 runtime과 고정 `/proc` 증거를 다시 대조한다. status/exit/resume/raw modal key/create는 durable sending 기록 전과 직후에도 고정 process 증거를 비교한다. target의 최종 응답 proof 뒤에 새 Orca inventory/자기 화면 조회를 끼워 넣지 않는다. metadata·process·runtime의 불일치가 관측되면 다음 native 입력/create 전에 중단하며, sending 기록 뒤 불일치는 실제 전송 없이도 기존 uncertain receipt 정책을 유지한다. 마지막 self metadata 관측과 target 관측·로컬 기록·실제 입력 사이의 경합은 비원자 Orca API의 기존 한계로 남는다. 같은 runtime·다른 workspace와 일반 runtime-refresh는 이 예외를 새로 활성화하지 않는다.
+
 ### 접수된 조회만 있는 준비 검증
 
 명시 `verify`만 미완료 준비를 해소할 수 있다. signed 배치의 모든 sending/accepted가 원 선택 restart 대상의 `status`이며 target/handle/operation이 순서대로 짝을 이루고 실제 requestId가 있어야 한다. 종료·재개·생성·모달 키 등 다른 단계나 attempt, 유실·불일치 receipt는 입력 없이 거부한다. 다른 미해결 배치도 기존처럼 차단한다. 같은 machine/profile·준비 당시 runtime·정확한 원 terminal fingerprint가 유지돼야 하며, 입력 전 fresh 설치/full guard를 다시 확인한다. 다른 runtime/handle을 locate로 추적하거나 inventory에서 UUID를 채우지 않는다.

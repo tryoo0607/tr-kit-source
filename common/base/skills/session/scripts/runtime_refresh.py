@@ -157,6 +157,138 @@ def agent_for(ps, t):
     return found[0]
 
 
+def management_process_proof():
+    """Prove this Python is the sole foreground job of a system shell on Linux.
+
+    stdin can be a heredoc. Controlling TTY/session ownership comes from proc,
+    not stdin, process names, or the terminal's optional detection hint.
+    """
+    if sys.platform != 'linux':
+        raise Deferred('management-process-unsupported')
+
+    def process(pid):
+        path = Path('/proc') / str(pid)
+        # FileNotFoundError is meaningful only for an unrelated process which
+        # exited during the group scan. Permission and malformed data are errors.
+        raw = (path / 'stat').read_text()
+        prefix, separator, rest = raw.rpartition(') ')
+        fields = rest.split()
+        if not separator or prefix.split(' ', 1)[0] != str(pid) or len(fields) < 20:
+            raise Deferred('management-process-unverifiable')
+        try:
+            values = [int(fields[i]) for i in (1, 2, 3, 4, 5, 19)]
+        except ValueError:
+            raise Deferred('management-process-unverifiable') from None
+        return dict(zip(('ppid', 'pgrp', 'sid', 'tty', 'foreground', 'starttime'), values),
+                    pid=pid, uid=path.stat().st_uid)
+
+    def executable(pid):
+        value = os.readlink('/proc/' + str(pid) + '/exe')
+        entry = os.stat('/proc/' + str(pid) + '/exe')
+        return {'path': value, 'device': entry.st_dev, 'inode': entry.st_ino,
+                'uid': entry.st_uid, 'mode': entry.st_mode, 'mtime': entry.st_mtime_ns}
+
+    try:
+        helper = process(os.getpid())
+        parent = process(helper['ppid'])
+        helper_exe, parent_exe = executable(helper['pid']), executable(parent['pid'])
+        supported = {str(Path(path).resolve()) for path in
+                     ('/bin/bash', '/usr/bin/bash', '/bin/zsh', '/usr/bin/zsh',
+                      '/bin/dash', '/usr/bin/dash')}
+        if (helper['pid'] != helper['pgrp'] or helper['pid'] != helper['foreground']
+                or helper['tty'] == 0 or helper['starttime'] <= 0 or parent['starttime'] <= 0
+                or helper['sid'] != parent['pid'] or parent['sid'] != parent['pid']
+                or helper['tty'] != parent['tty'] or parent['foreground'] != helper['pgrp']
+                or helper['uid'] != os.getuid() or parent['uid'] != os.getuid()
+                or helper_exe['path'] != os.path.realpath(sys.executable)
+                or not re.fullmatch(r'python3(?:\.\d+)?', Path(helper_exe['path']).name)
+                or parent_exe['path'] not in supported or parent_exe['uid'] != 0
+                or parent_exe['mode'] & (stat.S_IWGRP | stat.S_IWOTH)):
+            raise Deferred('management-process-unverifiable')
+        members = []
+        for entry in Path('/proc').iterdir():
+            if not entry.name.isdecimal():
+                continue
+            try:
+                observed = process(int(entry.name))
+            except FileNotFoundError:
+                continue
+            if observed['pgrp'] == helper['pgrp']:
+                members.append(observed['pid'])
+        if members != [helper['pid']]:
+            raise Deferred('management-process-unverifiable')
+        # Do not accept a process/session change while the full scan was running.
+        if (process(helper['pid']) != helper or process(parent['pid']) != parent
+                or executable(helper['pid']) != helper_exe or executable(parent['pid']) != parent_exe):
+            raise Deferred('management-process-changed')
+        return {'helper': helper, 'parent': parent, 'helperExecutable': helper_exe,
+                'parentExecutable': parent_exe}
+    except (OSError, ValueError, IndexError):
+        raise Deferred('management-process-unverifiable') from None
+
+
+def management_observation(client, self_pane, terms, ps):
+    """Collect current own-pane evidence without sending input or requiring a prompt."""
+    runtime = client.runtime
+    matches = [t for t in terms if pane(t) == self_pane]
+    if len(matches) != 1:
+        raise Deferred('self-unidentified')
+    expected = fingerprint(matches[0])
+    if expected['executionHostId'] != 'local':
+        raise Deferred('management-self-unverifiable')
+    for workspace in array(ps.get('worktrees')):
+        for agent in array(workspace.get('agents', [])):
+            if agent.get('paneKey') == self_pane or agent.get('parentPaneKey') == self_pane:
+                raise Deferred('management-agent-associated')
+    own, frame = client.observe(expected['handle'])
+    if fingerprint(own) != expected:
+        raise Deferred('management-self-changed')
+    for observed in (matches[0], own):
+        if (observed.get('agentIdentity') is not None or observed.get('agentWait') is not None
+                or observed.get('orphaned') is not False or observed.get('connected') is not True
+                or observed.get('writable') is not True):
+            raise Deferred('management-self-unverifiable')
+    if frame.get('draft') not in (None, ''):
+        raise Deferred('draft')
+    screen(frame)
+    process = management_process_proof()
+    if client.runtime != runtime:
+        raise Deferred('management-self-changed')
+    return {'runtimeId': runtime, 'selfPane': self_pane, 'identity': expected, 'process': process}
+
+
+def management_self_check(client, terms=None, ps=None, *, process_only=False, terminal_inventory=None):
+    """Compare fixed ephemeral authority; never refresh it into new authority."""
+    proof = getattr(client, 'management_self', None)
+    if proof is None:
+        return
+    if (getattr(client, 'remote_configured', False) or getattr(client, 'environment', None)
+            or client.runtime != proof['runtimeId']):
+        raise Deferred('management-self-changed')
+    if not process_only:
+        if terms is None or ps is None:
+            ts, ps = client.inventory()
+            terms = array(ts.get('terminals'))
+            inventories = (ts, ps)
+        else:
+            # Callers supply terms only from their already checked complete
+            # local inventory; no synthetic inventory metadata is evidence.
+            inventories = (ps,) if terminal_inventory is None else (terminal_inventory, ps)
+        for inventory in inventories:
+            if (inventory.get('truncated') is not False
+                    or 'local' not in obj(inventory.get('hostScope')).get('hostIds', [])):
+                raise Deferred('inventory-incomplete')
+        if len({t.get('handle') for t in terms}) != len(terms):
+            raise Deferred('duplicate-target')
+        current = management_observation(client, proof['selfPane'], terms, ps)
+        if current != proof:
+            raise Deferred('management-self-changed')
+    # At the final native boundary do not insert another Orca observation after
+    # its last target frame/proof. Only local fixed process evidence is reread.
+    if management_process_proof() != proof['process'] or client.runtime != proof['runtimeId']:
+        raise Deferred('management-self-changed')
+
+
 def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False):
     fingerprint(t)
     if not self_found:
@@ -691,17 +823,21 @@ def passive_guard(client, plan, target, self_pane, modal=False):
     matches = [t for t in terms if t.get('handle') == target['handle']]
     if len(matches) != 1 or fingerprint(matches[0]) != target['identity']:
         raise Deferred('target-changed')
+    management_self_check(client, terms, ps, terminal_inventory=ts)
     t, read = client.observe(target['handle'])
     if fingerprint(t) != target['identity']:
         raise Deferred('target-changed')
     if eligible(t, read, ps, self_pane, self_found, tui_idle=True, modal=modal) != target['provider']:
         raise Deferred('provider-changed')
+    management_self_check(client, process_only=True)
     return t, read
 
 
 def send(client, journal, target, text, phase):
     # Persist before calling the transport. Crash/timeout means no automatic resend.
+    management_self_check(client, process_only=True)
     journal.record('sending', handle=target['handle'], step=phase)
+    management_self_check(client, process_only=True)
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', text, '--enter')
     receipt = obj(result.get('send'))
     mutation = obj(result.get('mutation'))
@@ -761,6 +897,7 @@ def shell_guard(client, plan, target, normal_exit):
         raise Deferred('target-changed')
     if sum(pane(t) == plan['selfPane'] for t in array(ts.get('terminals'))) != 1:
         raise Deferred('self-unidentified')
+    management_self_check(client, array(ts.get('terminals')), ps, terminal_inventory=ts)
     t, read = client.observe(target['handle'])
     if fingerprint(t) != target['identity'] or t.get('agentWait') is not None or t.get('connected') is not True or t.get('writable') is not True or t.get('orphaned') is not False:
         raise Deferred('shell-unconfirmed')
@@ -801,6 +938,7 @@ def shell_guard(client, plan, target, normal_exit):
     if not re.search(exit_marker, text):
         raise Deferred('shell-unconfirmed')
 
+    management_self_check(client, process_only=True)
     return t
 
 
@@ -824,7 +962,9 @@ def modal_key(client, plan, target, self_pane, journal, command, key, expected_p
         raise Deferred('native-response-proof-changed')
     if not claude_modal(screen(read), command):
         raise Deferred('claude-modal-boundary-unknown')
+    management_self_check(client, process_only=True)
     journal.record('sending', handle=target['handle'], step='modal-navigation')
+    management_self_check(client, process_only=True)
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', key)
     receipt = obj(result.get('send'))
     if (receipt.get('handle') != target['handle'] or receipt.get('accepted') is not True or

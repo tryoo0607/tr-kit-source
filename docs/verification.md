@@ -735,3 +735,9 @@ R-52의 [결정](decisions/20261123-codex-status-screen-proof.md)과 승인 계�
 CI 뒤 공통 reference 한 곳에 위 거부 조건을 명확히 적었다. 모든 실행 코드·시험 bytes는 CI 입력과 같고 reference 전후 hash를 별도 보존했으며, 배포 후보는 새 경로 `/data/projects/_scratch/tr-kit-screen-proof-final-0.8.2-ad407c0b0c/`에서 다시 조립·검사한다. 실제 호스트 업데이트/재시작·소비는 아직 별도다.
 
 안내문 명확화 뒤 조립 회귀27개/5.309초·실패/오류/skip0과 diff 형식 검사를 통과했다. 최종 후보의 실제 모든 파일은 새 조립물과 fresh 검사에서 별도 대조한다.
+
+### 자기 관리 helper 구분 — 2026-11-24
+
+R-52의 [승인 결정](decisions/20261124-session-management-shell.md)을 baseline `9f9c990d3447680f09b38fedc178a1e6f00622ab`의 별도 worktree에서 구현했다. 동일 배치·실패 이력/키 보존, self 무입력, 명시 예외 우선, process/runtime/fingerprint/draft/agent/child/wait drift와 최종 입력·create 경계를 검사한다. runtime/배치 schema·원문 보호·권한·외부 provider는 유지한다. 별도 context-free quick 정적 검수의 발견 사항은 없었다.
+
+최종 root 전체 CI **680개/314.098초, skip0**가 실제 고정 Gitleaks8.30.1로 통과했다(session 계열214개 포함). 마지막 runtime 고정·테스트 -B 보완을 포함한 실행 코드·시험 bytes가 CI 입력과 같음을 SHA256으로 대조했다. 이 결과 문장의 사후 갱신은 검증 기록만의 변경이다. 실제 소유 PTY는 stdin heredoc helper와 같은 TTY의 별도 background group을 허용하고 추가 foreground group member를 거부했다. source/PTY 증거를 사용자 native 재시작·소비 완료로 확대하지 않는다. 이번 수정본의 native 적용·재부팅은 아직 미실행이다.
