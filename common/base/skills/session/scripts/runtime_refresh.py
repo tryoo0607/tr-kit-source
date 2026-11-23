@@ -491,22 +491,45 @@ def make_plan(report, selected):
             'environment': report['environment'], 'remoteConfigured': report.get('remoteConfigured', False), 'targets': [rows[h] for h in selected]}
 
 
+def receiver_cwd(value):
+    """Expand only unambiguous receiver-local home displays, never shell syntax."""
+    if not token(value):
+        raise Deferred('native-identity-unknown')
+    if value == '~' or value.startswith('~/'):
+        parts = value[2:].split('/') if value != '~' else []
+        if any(not part or part != part.strip() or part in ('.', '..')
+               or not re.fullmatch(r'[\w .@+-]+', part) for part in parts):
+            raise Deferred('native-identity-unknown')
+        home = Path.home()
+        if not home.is_absolute() or str(home.resolve()) != str(home):
+            raise Deferred('native-identity-unknown')
+        return str(home.joinpath(*parts))
+    if not value.startswith('/'):
+        raise Deferred('native-identity-unknown')
+    return value
+
+
 def status(provider, text):
     # Native status output is used only for these metadata fields; never persisted verbatim.
-    def field(names):
-        matches = re.findall(r'(?im)^\s*[│|]?\s*(?:' + names + r')\s*:\s*(.*?)\s*[│|]?\s*$', text)
+    def field(names, *, preserve_trailing=False):
+        if preserve_trailing:
+            matches = re.findall(r'(?im)^[ \t]*[│|]?[ \t]*(?:' + names
+                                 + r')[ \t]*:[ \t]*([^\r\n]*?)(?:[│|][ \t]*)?\r?$', text)
+        else:
+            matches = re.findall(r'(?im)^\s*[│|]?\s*(?:' + names + r')\s*:\s*(.*?)\s*[│|]?\s*$', text)
         if not matches:
             raise Deferred('native-identity-unknown')
-        return matches[-1].strip()
+        return matches[-1] if preserve_trailing else matches[-1].strip()
     ident = field('Session|Session ID')
     try:
         if str(uuid.UUID(ident)) != ident.lower():
             raise ValueError()
     except ValueError:
         raise Deferred('native-identity-unknown') from None
-    cwd = field('Directory|cwd|Working directory')
+    displayed_cwd = field('Directory|cwd|Working directory', preserve_trailing=True)
+    cwd = receiver_cwd(displayed_cwd if displayed_cwd.startswith('~') else displayed_cwd.strip())
     permission = field('Permissions|Permission mode')
-    if not cwd.startswith('/') or not token(cwd) or not token(permission):
+    if not token(permission):
         raise Deferred('native-identity-unknown')
     result = {'sessionId': ident, 'cwd': cwd, 'permissions': permission}
     if provider == 'claude':
@@ -1009,7 +1032,43 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
             if fresh.strip() and (len(indices) > old_count or fresh not in previous_text):
                 return finish_response(current, fresh)
     else:
-        _, current = passive_guard(client, plan, target, self_pane)
+        # Acknowledgement/idle can precede rendering. Keep the original cursor
+        # and poll only passive observations; never repeat input or inventory.
+        deadline = time.monotonic() + 3
+        pending = Deferred('native-response-freshness-unknown')
+        for attempt in range(60):
+            if time.monotonic() >= deadline:
+                raise pending
+            _, current = passive_guard(client, plan, target, self_pane)
+            # Cursor progress can precede screen rendering. An unchanged old
+            # ordinary-command frame has no new response boundary yet.
+            historical_boundary = False
+            try:
+                current_status_response(target['provider'], screen(current))
+            except Deferred:
+                if screen(current) != previous_text:
+                    raise
+                historical_boundary = True
+            if not historical_boundary and current.get('latestCursor') not in (None, cursor):
+                delta = obj(client.call('terminal', 'read', '--terminal', target['handle'], '--cursor', str(cursor)).get('terminal'))
+                tail = delta.get('tail')
+                if delta.get('source') != 'stream' or not isinstance(tail, list) or any(not isinstance(x, str) for x in tail):
+                    raise Deferred('native-response-output-unknown')
+                fresh = '\n'.join(tail)
+                try:
+                    response = finish_response(current, fresh)
+                except Deferred as error:
+                    if str(error) != 'native-identity-unknown':
+                        raise
+                    pending = error
+                else:
+                    if time.monotonic() >= deadline:
+                        raise Deferred('native-response-deadline')
+                    return response
+            if attempt == 59 or time.monotonic() >= deadline:
+                raise pending
+            journal.record('awaiting-native-response', handle=target['handle'], step=phase)
+            time.sleep(0.05)
     if current.get('latestCursor') in (None, cursor):
         raise Deferred('native-response-freshness-unknown')
     delta = obj(client.call('terminal', 'read', '--terminal', target['handle'], '--cursor', str(cursor)).get('terminal'))

@@ -687,3 +687,25 @@ own G2 준비기를 실제 실행해 기존 pin의 npm/uv/release/browser 설치
 공통 source Codex/Claude150파일씩·private source48파일씩의 fresh source/원문 보호·전송·비밀 검사와 실제 파일 명세 대조를 통과했다. 공통 조립 회귀27개와 새 공통 exact pin을 선택한 private 전체106개가 통과했다. 이전150파일 G7 공통 묶음도 새 pin에서는 양 제품 모두 거부됨을 확인했고, 역할 정책 bytes는 유지됐다. 현재 common/base·adapters·scripts·tests의 코드가 앞서 전체504개 시험 당시와 같음을 hash로 확인했으므로 그 근거를 재사용한다. 전체504개를 이번에 다시 실행한 것으로 보고하지 않는다.
 
 원형은 `_bmad-output/official-provider-validation-20261120/`의 catalog-adoption·source-*-official·new-common-pins·common-pin-diff-adoption·adoption-assembly-tests, private scratch의 `_bmad-output/official-catalog-adoption-20261120/`의 inputs·assembly·private-tests·pin-checks다. source 재조립 보류는 해소됐고 native 설치/신뢰/호스트 전환·남은 hook/원문 문제는 별도다.
+
+
+### 중단된 status 준비 호환성 — 2026-11-23
+
+R-52와 [결정](decisions/20261123-session-preparation-compat.md)의 지정 worktree에서 baseline `97da09a5faa04f226d38fae689d2cd32749b8d1d` 대비 session helper·두 reference·전용 회귀와 요구/결정/검증 기록을 변경했다. 계획과 보존 계약을 같은 작성자가 대조했으며 독립 검수로 표시하지 않는다. 파일 배치·외부 의존·권한·업데이트 순서는 유지한다.
+
+`python3 -B -m unittest discover -s tests -p 'test_session*.py' -v` 최종 **179개/63.976초 통과, 실패·오류·skip0**다. 기존161개와 신규18개가 포함된다. 원본은 `/data/projects/_scratch/nas-session-preparation-compat-20261123/session-tests-reviewed.txt`다. 초기172개 통과 뒤 추가한 설치 drift 시험의 기대 문자열 오기로 중간175개 실행은1건 실패했고, 기존 실제 거부 사유 `installed-versions-drift`에 기대값을 맞춘 뒤 최종 전체를 다시 실행했다. 중간 출력도 같은 로컬 디렉터리에 보존했다.
+
+| 계획 matrix | 실행한 양성·음성 증거 |
+| --- | --- |
+| Delayed/partial status | `test_codex_delayed_059_second_and_partial_status_use_one_send_and_no_wait_inventory`의 unchanged cursor·partial 두 사례. 0.59초는 가상 시계 fixture이며 단일 send·설치 조회 추가 없음·정확한 proof 확인. `test_codex_pending_deadline_never_resends_or_reuses_old_status`, `test_codex_response_after_observation_deadline_is_not_accepted`로 만료 거부 |
+| State drift | `test_codex_pending_observation_rejects_each_state_and_boundary_drift`의 runtime/provider/fingerprint/self/busy/draft/child/command boundary 거부. `test_codex_delayed_complete_response_requires_same_confirmed_frame_proof`와 기존 stream/current identity 불일치 회귀 유지 |
+| Home cwd | `test_receiver_home_cwd_strict_normalization_and_exact_workspace`: `~`·home 하위 경로, fresh status/workspace exact 일치와 mismatch, `~user`·환경/shell 구문·상대/빈/traversal/공백 구간 거부 |
+| Recovery | `test_verify_acknowledged_preparation_preserves_failure_tail_exclusions_and_signed_store`: 실제 tempfile Store에서 old failure/events·tail/manual 보존, 원 queried 대상의 status만1회, UUID/cwd/권한·proof·complete outcome·consumption 분리. legacy row failure와 관리 shell 사례, identity 저장 후 outcome 전 crash의 명시 재검증도 통과 |
+| Unsafe recovery | `test_verify_unacknowledged_preparation_remains_blocked_without_input`, `test_verify_preparation_rejects_mismatched_receipts_mutation_navigation_and_attempts`, binding/runtime/terminal/unsafe state·현재 self·fresh 설치 drift·다른 미해결 배치 거부. 새 receipt 유실 뒤 재verify 무입력, 저장 신원 변경 거부도 통과 |
+| Existing complete batch | 기존161개 전부 유지·통과. restart/restore/verify·예외·서명/스토리지·무재전송·신원/권한·timeout/출력·Claude modal 및 실제 소유 subprocess fixture 포함 |
+
+새 사례는 소유 transport doubles와 실제 tempfile signed Store의 source 동작 검증이다. 실제 NAS 약0.59초 응답은 root가 전달한 관측을 fixture 입력으로 썼으며 구현자가 native 응답·복구를 실행한 결과가 아니다. 새 모델의 선택/행동·실제 압축/재개·제품 native 이벤트·소비 검증도 미실행이다. 과거 self가 저장되지 않은 관리 shell 배치에서 새 과거 self를 만들거나 요구하지 않고 현재 self 유일성과 자기 입력 제외를 유지한다.
+
+실제 NAS verify와 독립 검수, 전체 CI/실제 Gitleaks8.30.1, common/private pin·package·scan·commit·게시·rollout은 root의 후속 범위다. 구현자는 원격 작업·설치·권한/config/account 변경·commit/push를 하지 않았다. 원자적 compare-and-send는 없고 마지막 관측 뒤 외부 조작 경합이 남는다. status-only verify의 Claude 모달은 닫는 키를 보내지 않아 수동 정리가 남을 수 있으며 미접수·unsafe 상태는 계속 unresolved다.
+
+후속 독립 Quick 검수에서 cursor-only 진행/동일 과거 화면의 조기 거부와 status 파서의 home 끝 공백 손실 두 건을 확인했다. root가 각각 재현한 뒤 최소 패치·두 회귀를 추가했고 관련 RuntimeRefreshTests99개를 통과했다. 최종 전체 CI는 실제 신뢰 검증된 Gitleaks8.30.1로 **647개/310.269초, session181개 포함, 실패·오류·skip0** 통과했다. 원본은 `/data/projects/_scratch/tr-kit-nas-preparation-release-0.8.2-92478c86a2/common-ci/`다. 위179개는 패치 이전 회귀 이력이며 최종 source 판정은647개다. non-doc source183파일 hash가 최종 CI 입력과 일치한다. 실제 NAS 복구·제품 소비·배포는 아직 별도다.

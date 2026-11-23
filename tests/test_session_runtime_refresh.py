@@ -367,6 +367,166 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual(1, len(self.client.sent))
         self.assertEqual('/status', self.client.sent[0][self.client.sent[0].index('--text')+1])
 
+    def delayed_codex(self, *, partial=False, change=None):
+        client = self.client
+        clock = [0.0]
+        fields = ['OpenAI Codex (v0.167.2)', 'Session: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                  'Directory: /work', 'Permissions: Full Access']
+        original_observe, original_call = client.observe, client.call
+        def observe(handle):
+            if client.sent:
+                if partial or clock[0] >= 0.59:
+                    body = fields if clock[0] >= 0.59 else fields[:3]
+                    client.read.update(latestCursor='11', tail=['› /status', *body, '›'])
+                if change and clock[0] >= 0.1:
+                    change(client)
+            return original_observe(handle)
+        def call(*args):
+            if args[:2] == ('terminal', 'read'):
+                body = fields if clock[0] >= 0.59 else fields[:3]
+                return {'terminal': {'source': 'stream', 'tail': ['› /status', *body, '›']}}
+            return original_call(*args)
+        client.observe, client.call = observe, call
+        return client, clock
+
+    def test_codex_delayed_059_second_and_partial_status_use_one_send_and_no_wait_inventory(self):
+        for partial in (False, True):
+            with self.subTest(partial=partial):
+                self.client = Fake()
+                # Unchanged historical ordinary-command output is not a new
+                # boundary while acknowledgement precedes rendering.
+                self.client.read['tail'] = ['› earlier ordinary command', 'done', '›']
+                client, clock = self.delayed_codex(partial=partial)
+                self.inventory.reset_mock()
+                with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                    native = m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+                self.assertGreaterEqual(clock[0], 0.59)
+                self.assertLess(clock[0], 3)
+                self.assertEqual('/work', native['cwd'])
+                self.assertEqual(1, len(client.sent))
+                self.assertEqual(1, self.inventory.call_count)
+                self.assertEqual('11', self.plan['targets'][0]['nativeProof']['cursor'])
+
+    def test_codex_pending_observation_rejects_each_state_and_boundary_drift(self):
+        changes = {
+            'runtime': lambda c: setattr(c, 'runtime', 'other'),
+            'provider': lambda c: c.target.update(agentIdentity='claude'),
+            'identity': lambda c: c.target.update(incarnationId='other'),
+            'self': lambda c: c.self.update(leafId='gone'),
+            'busy': lambda c: c.agents[1].update(state='working'),
+            'draft': lambda c: c.read.update(draft='typed'),
+            'child': lambda c: c.agents[1].update(children=[{'state': 'working'}]),
+            'boundary': lambda c: c.read.update(tail=['› ordinary command', '›']),
+        }
+        for label, change in changes.items():
+            with self.subTest(label=label):
+                self.client = Fake()
+                client, clock = self.delayed_codex(change=change)
+                with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                    with self.assertRaises(m.Deferred):
+                        m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+                self.assertEqual(1, len(client.sent))
+                self.assertLess(clock[0], 0.59)
+
+    def test_codex_cursor_progress_with_unchanged_ordinary_screen_waits_for_delayed_status(self):
+        self.client.read['tail'] = ['› earlier ordinary command', 'done', '›']
+        client, clock = self.delayed_codex(change=lambda c: c.read.update(latestCursor='11'))
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            native = m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertGreaterEqual(clock[0], 0.59)
+        self.assertEqual('/work', native['cwd'])
+        self.assertEqual(1, len(client.sent))
+        self.assertEqual('11', self.plan['targets'][0]['nativeProof']['cursor'])
+
+    def test_codex_pending_deadline_never_resends_or_reuses_old_status(self):
+        client, clock = self.delayed_codex()
+        client.observe = Fake.observe.__get__(client)
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            with self.assertRaisesRegex(m.Deferred, 'freshness'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(client.sent))
+        self.assertLessEqual(clock[0], 3)
+
+    def test_codex_delayed_complete_response_requires_same_confirmed_frame_proof(self):
+        client, clock = self.delayed_codex()
+        original = client.observe
+        complete_reads = [0]
+        def observe(handle):
+            item, frame = original(handle)
+            if clock[0] >= 0.59:
+                complete_reads[0] += 1
+                if complete_reads[0] > 1:
+                    frame['tail'].append('later output')
+            return item, frame
+        client.observe = observe
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            with self.assertRaisesRegex(m.Deferred, 'native-response-proof-changed'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(client.sent))
+
+    def test_codex_response_after_observation_deadline_is_not_accepted(self):
+        client, clock = self.delayed_codex()
+        original = client.observe
+        def observe(handle):
+            if client.sent:
+                clock[0] = 3.1
+            return original(handle)
+        client.observe = observe
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(m.Deferred, 'native-response-deadline'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(client.sent))
+
+    def test_receiver_home_cwd_strict_normalization_and_exact_workspace(self):
+        with patch.object(m.Path, 'home', return_value=Path('/receiver')):
+            self.assertEqual('/receiver', m.receiver_cwd('~'))
+            self.assertEqual('/receiver/projects/local/general', m.receiver_cwd('~/projects/local/general'))
+            for value in ('~user/work', '$HOME/work', 'relative', '~/../work', '~/./work',
+                          '~//work', '~/work/', '~/$(pwd)', '~/work\\other', '~/a/~', '~/ work', '~/work '):
+                with self.subTest(value=value), self.assertRaises(m.Deferred):
+                    m.receiver_cwd(value)
+            client, clock = self.delayed_codex()
+            real_status = m.status
+            def home_status(provider, text):
+                return real_status(provider, text.replace('Directory: /work', 'Directory: ~/work'))
+            with patch.object(m, 'status', side_effect=home_status), \
+                 patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                with self.assertRaisesRegex(m.Deferred, 'cwd-mismatch'):
+                    m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+            self.client = Fake()
+            self.client.target['worktreePath'] = '/receiver/work'
+            matching_plan = copy.deepcopy(self.plan)
+            matching_plan['targets'][0]['identity'] = m.fingerprint(self.client.target)
+            client, clock = self.delayed_codex()
+            with patch.object(m, 'status', side_effect=home_status), \
+                 patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                native = m.native_status(client, matching_plan, matching_plan['targets'][0], self.self_pane, Mock())
+            self.assertEqual('/receiver/work', native['cwd'])
+
+    def test_status_preserves_ambiguous_home_whitespace_and_valid_field_alignment(self):
+        def text(directory):
+            return ('OpenAI Codex (v0.167.2)\nSession: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\n'
+                    + directory + '\nPermissions: Full Access\n›')
+        with patch.object(m.Path, 'home', return_value=Path('/receiver')):
+            for value in ('~/work ', '~/work\t', '~ ', '~/ work', '~/work\u00a0'):
+                with self.subTest(value=value), self.assertRaises(m.Deferred):
+                    m.status('codex', text('    Directory:  '+value))
+            for directory, expected in (
+                    ('    Directory:       ~/work', '/receiver/work'),
+                    ('│ Directory: ~/work│', '/receiver/work'),
+                    ('    Directory:       ~', '/receiver'),
+                    ('│ Directory: /work        │', '/work'),
+                    ('    Directory: /work   ', '/work')):
+                with self.subTest(directory=directory):
+                    self.assertEqual(expected, m.status('codex', text(directory))['cwd'])
+
     def status_with_old_screen(self, fresh):
         client = Fake()
         client.read['tail'] = ['Session: 11111111-1111-4111-8111-111111111111',
