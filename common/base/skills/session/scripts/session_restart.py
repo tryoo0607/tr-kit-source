@@ -55,11 +55,12 @@ class Store:
     flock survives process crashes without a stale-lock deletion procedure. The
     signature catches accidental edits; it is not protection from the account owner.
     """
-    def __init__(self, root, read_only=False):
+    def __init__(self, root, read_only=False, existing_only=False):
         self.root = Path(root).absolute()
         self.fd = self.lock = None
         self.key = None
         self.read_only = read_only
+        self.existing_only = existing_only
 
     def __enter__(self):
         if sys.platform != 'linux' or not all(hasattr(os, x) for x in ('O_NOFOLLOW', 'O_DIRECTORY')):
@@ -70,7 +71,7 @@ class Store:
                 raise Deferred('unsafe-state-path')
             self.fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             for part in self.root.parts[1:]:
-                if not self.read_only:
+                if not self.read_only and not self.existing_only:
                     try:
                         os.mkdir(part, 0o700, dir_fd=self.fd)
                     except FileExistsError:
@@ -81,7 +82,9 @@ class Store:
             info = os.fstat(self.fd)
             if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
                 raise Deferred('unsafe-state-directory')
-            flags = os.O_RDONLY if self.read_only else os.O_RDWR | os.O_CREAT
+            flags = os.O_RDONLY if self.read_only else os.O_RDWR
+            if not self.read_only and not self.existing_only:
+                flags |= os.O_CREAT
             self.lock = os.open('batch.lock', flags | os.O_NOFOLLOW | os.O_NONBLOCK,
                                 0o600, dir_fd=self.fd)
             self.check_file(self.lock)
@@ -89,7 +92,7 @@ class Store:
                 fcntl.flock(self.lock, (fcntl.LOCK_SH if self.read_only else fcntl.LOCK_EX) | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise Deferred('batch-operation-locked') from None
-            if not self.read_only:
+            if not self.read_only and not self.existing_only:
                 try:
                     key_fd = os.open('integrity.key', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                                      0o600, dir_fd=self.fd)
@@ -321,8 +324,13 @@ def prepare(client, store, selected, excluded, self_pane):
         if manual and provider is None:
             batch['targets'][-1].update(state='deferred', reason='non-agent-management-shell')
     store.save(batch, new=True)
+    return prepare_rows(client, store, batch, batch['targets'], by_handle, ps, self_pane)
+
+
+def prepare_rows(client, store, batch, rows, by_handle, ps, self_pane, *, continuation=False):
+    """Shared guarded first-stop preparation; callers establish row authority."""
     stopped = False
-    for row in batch['targets']:
+    for row in rows:
         if row['choice'] == 'manual':
             continue
         if stopped:
@@ -331,14 +339,20 @@ def prepare(client, store, selected, excluded, self_pane):
         log = Recorder(store, batch, row, 'prepare')
         try:
             target = target_from(client, by_handle[row['targetId']], ps, self_pane)
+            if continuation and target['provider'] != row['provider']:
+                raise Deferred('provider-changed')
+            if continuation and client.runtime != batch['preparedRuntime']:
+                raise Deferred('runtime-changed')
             row['provider'] = target['provider']
             row['installationPrepared'] = target['installation']
-            row['native'] = validate_native(rr.native_status(client, current_plan(client, self_pane), target, self_pane, log))
+            plan = ({'runtimeId': batch['preparedRuntime'], 'selfPane': self_pane} if continuation
+                    else current_plan(client, self_pane))
+            row['native'] = validate_native(rr.native_status(client, plan, target, self_pane, log))
             row.update(state='ready', reason=None)
             store.save(batch)
         except (Deferred, OSError) as error:
             row.update(state='deferred', reason=reason(error))
-            if any(e['targetId'] == row['targetId'] and e['phase'] == 'sending' for e in batch['events']):
+            if any(e.get('targetId') == row['targetId'] and e['phase'] == 'sending' for e in batch['events']):
                 batch['prepareState'] = 'uncertain'
             log.record('preparation-failed', reason=row['reason'])
             stopped = True
@@ -348,6 +362,83 @@ def prepare(client, store, selected, excluded, self_pane):
     store.save(batch)
     return report(batch)
 
+
+
+def initial_zero_input_failure(batch, failed):
+    """Recognize only the exact original permission failure and prepared receipt."""
+    events = batch['events'][:2]
+    if len(events) != 2:
+        return False
+    failure, prepared = events
+    return (set(failure) == {'phase', 'targetId', 'operationId', 'at', 'reason'}
+            and failure['phase'] == 'preparation-failed'
+            and failure['targetId'] == failed['targetId'] == failed['terminal']['handle']
+            and failure['operationId'] == 'prepare'
+            and failure['reason'] == 'claude-permissions-unknown'
+            and set(prepared) == {'phase', 'at'} and prepared['phase'] == 'prepared')
+
+
+def continuation_decision(batch, event):
+    """Validate the one explicit decision also admitted by status-only verify."""
+    rows = batch['targets']
+    failed = next((r for r in rows if r['targetId'] == event.get('targetId')), None)
+    return (failed is not None and initial_zero_input_failure(batch, failed)
+            and len(batch['events']) >= 3 and batch['events'][2] == event
+            and sum(e.get('phase') == 'preparation-manual-exclusion' for e in batch['events']) == 1
+            and set(event) == {'phase', 'targetId', 'operationId', 'at', 'handle', 'reason'}
+            and event['phase'] == 'preparation-manual-exclusion'
+            and event['operationId'] == 'continue-prepare'
+            and event['handle'] == failed['terminal']['handle']
+            and event['reason'] == 'claude-permissions-unknown'
+            and failed['provider'] == 'claude' and failed['choice'] == 'manual'
+            and failed['state'] == 'manual-restart-required'
+            and failed['reason'] == 'explicit-exception'
+            and failed.get('native') is None and failed.get('attempt') is None)
+
+
+def continue_prepare(client, store, batch_id, excluded, self_pane):
+    """Explicitly exclude the zero-input first failure, then prepare its old tail."""
+    client.management_self = None
+    batch = store.load(batch_id)
+    if batch['binding'] != binding():
+        raise Deferred('machine-or-profile-mismatch')
+    check_other_attempts(store, batch_id)
+    rows = batch['targets']
+    restart = [r for r in rows if r['choice'] == 'restart']
+    if (batch.get('prepareState') != 'complete' or len(restart) < 2
+            or excluded != [restart[0]['targetId']]
+            or any(r.get('native') is not None or r.get('attempt') is not None for r in rows)
+            or len(batch['events']) != 2
+            or not initial_zero_input_failure(batch, restart[0])
+            or restart[0]['provider'] != 'claude'
+            or restart[0]['state'] != 'deferred'
+            or restart[0]['reason'] != 'claude-permissions-unknown'
+            or any(r['state'] != 'deferred' or r['reason'] != 'previous-target-failed'
+                   or r['targetId'] != r['terminal']['handle'] or r.get('installationPrepared') is not None
+                   for r in restart[1:])
+            or any(r['choice'] == 'manual' and (r['state'], r['reason']) not in
+                   (('manual-restart-required', 'requesting-session'),
+                    ('manual-restart-required', 'explicit-exception'),
+                    ('deferred', 'non-agent-management-shell')) for r in rows)):
+        raise Deferred('continuation-not-admissible')
+    terms, ps = snapshot(client, self_pane)
+    if client.runtime != batch['preparedRuntime']:
+        raise Deferred('runtime-changed')
+    by_handle = {t['handle']: t for t in terms}
+    # Validate the entire original selection before persisting a new decision.
+    # Exceptions are metadata-only: never observe their screen or native status.
+    for row in rows:
+        item = by_handle.get(row['terminal']['handle'])
+        if item is None or rr.fingerprint(item) != row['terminal']:
+            raise Deferred('target-changed')
+        if row['reason'] == 'requesting-session' and rr.pane(item) != self_pane:
+            raise Deferred('self-changed')
+    failed = restart[0]
+    failed.update(choice='manual', state='manual-restart-required', reason='explicit-exception')
+    batch['prepareState'] = 'started'
+    Recorder(store, batch, failed, 'continue-prepare').record(
+        'preparation-manual-exclusion', handle=failed['terminal']['handle'], reason='claude-permissions-unknown')
+    return prepare_rows(client, store, batch, restart[1:], by_handle, ps, self_pane, continuation=True)
 
 def reason(error):
     return str(error) if isinstance(error, Deferred) else 'local-storage-or-io-failed'
@@ -645,6 +736,9 @@ def verify_preparation(client, store, batch, self_pane):
                 receipts.add(event['requestId'])
                 pending = None
                 queried.add(row['targetId'])
+        elif phase == 'preparation-manual-exclusion':
+            if not continuation_decision(batch, event):
+                raise Deferred('preparation-recovery-status-only-required')
         elif phase not in allowed:
             raise Deferred('preparation-recovery-status-only-required')
     if pending is not None or not queried:
@@ -855,14 +949,16 @@ def report(batch):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('prepare', 'list', 'restart', 'restore', 'verify'))
+    parser.add_argument('mode', choices=('prepare', 'continue-prepare', 'list', 'restart', 'restore', 'verify'))
     parser.add_argument('--target', action='append', default=[])
     parser.add_argument('--exclude', action='append', default=[])
     parser.add_argument('--batch')
     parser.add_argument('--state', type=Path, default=Path.home() / '.local/state/tr-kit/session-restart')
     args = parser.parse_args(argv)
     try:
-        if args.mode != 'prepare' and (args.target or args.exclude):
+        if args.mode == 'continue-prepare' and (args.target or len(args.exclude) != 1):
+            raise Deferred('continuation-not-admissible')
+        if args.mode not in ('prepare', 'continue-prepare') and (args.target or args.exclude):
             raise Deferred('choices-are-prepare-only')
         if args.mode == 'prepare' and args.batch:
             raise Deferred('prepare-creates-new-batch')
@@ -871,10 +967,16 @@ def main(argv=None):
                 raise Deferred('batch-not-found')
             print('{"batches": []}')
             return 0
-        with Store(args.state, read_only=args.mode == 'list') as store:
+        if args.mode == 'continue-prepare' and not args.batch:
+            raise Deferred('batch-id-required')
+        with Store(args.state, read_only=args.mode == 'list', existing_only=args.mode == 'continue-prepare') as store:
             if args.mode == 'list':
                 # Durable inventory needs no runtime, conversation or host CLI.
                 result = report(store.load(args.batch)) if args.batch else {'batches': [report(b) for b in store.batches()]}
+            elif args.mode == 'continue-prepare':
+                # Missing/invalid records fail before constructing a runtime client.
+                store.load(args.batch)
+                result = continue_prepare(rr.Orca(), store, args.batch, args.exclude, os.environ.get('ORCA_PANE_KEY'))
             elif args.mode == 'prepare':
                 result = prepare(rr.Orca(), store, args.target, args.exclude, os.environ.get('ORCA_PANE_KEY'))
             else:

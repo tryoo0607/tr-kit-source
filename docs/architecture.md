@@ -332,3 +332,10 @@ common/base/scripts (own)
 ```
 
 Claude-Mem은 schema2 binding의 두 review를 plan hash에 묶고 start/MCP 전에 재검사한다. 검수 부재/리소스 변동 시 신규 실행 전에 보류하며 기존 소유 worker의 stop은 별도 소유 검사로 유지한다. private common_links가 같은 공통 검사 CLI를 호출하며 구현을 복사하지 않는다. private source pin은 검토한150파일 source-bundle-v1이고 native 포장과 분리한다. 구조와 지원 현황·미결은 [G7 결정](decisions/20261118-g7-provider-review.md)과 [provider 현황](provider-status.md)에 연결한다.
+
+
+### 명시 수동 예외 후 미조회 준비 계속 — 2026-11-24
+
+R-52의 `continue-prepare`는 기존 session_restart.py 안에서만 동작한다. 별도 transport·skill·hook·schema·provider를 추가하지 않는다. CLI의 existing-only Store → signed 원 batch/exact zero-input event pair → fresh binding/runtime/원 fingerprint 검증 → manual 결정과 started durable 저장 → 기존 prepare와 공유하는 순차 `prepare_rows` → `target_from/native_status` full guard/Recorder/Store 순서다. 기존 prepare도 같은 row 준비기를 사용하며 첫 실패 중단 계약은 유지한다.
+
+기존 status-only verify는 정확한 원 실패에 연결된 단일 manual 결정 event만 추가 허용한다. 새 status의 sending/accepted 짝과 requestId를 검증한 원 queried 행에만 재조회하며 미조회 tail은 계속 제외한다. 기존 restart/restore/locate·권한 구성·runtime helper 증명은 변경하지 않는다. 비에이전트 관리 shell의 과거 self 행 부재는 새로운 schema나 추정으로 채우지 않고 현재 unique self와 원 manual/self 무입력을 유지한다. 상세 실행 경계는 [단일 운영 계약](../common/base/skills/session/references/session-restart.md#명시-수동-예외-뒤-원래-미조회-tail-준비-계속), 승인과 한계는 [결정](decisions/20261124-session-prepare-continuation.md)에 있다.

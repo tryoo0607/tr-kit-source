@@ -34,6 +34,18 @@ Claude `/status`는 명령 전에 기존 `claude_permission` 문법으로 권한
 
 증거는 현재 client 메모리에만 runtime·self pane·fingerprint·process identity와 묶고 갱신해 새 권한으로 바꾸지 않는다. `execute` 진입마다 초기화하며 signed 배치·key·선택·예외·기존 event/실패 receipt나 출력 proof schema에 저장하지 않는다. 느린 조회 뒤 passive/shell guard와 create의 마지막 검증에서 이미 확보한 완전한 inventory를 재사용해 self metadata를 먼저 관측하고, target의 마지막 frame/proof를 확인한 뒤 runtime과 고정 `/proc` 증거를 다시 대조한다. status/exit/resume/raw modal key/create는 durable sending 기록 전과 직후에도 고정 process 증거를 비교한다. target의 최종 응답 proof 뒤에 새 Orca inventory/자기 화면 조회를 끼워 넣지 않는다. metadata·process·runtime의 불일치가 관측되면 다음 native 입력/create 전에 중단하며, sending 기록 뒤 불일치는 실제 전송 없이도 기존 uncertain receipt 정책을 유지한다. 마지막 self metadata 관측과 target 관측·로컬 기록·실제 입력 사이의 경합은 비원자 Orca API의 기존 한계로 남는다. 같은 runtime·다른 workspace와 일반 runtime-refresh는 이 예외를 새로 활성화하지 않는다.
 
+### 명시 수동 예외 뒤 원래 미조회 tail 준비 계속
+
+사용자가 첫 실패 대상을 수동 예외로 유지하고 나머지 준비를 계속하도록 명시 승인한 경우에만 `continue-prepare --batch <원 UUID> --exclude <첫 실패 handle>`를 실행한다. `--target`이나 새·복수 예외는 받지 않는다. 자동 재시도나 일반적인 실패 복구가 아니다. Claude auto mode의 권한 증명·resume 지원을 넓히지 않으며 그 대상에는 화면 관측·`/status`·모달 키도 보내지 않는다.
+
+입장은 원 signed 배치의 `prepareState: complete`, 첫 restart 행의 native/attempt 없음과 `claude-permissions-unknown`, 나머지 원 restart 행의 `deferred/previous-target-failed` 및 미조회 상태에 한정한다. 전체 행에 native/attempt가 없어야 하며 이력은 해당 첫 행·handle·`prepare` operation의 같은 사유 `preparation-failed`와 뒤의 `prepared` 두 event만 정확히 있어야 한다. sending/accepted·모달·exit/create/resume·추가 event·다른 미해결 배치가 있으면 새 입력 없이 보류한다. 이력·key를 지우거나 새 배치로 대체하지 않는다.
+
+같은 machine/profile·준비 runtime과 fresh local snapshot에서 모든 원 terminal fingerprint를 먼저 대조한다. 기존 manual/self는 metadata만 대조하며 입력하지 않는다. 원래 native self가 저장됐으면 현재 self와 일치해야 한다. 비에이전트 관리 shell의 원본에 self 행이 없으면 과거 self fingerprint를 추정하지 않고 현재 unique self 계약과 tail의 자기 입력 거부를 유지한다. 이 경우 과거 관리 shell과 현재 self가 같은 terminal인지는 원본으로 증명할 수 없다.
+
+첫 실패 행만 `manual/explicit-exception`으로 바꾸고 원 실패 사유를 담은 `preparation-manual-exclusion` 결정 event와 `prepareState: started`를 먼저 durable 저장한다. 그 뒤 원래 미조회 tail만 원 순서대로 기존 `target_from/native_status`·설치/identity/권한/draft/working/approval/child/self 가드와 recorder로 준비한다. 첫 새 실패 뒤 tail은 그대로 중단한다. 원 batchId/binding/생성 시각/runtime/key·fingerprint·기존 선택·예외·실패/events를 보존하며 exit/resume/create는 실행하지 않는다.
+
+이 명령의 Store는 기존 디렉터리·lock·key만 열고 없는 state/batch를 새로 만들지 않는다. 결정 저장 실패는 native 입력 전에 멈춘다. 결정 뒤 crash는 `started`로 남고 동일 continuation 재호출은 거부한다. 접수된 새 status 뒤 실패는 uncertain receipt를 보존하며 아래 status-only `verify`가 그 접수된 행만 복구할 수 있다. 이 명시 결정 event도 정확한 원 실패와 한 번의 결정으로 검증하며, verify가 미조회 tail을 발견·조회하도록 넓히지 않는다. 결정만 저장되고 status 접수 증거가 없으면 verify도 입력 없이 보류한다.
+
 ### 접수된 조회만 있는 준비 검증
 
 명시 `verify`만 미완료 준비를 해소할 수 있다. signed 배치의 모든 sending/accepted가 원 선택 restart 대상의 `status`이며 target/handle/operation이 순서대로 짝을 이루고 실제 requestId가 있어야 한다. 종료·재개·생성·모달 키 등 다른 단계나 attempt, 유실·불일치 receipt는 입력 없이 거부한다. 다른 미해결 배치도 기존처럼 차단한다. 같은 machine/profile·준비 당시 runtime·정확한 원 terminal fingerprint가 유지돼야 하며, 입력 전 fresh 설치/full guard를 다시 확인한다. 다른 runtime/handle을 locate로 추적하거나 inventory에서 UUID를 채우지 않는다.
