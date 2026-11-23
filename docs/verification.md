@@ -2,7 +2,7 @@
 
 ## 현재 판정 — 2026-11-23
 
-이 절은 연결된 기존 관측과 이번 문서/목차 검수의 현재 요약이다. 상세 수치·실패·제품/설정·revision별 한계는 해당 결정 기록이 소유한다. 아래 이력은 당시 결과이며, 그 안의 ‘현재’·‘최신’·‘미실행’을 최신 후보 상태로 읽지 않는다. **전체 운영 적합 판정은 계속 보류한다.**
+이 절은 기존 관측과 후속 구현·운영 적용의 현재 요약이다. 상세 수치·실패·제품/설정·revision별 한계는 해당 결정 기록이 소유한다. 아래 이력은 당시 결과이며, 그 안의 ‘현재’·‘최신’·‘미실행’을 최신 후보 상태로 읽지 않는다. **전체 운영 적합 판정은 계속 보류한다.**
 
 | 대상 | 확인한 범위·시점 | 현재 남은 범위 |
 | --- | --- | --- |
@@ -13,9 +13,9 @@
 | A-04/A-05 문서·목차 | [4번 교정](decisions/20261123-status-docs-and-backup-order.md): 현재/당시 기록 구분과 백업 본문/reference의 절 순서만 정렬 | 문서 정리로 앞선 실패·미검증이나 kit 전체 적합을 해소하지 않음 |
 | 공식 연결·native |11월20일 [공식/BMAD·hook](decisions/20261120-hook-bmad-native-validation.md), [private 설치/제거](decisions/20261120-native-private-interface.md), [MCP](decisions/20261120-native-mcp-validation.md)를 각각 격리 검증 | 대상 revision/제품/합성 또는 실제 실행 조건의 제한 유지. 현재 후보 전체의 성공으로 재사용하지 않음 |
 | 대표 모델·압축 | [이전 묶음의 실제 대표 업무·수동 압축/재개](decisions/20261120-real-work-compaction-validation.md) | 자동 임계치·반복 장기 압축·매 재개 정본 재독·전 skill/실자료 보장은 아님 |
-| 현재 후보 계약·운영 | [5번 검증](decisions/20261123-candidate-pin-native-validation.md): 새source/native8개 조립·pin4개 정렬·공통516/private118개 회귀·native34사례·양 제품53/62개 실제 노출·공식 entry/resource47개씩 대조 | 시험 버전과 운영 버전 구분.6번 승인 대상별 운영 적용·trust·새 세션 확인. 전체 운영 적합은 보류 |
+| 현재 후보 계약·운영 | [5번 검증](decisions/20261123-candidate-pin-native-validation.md): 새source/native8개 조립·pin4개 정렬·공통516/private118개 회귀·native34사례·양 제품53/62개 실제 노출·공식 entry/resource47개씩 대조 | 시험 버전과 운영 버전 구분.[6번 운영 적용](decisions/20261123-host-runtime-connection.md#운영-적용-결과--2026-11-23): 세 호스트 native 설치·공식 provider47개 연결·Codex 개별 trust·새 지침 전달 확인. dev01/Claude 명령 성공, nas-vm 명령은 sandbox loopback 오류로 미실행. 전체 운영 적합은 보류 |
 
-4번 문서 검수는 전체 회귀가 아니며, 이후5번에서516/118개를 새 후보에 실제 재실행했다. BMAD 자동 갱신404 미지원, 실제 개인 자료/NAS/기존 DB·timer·capture·운영 복구와 후속 신규 도입은 각 원래 범위에 남긴다. [현재 후속 순서](migration-status.md#현재-후속-순서--2026-11-23)를 따른다.
+4번 문서 검수는 전체 회귀가 아니며, 5번516/118개와 6번 공통525/private129개를 각 변경 후보에 실제 재실행했다. BMAD 자동 갱신404 미지원, 실제 개인 자료/NAS/기존 DB·timer·capture·운영 복구와 후속 신규 도입은 각 원래 범위에 남긴다. [현재 후속 순서](migration-status.md#현재-후속-순서--2026-11-23)를 따른다.
 
 ## 검증 이력 — 각 시점의 원래 범위
 

@@ -57,6 +57,6 @@
 | R-49 | A-04 현재/과거 문서 정리·A-05 개인 백업 목차 정렬과 검수 | 직전4번 제시에 사용자 “ㄱㄱ” | decisions/20261123-status-docs-and-backup-order.md. 현재 요약/근거와 이력 분리, 요구 원문/금지·이전 실패 유지. 백업 SKILL/전환 reference는 내용 보존 후 절 위치만 변경. 새 제품 통합·pin·운영 적용은 제외 |
 | R-50 | 새 후보 묶음·private exact pin 정렬·양 제품 연결과 영향 회귀/감사 | 직전5번 제시에 사용자 “ㄱㄱ” | decisions/20261123-candidate-pin-native-validation.md. 네 digest만 정렬·새 묶음8개·516/118회귀·native34사례·실제53/62 skill 노출·doctor/document10쌍. 운영·실자료·새 실제 모델 비교는 제외 |
 
-| R-51 | 실제 운영 대상에 공식 provider·원문 보호 runtime 설정을 연결·검증한 뒤 커밋·배포 계속 | 사용자 ‘운영 연결 보완·검증 후 배포 계속’ | decisions/20261123-host-runtime-connection.md. 구현·525개 회귀와 dev01 리소스 대조 완료. 실제 호스트 배포·native 신뢰/새 세션 확인은 진행 중 |
+| R-51 | 실제 운영 대상에 공식 provider·원문 보호 runtime 설정을 연결·검증한 뒤 커밋·배포 계속 | 사용자 ‘운영 연결 보완·검증 후 배포 계속’ | decisions/20261123-host-runtime-connection.md. 공통525개/private129개 회귀·세 호스트 공식47개 연결·native 설치·Codex 개별 trust·새 지침 전달 확인. 실제 명령은 dev01/Claude 성공, nas-vm sandbox 오류 미실행. 전체 업무 적합·자료/worker/timer 활성화와 구분 |
 
 번호는 이 작업 공간의 추적용이다. 요구 추가·정정 시 기존 번호를 다른 의미로 재사용하지 않는다. 미작성·미구현·미검증을 완료로 처리하지 않는다. 상세 기준 본문은 담당 지침 한 곳에서 관리한다.
