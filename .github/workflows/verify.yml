@@ -17,10 +17,22 @@ jobs:
           python-version: '3.12'
       - run: python3 -m pip install 'PyYAML==6.0.3'
       - name: Prepare pinned scanner outside source
+        id: scanner
         run: |
-          python3 -B -c 'import os,sys; from pathlib import Path; sys.path.insert(0,"common/base/scripts"); import toolchain; p=toolchain.plan("gitleaks",Path(os.environ["RUNNER_TEMP"])/"g5-scanner",Path.cwd()); toolchain.apply(p,toolchain.plan_id(p))'
+          python3 -B - <<'PY'
+          import os, sys, tomllib
+          from pathlib import Path
+          sys.path.insert(0, 'common/base/scripts')
+          import toolchain
+          version = tomllib.loads(Path('common/base/scripts/secret-tools.toml').read_text())['gitleaks']['version']
+          prefix = Path.home()/'.local/share/tr-kit/gitleaks'/version
+          plan = toolchain.plan('gitleaks', prefix, Path.cwd())
+          toolchain.apply(plan, toolchain.plan_id(plan))
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write('path='+str(prefix/'bin/gitleaks')+'\n')
+          PY
       - name: Run local CI equivalent
-        run: python3 -B scripts/ci-check.py --gitleaks "$RUNNER_TEMP/g5-scanner/bin/gitleaks" --output "$RUNNER_TEMP/g5-verification"
+        run: python3 -B scripts/ci-check.py --gitleaks "${{ steps.scanner.outputs.path }}" --output "$RUNNER_TEMP/g5-verification"
       - name: Report test failure identifiers
         if: failure()
         run: |
