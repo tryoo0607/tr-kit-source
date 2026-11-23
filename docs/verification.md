@@ -687,3 +687,51 @@ own G2 준비기를 실제 실행해 기존 pin의 npm/uv/release/browser 설치
 공통 source Codex/Claude150파일씩·private source48파일씩의 fresh source/원문 보호·전송·비밀 검사와 실제 파일 명세 대조를 통과했다. 공통 조립 회귀27개와 새 공통 exact pin을 선택한 private 전체106개가 통과했다. 이전150파일 G7 공통 묶음도 새 pin에서는 양 제품 모두 거부됨을 확인했고, 역할 정책 bytes는 유지됐다. 현재 common/base·adapters·scripts·tests의 코드가 앞서 전체504개 시험 당시와 같음을 hash로 확인했으므로 그 근거를 재사용한다. 전체504개를 이번에 다시 실행한 것으로 보고하지 않는다.
 
 원형은 `_bmad-output/official-provider-validation-20261120/`의 catalog-adoption·source-*-official·new-common-pins·common-pin-diff-adoption·adoption-assembly-tests, private scratch의 `_bmad-output/official-catalog-adoption-20261120/`의 inputs·assembly·private-tests·pin-checks다. source 재조립 보류는 해소됐고 native 설치/신뢰/호스트 전환·남은 hook/원문 문제는 별도다.
+
+
+### 중단된 status 준비 호환성 — 2026-11-23
+
+R-52와 [결정](decisions/20261123-session-preparation-compat.md)의 지정 worktree에서 baseline `97da09a5faa04f226d38fae689d2cd32749b8d1d` 대비 session helper·두 reference·전용 회귀와 요구/결정/검증 기록을 변경했다. 계획과 보존 계약을 같은 작성자가 대조했으며 독립 검수로 표시하지 않는다. 파일 배치·외부 의존·권한·업데이트 순서는 유지한다.
+
+`python3 -B -m unittest discover -s tests -p 'test_session*.py' -v` 최종 **179개/63.976초 통과, 실패·오류·skip0**다. 기존161개와 신규18개가 포함된다. 원본은 `/data/projects/_scratch/nas-session-preparation-compat-20261123/session-tests-reviewed.txt`다. 초기172개 통과 뒤 추가한 설치 drift 시험의 기대 문자열 오기로 중간175개 실행은1건 실패했고, 기존 실제 거부 사유 `installed-versions-drift`에 기대값을 맞춘 뒤 최종 전체를 다시 실행했다. 중간 출력도 같은 로컬 디렉터리에 보존했다.
+
+| 계획 matrix | 실행한 양성·음성 증거 |
+| --- | --- |
+| Delayed/partial status | `test_codex_delayed_059_second_and_partial_status_use_one_send_and_no_wait_inventory`의 unchanged cursor·partial 두 사례. 0.59초는 가상 시계 fixture이며 단일 send·설치 조회 추가 없음·정확한 proof 확인. `test_codex_pending_deadline_never_resends_or_reuses_old_status`, `test_codex_response_after_observation_deadline_is_not_accepted`로 만료 거부 |
+| State drift | `test_codex_pending_observation_rejects_each_state_and_boundary_drift`의 runtime/provider/fingerprint/self/busy/draft/child/command boundary 거부. `test_codex_delayed_complete_response_requires_same_confirmed_frame_proof`와 기존 stream/current identity 불일치 회귀 유지 |
+| Home cwd | `test_receiver_home_cwd_strict_normalization_and_exact_workspace`: `~`·home 하위 경로, fresh status/workspace exact 일치와 mismatch, `~user`·환경/shell 구문·상대/빈/traversal/공백 구간 거부 |
+| Recovery | `test_verify_acknowledged_preparation_preserves_failure_tail_exclusions_and_signed_store`: 실제 tempfile Store에서 old failure/events·tail/manual 보존, 원 queried 대상의 status만1회, UUID/cwd/권한·proof·complete outcome·consumption 분리. legacy row failure와 관리 shell 사례, identity 저장 후 outcome 전 crash의 명시 재검증도 통과 |
+| Unsafe recovery | `test_verify_unacknowledged_preparation_remains_blocked_without_input`, `test_verify_preparation_rejects_mismatched_receipts_mutation_navigation_and_attempts`, binding/runtime/terminal/unsafe state·현재 self·fresh 설치 drift·다른 미해결 배치 거부. 새 receipt 유실 뒤 재verify 무입력, 저장 신원 변경 거부도 통과 |
+| Existing complete batch | 기존161개 전부 유지·통과. restart/restore/verify·예외·서명/스토리지·무재전송·신원/권한·timeout/출력·Claude modal 및 실제 소유 subprocess fixture 포함 |
+
+새 사례는 소유 transport doubles와 실제 tempfile signed Store의 source 동작 검증이다. 실제 NAS 약0.59초 응답은 root가 전달한 관측을 fixture 입력으로 썼으며 구현자가 native 응답·복구를 실행한 결과가 아니다. 새 모델의 선택/행동·실제 압축/재개·제품 native 이벤트·소비 검증도 미실행이다. 과거 self가 저장되지 않은 관리 shell 배치에서 새 과거 self를 만들거나 요구하지 않고 현재 self 유일성과 자기 입력 제외를 유지한다.
+
+실제 NAS verify와 독립 검수, 전체 CI/실제 Gitleaks8.30.1, common/private pin·package·scan·commit·게시·rollout은 root의 후속 범위다. 구현자는 원격 작업·설치·권한/config/account 변경·commit/push를 하지 않았다. 원자적 compare-and-send는 없고 마지막 관측 뒤 외부 조작 경합이 남는다. status-only verify의 Claude 모달은 닫는 키를 보내지 않아 수동 정리가 남을 수 있으며 미접수·unsafe 상태는 계속 unresolved다.
+
+후속 독립 Quick 검수에서 cursor-only 진행/동일 과거 화면의 조기 거부와 status 파서의 home 끝 공백 손실 두 건을 확인했다. root가 각각 재현한 뒤 최소 패치·두 회귀를 추가했고 관련 RuntimeRefreshTests99개를 통과했다. 최종 전체 CI는 실제 신뢰 검증된 Gitleaks8.30.1로 **647개/310.269초, session181개 포함, 실패·오류·skip0** 통과했다. 원본은 `/data/projects/_scratch/tr-kit-nas-preparation-release-0.8.2-92478c86a2/common-ci/`다. 위179개는 패치 이전 회귀 이력이며 최종 source 판정은647개다. non-doc source183파일 hash가 최종 CI 입력과 일치한다. 실제 NAS 복구·제품 소비·배포는 아직 별도다.
+
+### Codex status 화면 응답 증명 — 2026-11-23
+
+R-52의 [결정](decisions/20261123-codex-status-screen-proof.md)과 승인 계획 `plan-codex-status-screen-proof.md`에 따라 baseline `666b82dee2aa65f73b33d4bc2517c29c8d917afe`의 지정 worktree에서 변경했다. `native_query`의 기존 bounded passive 조회·단일 send·`finish_response`와 정확한 `output_proof` schema를 재사용하고, Codex `/status`의 새 화면 경계 증명만 추가했다. Codex standalone slash 명령도 기존 응답 경계 parser에서 인식하도록 보완했고, Claude 경로는 유지했다. `session_restart.py`의 prepare/locate/verify와 proof exact 비교·status-only event allowlist 호출부를 정적으로 대조했으며 해당 파일은 변경하지 않았다. 파일 배치·외부 연결·권한·설치/활성화 구성은 유지한다. 같은 작성자의 요구/보존 대조이며 독립 검수 결과가 아니다.
+
+`python3 -B -m unittest discover -s tests -p 'test_session*.py' -v` 최종 **192개/66.480초 통과, 실패·오류·skip0**다. 기존181개와 신규11개가 포함된다. 최종 원본은 `/data/projects/_scratch/codex-status-screen-session-reviewed.txt`다. 그 전192개/66.387초 통과 뒤, 정적 대조에서 이전 idle prompt 뒤에 이미 보인 카드가 footer처럼 버려졌다가 새 카드로 오인될 경로와 stream의 다른 제품 startup을 추가 거부하고 최종192개를 다시 실행했다. 초기 runtime 단독116개 실행에서 fake가 inventory 검사 이후에 runtime/self를 변경해 두 거부 기대가 실패했다. drift를 실제 검사 경계인 확인 inventory 직전에 넣어 보완했으며 중간 로그 `/data/projects/_scratch/codex-status-screen-runtime-initial.txt`도 보존한다. restart 단독76개 통과 로그는 `/data/projects/_scratch/codex-status-screen-restart-initial.txt`다.
+
+| 계획 matrix | 실행한 source/fake 증거 |
+| --- | --- |
+| Screen append / cropped repeat | `test_codex_screen_append_and_synthetic_cropped_repeat_prove_new_boundary_without_cursor_progress`: 동일 cursor·빈 stream의 전체 이력 append와 유일한 Session suffix+기존 첫 prompt 형식. 정확한 UUID/cwd/권한/version/mode와 기존 proof 두 필드·설치 조회1회·단일 입력 확인. `test_codex_screen_append_returns_only_new_card_metadata`는 새 카드 UUID만 반환 |
+| Stale / ambiguous | `test_codex_screen_stale_repaint_exposed_marker_and_ambiguous_crop_never_prove_freshness`: unchanged·footer-only·기존 marker 노출·unanchored crop·이력 변경·일반 명령 삽입·중복 overlap 거부. 이미 cropped된 동일 화면 반복과 footer 변화도 거부. 이전 idle 뒤 기존 카드 노출도 freshness로 사용하지 않음 |
+| Incomplete / conflict | `test_codex_screen_missing_duplicate_and_intervening_response_boundaries_are_rejected`: header/UUID 누락·빈 권한·중복 신원·미지원 version·일반/standalone 명령·startup/resume 거부. `test_codex_screen_partial_card_waits_passively_without_resending`의 불완전→완전 카드 대기 확인. `test_codex_screen_stream_partial_agreement_and_conflicts_never_bypass_stream_rejection`는 빈/echo/부분/완전 일치 stream 허용, schema/control/잘못된 UUID·home/신원 충돌·중복·다른 명령/제품 startup 거부 |
+| Concurrent drift / home | `test_codex_screen_confirmed_original_frame_and_all_passive_guards_remain_required`: runtime/fingerprint/provider/self/busy/draft/child/approval와 원 cursor/screen proof 변화 거부. `test_codex_screen_home_path_keeps_strict_receiver_expansion_and_workspace_match`: 지정 합성 home 경로의 수신자 확장·exact workspace 일치, traversal/끝 공백/환경변수/mismatch 거부. 기존 deadline·설치 drift 회귀 유지 |
+| Complete batch | `test_complete_batch_screen_status_prepare_and_verify_never_launch_or_lose_history`: 같은 cursor의 status prepare/verify, signed Store history와 UUID·소비 미확인/null 유지, launch 없음 |
+| Incomplete batch | `test_incomplete_batch_screen_status_verify_preserves_signed_failure_tail_exclusions_and_proof`: 실제 tempfile signed Store의 접수된 status 실패→명시 verify, 원 queried 행1회만 입력·old failure/event·tail/manual/self·정확한 proof 보존, ready/complete·소비 분리. `test_incomplete_batch_screen_conflict_keeps_failure_and_first_failure_stop`는 충돌 후 uncertainty/history/tail 보존과 launch 없음 |
+| Existing behavior | 이전181개 session 회귀 전부 통과. 정상 stream·Claude modal·prepare/restart/restore/verify·예외·서명·접수 유실·첫 실패 중단·소유 subprocess timeout/출력 상한 유지 |
+
+합성 `codex_screen_pair('~/projects/sandbox/example')`의 모든 before/after 줄과 순서를 지정 JSON과 직접 대조해 정확히 같음을 확인했다. 로그는 `/data/projects/_scratch/codex-status-screen-fixture-compare.txt`이며 실제 native evidence가 아니라는 출처 표기도 확인했다. `git diff --check`와 변경 reference/결정 문서의 로컬 링크 대상 존재 확인도 통과했다. 상세 경계는 [단일 runtime 계약](../common/base/skills/session/references/runtime-refresh.md#codex-status-응답-대기와-수신자-home)에만 두고 restart 문서는 그 계약으로 연결했다.
+
+위 결과는 source 실행·소유 transport doubles·가상 시계·실제 tempfile Store의 검증이다. 구현자는 실제 NAS 조회/입력·native 응답/복구·모델 행동/새 세션·실제 압축/재개·소비 검증을 수행하지 않았다. root가 전달한 현재29행/marker1개/truncated 화면과 반복 status 뒤 동일 화면 가능성은 지원 한계다. 이미 cropped된 동일 화면·중복 suffix·reflow/이력 노출의 모호함은 보류하며 추가 입력/UI 조작으로 해소하지 않는다. 실제 native NAS 검증·독립 quick review·전체 CI/실제 Gitleaks8.30.1·fresh pin/package·rollout은 root의 후속 범위이며 구현자는 원격 작업·commit/push·package·활성화를 하지 않았다. 원자적 compare-and-send 부재에 따른 마지막 관측 이후 경합은 남는다.
+
+독립 Quick 검수와 root 재현에서 빈 이력의 새 카드 오인, multiline/Unicode 공백 필드의 누락 오인, 미완성 standalone `/status` 뒤 이전 stream 필드 재사용을 확인했다. 세 건 모두 최소 패치와 회귀로 보완했다. 영향 RuntimeRefreshTests/Restart186개 통과 뒤 실제 Gitleaks8.30.1의 전체 CI **661개/313.033초, session195개 포함·실패/오류/skip0** 통과했다. 로그는 `/data/projects/_scratch/tr-kit-screen-proof-release-0.8.2-25f16f2f60/common-ci/`다. 기존 일반 작업 이력의 첫 status는 유지했다. 기록된 실제 수신자 전후 화면의 detector replay도 통과했으나, 실시간 native verify나 배치 복구 완료와 구분한다.
+
+CI 뒤 공통 reference 한 곳에 위 거부 조건을 명확히 적었다. 모든 실행 코드·시험 bytes는 CI 입력과 같고 reference 전후 hash를 별도 보존했으며, 배포 후보는 새 경로 `/data/projects/_scratch/tr-kit-screen-proof-final-0.8.2-ad407c0b0c/`에서 다시 조립·검사한다. 실제 호스트 업데이트/재시작·소비는 아직 별도다.
+
+안내문 명확화 뒤 조립 회귀27개/5.309초·실패/오류/skip0과 diff 형식 검사를 통과했다. 최종 후보의 실제 모든 파일은 새 조립물과 fresh 검사에서 별도 대조한다.

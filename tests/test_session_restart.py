@@ -166,6 +166,35 @@ class ModalFake(Fake):
         return super().call(*args)
 
 
+class ScreenStatusFake(Fake):
+    """Status cards repaint without completed stream records; no native evidence."""
+    def __init__(self):
+        super().__init__()
+        self.stale_status = False
+        self.conflict = False
+        # The first status preserves real task history, rather than empty UI.
+        self.frames['term_target']['tail'] = ['› earlier fixture instruction',
+                                              'fixture completed work', '›']
+
+    def call(self, *args):
+        if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/status':
+            handle = args[args.index('--terminal')+1]
+            before = copy.deepcopy(self.frames[handle])
+            result = super().call(*args)
+            frame = self.frames[handle]
+            body = ['  >_ '+frame['delta'][0], *frame['delta'][1:]]
+            old = before['tail'][:-1]
+            # A cropped old card retains its unique Session/cwd/permission suffix.
+            retained = old[-3:] if len(old) >= 4 else old
+            frame.update(latestCursor=before['latestCursor'], delta=[],
+                         tail=before['tail'] if self.stale_status else
+                         [*retained, '/status', *body, '›'])
+            if self.conflict:
+                frame['delta'] = ['Permissions: default']
+            return result
+        return super().call(*args)
+
+
 class Restart(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -658,6 +687,290 @@ class Restart(unittest.TestCase):
         with self.assertRaisesRegex(m.Deferred, 'unresolved-batch'):
             self.prepare()
         self.assertEqual(1, len(self.client.sent))
+
+    def interrupted_preparation(self, selected=None, excluded=None):
+        original = m.rr.native_status
+        def acknowledged_then_incomplete(*args, **kwargs):
+            original(*args, **kwargs)
+            raise m.Deferred('native-identity-unknown')
+        with patch.object(m.rr, 'native_status', side_effect=acknowledged_then_incomplete):
+            return self.prepare(selected, excluded)
+
+    def test_verify_acknowledged_preparation_preserves_failure_tail_exclusions_and_signed_store(self):
+        self.client.add('tail', '/tail')
+        self.client.add('manual', '/manual')
+        ident = self.interrupted_preparation(['term_target', 'term_tail'], ['term_manual'])
+        before = self.load(ident)
+        self.assertEqual('uncertain', before['prepareState'])
+        self.assertEqual(['sending', 'accepted', 'preparation-failed', 'prepared'],
+                         [e['phase'] for e in before['events']])
+        self.client.sent.clear()
+        with patch.object(m, 'locate', side_effect=AssertionError('ordinary discovery')):
+            result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual('complete', after['prepareState'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(before['targets'][1:], after['targets'][1:])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
+        row = after['targets'][0]
+        self.assertEqual(SESSION, row['native']['sessionId'])
+        self.assertEqual('/work', row['native']['cwd'])
+        self.assertEqual('Full Access', row['native']['permissions'])
+        self.assertEqual('ready', row['state'])
+        self.assertIsNone(row['attempt'])
+        self.assertEqual('unverified', result['targets'][0]['consumption'])
+        self.assertIsNone(result['targets'][0]['consumedVersion'])
+        self.assertIn('preparation-verified', [e['phase'] for e in after['events']])
+        verified = next(e for e in after['events'] if e['phase'] == 'preparation-verified')
+        self.assertIn('screenSha256', verified['nativeProof'])
+        self.assertEqual('complete', result['prepareState'])
+
+    def screen_execute(self, operation):
+        clock = [0.0]
+        with patch.object(m.rr.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.rr.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            return operation()
+
+    def test_complete_batch_screen_status_prepare_and_verify_never_launch_or_lose_history(self):
+        self.client = ScreenStatusFake()
+        ident = self.prepare()
+        before = self.load(ident)
+        self.assertEqual('complete', before['prepareState'])
+        self.assertEqual(SESSION, before['targets'][0]['native']['sessionId'])
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(SESSION, after['targets'][0]['native']['sessionId'])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
+        self.assertEqual('unverified', result['targets'][0]['consumption'])
+        self.assertIsNone(result['targets'][0]['consumedVersion'])
+
+    def test_incomplete_batch_screen_status_verify_preserves_signed_failure_tail_exclusions_and_proof(self):
+        self.client = ScreenStatusFake()
+        self.client.add('tail', '/tail')
+        self.client.add('manual', '/manual')
+        self.client.stale_status = True
+        ident = self.screen_execute(lambda: self.prepare(['term_target', 'term_tail'], ['term_manual']))
+        before = self.load(ident)
+        self.assertEqual('uncertain', before['prepareState'])
+        self.assertIsNone(before['targets'][0]['native'])
+        self.client.stale_status = False
+        self.client.sent.clear()
+        with patch.object(m, 'locate', side_effect=AssertionError('ordinary discovery')):
+            result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual('complete', after['prepareState'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(before['targets'][1:], after['targets'][1:])
+        self.assertEqual('ready', after['targets'][0]['state'])
+        self.assertEqual(SESSION, after['targets'][0]['native']['sessionId'])
+        verified = next(e for e in after['events'] if e['phase'] == 'preparation-verified')
+        self.assertEqual(m.rr.output_proof(self.client.frames['term_target']), verified['nativeProof'])
+        self.assertEqual({'cursor', 'screenSha256'}, set(verified['nativeProof']))
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
+        self.assertIsNone(after['targets'][0]['attempt'])
+        self.assertEqual('unverified', result['targets'][0]['consumption'])
+        self.assertIsNone(result['targets'][0]['consumedVersion'])
+
+    def test_incomplete_batch_screen_conflict_keeps_failure_and_first_failure_stop(self):
+        self.client = ScreenStatusFake()
+        self.client.add('tail', '/tail')
+        self.client.stale_status = True
+        ident = self.screen_execute(lambda: self.prepare(['term_target', 'term_tail']))
+        before = self.load(ident)
+        self.client.stale_status = False
+        self.client.conflict = True
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual('uncertain', result['prepareState'])
+        self.assertEqual('native-response-identity-changed', result['targets'][0]['reason'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(before['targets'][1:], after['targets'][1:])
+        self.assertIsNone(after['targets'][0]['native'])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
+
+    def test_verify_preparation_legacy_row_failure_is_retained_as_event(self):
+        ident = self.interrupted_preparation()
+        with m.Store(self.root) as store:
+            batch = store.load(ident)
+            batch['events'] = [e for e in batch['events'] if e['phase'] != 'preparation-failed']
+            store.save(batch)
+        self.execute(ident, 'verify')
+        failures = [e for e in self.load(ident)['events'] if e['phase'] == 'preparation-failed']
+        self.assertEqual('native-identity-unknown', failures[0]['reason'])
+
+    def test_verify_legacy_management_shell_preparation_needs_no_invented_past_self(self):
+        self.client.agents.pop('term_self')
+        self.client.terms['term_self']['agentIdentity'] = None
+        self.client.frames['term_self']['tail'] = ['owner@host:/caller$']
+        ident = self.interrupted_preparation()
+        before = self.load(ident)
+        self.assertEqual(['term_target'], [row['targetId'] for row in before['targets']])
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        self.assertEqual('complete', result['prepareState'])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual(['term_target'], [row['targetId'] for row in self.load(ident)['targets']])
+
+    def test_verify_preparation_never_sends_to_current_self(self):
+        ident = self.interrupted_preparation()
+        self.client.sent.clear()
+        with m.Store(self.root) as store:
+            result = m.execute(self.client, store, ident, 'tab:target', 'verify')
+        self.assertEqual('self', result['targets'][0]['reason'])
+        self.assertEqual('uncertain', result['prepareState'])
+        self.assertEqual([], self.texts())
+
+    def test_verify_preparation_crash_after_identity_save_requires_fresh_same_identity(self):
+        ident = self.interrupted_preparation()
+        original_save = m.Store.save
+        def crash_before_outcome(store, body, *args, **kwargs):
+            if body.get('prepareState') == 'complete':
+                raise OSError('owned outcome write failed')
+            return original_save(store, body, *args, **kwargs)
+        with patch.object(m.Store, 'save', new=crash_before_outcome), self.assertRaises(OSError):
+            self.execute(ident, 'verify')
+        persisted = self.load(ident)
+        self.assertEqual('uncertain', persisted['prepareState'])
+        self.assertEqual(SESSION, persisted['targets'][0]['native']['sessionId'])
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        self.assertEqual('complete', result['prepareState'])
+        self.assertEqual(['/status'], self.texts())
+
+    def test_verify_preparation_with_saved_identity_rejects_new_uuid(self):
+        ident = self.prepare()
+        with m.Store(self.root) as store:
+            batch = store.load(ident)
+            batch['prepareState'] = 'started'
+            store.save(batch)
+        self.client.identities['term_target']['sessionId'] = str(uuid.uuid4())
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        self.assertIn('identity-or-permissions-mismatch', result['targets'][0]['reason'])
+        self.assertEqual('started', result['prepareState'])
+        self.assertEqual(SESSION, self.load(ident)['targets'][0]['native']['sessionId'])
+        self.assertEqual(['/status'], self.texts())
+
+    def test_verify_unacknowledged_preparation_remains_blocked_without_input(self):
+        self.client.fail = 'timeout'
+        ident = self.prepare()
+        self.client.fail = None
+        self.client.sent.clear()
+        before = self.load(ident)
+        with self.assertRaisesRegex(m.Deferred, 'receipt-unmatched'):
+            self.execute(ident, 'verify')
+        self.assertEqual(before, self.load(ident))
+        self.assertEqual([], self.texts())
+        with self.assertRaisesRegex(m.Deferred, 'unresolved-batch'):
+            self.prepare()
+
+    def test_verify_preparation_rejects_mismatched_receipts_mutation_navigation_and_attempts(self):
+        for label in ('request', 'operation', 'handle', 'duplicate', 'mutation', 'navigation', 'attempt'):
+            with self.subTest(label=label):
+                self.root = Path(self.tmp.name)/label
+                self.client = Fake()
+                ident = self.interrupted_preparation()
+                with m.Store(self.root) as store:
+                    batch = store.load(ident)
+                    accepted = next(e for e in batch['events'] if e['phase'] == 'accepted')
+                    if label == 'request':
+                        accepted['requestId'] = None
+                    elif label in ('operation', 'handle'):
+                        accepted['operationId' if label == 'operation' else 'handle'] = 'different'
+                    elif label == 'attempt':
+                        batch['targets'][0]['attempt'] = {'state': 'complete'}
+                    elif label == 'duplicate':
+                        batch['events'].extend(copy.deepcopy(batch['events'][:2]))
+                    else:
+                        batch['events'].append({'phase': 'sending', 'targetId': 'term_target',
+                                                'handle': 'term_target', 'operationId': 'other',
+                                                'step': 'normal-exit' if label == 'mutation' else 'modal-key'})
+                    store.save(batch)
+                self.client.sent.clear()
+                with self.assertRaises(m.Deferred):
+                    self.execute(ident, 'verify')
+                self.assertEqual([], self.texts())
+                self.assertEqual('uncertain', self.load(ident)['prepareState'])
+
+    def test_verify_preparation_preserves_unresolved_on_binding_runtime_terminal_and_unsafe_state(self):
+        for label in ('binding', 'runtime', 'terminal', 'busy', 'draft', 'child', 'provider', 'self'):
+            with self.subTest(label=label):
+                self.root = Path(self.tmp.name)/label
+                self.client = Fake()
+                ident = self.interrupted_preparation()
+                if label == 'binding':
+                    with m.Store(self.root) as store:
+                        batch = store.load(ident)
+                        batch['binding']['profile'] = 'other'
+                        store.save(batch)
+                elif label == 'runtime':
+                    self.client.runtime = 'other'
+                elif label == 'terminal':
+                    self.client.terms['term_target']['incarnationId'] = 'other'
+                elif label == 'busy':
+                    self.client.agents['term_target']['state'] = 'working'
+                elif label == 'draft':
+                    self.client.frames['term_target']['draft'] = 'typed'
+                elif label == 'child':
+                    self.client.agents['term_target']['children'] = [{'state': 'working'}]
+                elif label == 'provider':
+                    self.client.terms['term_target']['agentIdentity'] = 'claude'
+                else:
+                    self.client.terms['term_self']['leafId'] = 'moved'
+                self.client.sent.clear()
+                try:
+                    self.execute(ident, 'verify')
+                except m.Deferred:
+                    pass
+                self.assertEqual([], self.texts())
+                self.assertEqual([], self.client.created)
+                self.assertEqual('uncertain', self.load(ident)['prepareState'])
+
+    def test_verify_preparation_cannot_restart_restore_or_bypass_other_unresolved_batch(self):
+        ident = self.interrupted_preparation()
+        self.client.sent.clear()
+        for mode in ('restart', 'restore'):
+            with self.assertRaisesRegex(m.Deferred, 'preparation-incomplete'):
+                self.execute(ident, mode)
+        with m.Store(self.root) as store:
+            other = copy.deepcopy(store.load(ident))
+            other['batchId'] = str(uuid.uuid4())
+            store.save(other, new=True)
+        with self.assertRaisesRegex(m.Deferred, 'unresolved-batch'):
+            self.execute(ident, 'verify')
+        self.assertEqual([], self.texts())
+
+    def test_verify_preparation_failed_fresh_query_retains_uncertainty_and_never_retries(self):
+        ident = self.interrupted_preparation()
+        self.client.sent.clear()
+        self.client.fail = 'timeout'
+        result = self.execute(ident, 'verify')
+        self.assertEqual('timeout', result['targets'][0]['reason'])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual('uncertain', self.load(ident)['prepareState'])
+        self.client.fail = None
+        self.client.sent.clear()
+        with self.assertRaisesRegex(m.Deferred, 'receipt-unmatched'):
+            self.execute(ident, 'verify')
+        self.assertEqual([], self.texts())
+
+    def test_verify_preparation_rechecks_installation_before_native_input(self):
+        ident = self.interrupted_preparation()
+        self.client.sent.clear()
+        current = m.rr.plugin_inventory('codex', '/work')
+        changed = {**current, 'nativeVersion': 'different'}
+        with patch.object(m.rr, 'plugin_inventory', side_effect=[current, current, changed]):
+            report = self.execute(ident, 'verify')
+        self.assertEqual('installed-versions-drift', report['targets'][0]['reason'])
+        self.assertEqual([], self.texts())
+        self.assertEqual('uncertain', self.load(ident)['prepareState'])
 
     def test_exception_identity_unknown_after_runtime_change_defers(self):
         self.client.add('excluded', '/work')

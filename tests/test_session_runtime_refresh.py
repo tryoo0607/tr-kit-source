@@ -33,6 +33,21 @@ def agent(t):
                 programStatus={'state': 'idle'}, subagentObservation='live', children=[])
 
 
+def codex_screen_pair(cwd='/work'):
+    """Synthetic observed line order/equality only; this is not native evidence."""
+    lines = {i: 'fixture-line-'+str(i) for i in range(1, 21)}
+    card = ['  >_ OpenAI Codex (v0.167.2)', *[lines[i] for i in range(5, 10)],
+            '  Directory:           '+cwd, '  Permissions:         Full Access',
+            *[lines[i] for i in range(10, 15)],
+            '  Session:             11111111-1111-4111-8111-111111111111',
+            *[lines[i] for i in range(15, 19)]]
+    before = ['› earlier fixture instruction', *[lines[i] for i in range(1, 5)],
+              '/status', *card, '› Ask Codex to do anything', lines[19], lines[20]]
+    after = [before[0], *card[-6:], '/status', *card,
+             '› Ask Codex to do anything', lines[19], lines[20]]
+    return before, after
+
+
 class Fake:
     environment = None
     runtime = 'runtime'
@@ -366,6 +381,424 @@ class RuntimeRefreshTests(unittest.TestCase):
                 m.native_status(self.client, self.plan, self.plan['targets'][0], self.self_pane, journal)
         self.assertEqual(1, len(self.client.sent))
         self.assertEqual('/status', self.client.sent[0][self.client.sent[0].index('--text')+1])
+
+    def delayed_codex(self, *, partial=False, change=None):
+        client = self.client
+        clock = [0.0]
+        fields = ['OpenAI Codex (v0.167.2)', 'Session: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                  'Directory: /work', 'Permissions: Full Access']
+        original_observe, original_call = client.observe, client.call
+        def observe(handle):
+            if client.sent:
+                if partial or clock[0] >= 0.59:
+                    body = fields if clock[0] >= 0.59 else fields[:3]
+                    client.read.update(latestCursor='11', tail=['› /status', *body, '›'])
+                if change and clock[0] >= 0.1:
+                    change(client)
+            return original_observe(handle)
+        def call(*args):
+            if args[:2] == ('terminal', 'read'):
+                body = fields if clock[0] >= 0.59 else fields[:3]
+                return {'terminal': {'source': 'stream', 'tail': ['› /status', *body, '›']}}
+            return original_call(*args)
+        client.observe, client.call = observe, call
+        return client, clock
+
+    def test_codex_delayed_059_second_and_partial_status_use_one_send_and_no_wait_inventory(self):
+        for partial in (False, True):
+            with self.subTest(partial=partial):
+                self.client = Fake()
+                # Unchanged historical ordinary-command output is not a new
+                # boundary while acknowledgement precedes rendering.
+                self.client.read['tail'] = ['› earlier ordinary command', 'done', '›']
+                client, clock = self.delayed_codex(partial=partial)
+                self.inventory.reset_mock()
+                with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                    native = m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+                self.assertGreaterEqual(clock[0], 0.59)
+                self.assertLess(clock[0], 3)
+                self.assertEqual('/work', native['cwd'])
+                self.assertEqual(1, len(client.sent))
+                self.assertEqual(1, self.inventory.call_count)
+                self.assertEqual('11', self.plan['targets'][0]['nativeProof']['cursor'])
+
+    def screen_only_codex(self, before, after, *, stream=None, cursor='10'):
+        client = Fake()
+        client.read['tail'] = before
+        original = client.call
+        def call(*args):
+            if args[:2] == ('terminal', 'read'):
+                return {'terminal': {'source': 'stream', 'tail': []} if stream is None else stream}
+            result = original(*args)
+            if args[:2] == ('terminal', 'send'):
+                client.read.update(tail=after, latestCursor=cursor)
+            return result
+        client.call = call
+        return client
+
+    def run_screen_status(self, client, plan=None):
+        clock = [0.0]
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            return m.native_status(client, plan or self.plan,
+                                   (plan or self.plan)['targets'][0], self.self_pane, Mock())
+
+    def test_codex_screen_append_and_synthetic_cropped_repeat_prove_new_boundary_without_cursor_progress(self):
+        before, cropped = codex_screen_pair()
+        full = before[:-3] + cropped[7:]
+        for after in (cropped, full):
+            with self.subTest(cropped=after == cropped):
+                client = self.screen_only_codex(before, after)
+                self.inventory.reset_mock()
+                identity = self.run_screen_status(client)
+                self.assertEqual({'sessionId': '11111111-1111-4111-8111-111111111111',
+                                  'cwd': '/work', 'permissions': 'Full Access',
+                                  'nativeVersion': '0.167.2', 'resumeMode': 'codex-full-access'}, identity)
+                self.assertEqual(m.output_proof(client.read), self.plan['targets'][0]['nativeProof'])
+                self.assertEqual({'cursor', 'screenSha256'}, set(self.plan['targets'][0]['nativeProof']))
+                self.assertEqual(1, self.inventory.call_count)
+                self.assertEqual(1, len(client.sent))
+
+    def test_codex_screen_append_returns_only_new_card_metadata(self):
+        before, after = codex_screen_pair()
+        after = [line.replace('11111111-1111-4111-8111-111111111111',
+                              '22222222-2222-4222-8222-222222222222') if i > 7 else line
+                 for i, line in enumerate(after)]
+        native = self.run_screen_status(self.screen_only_codex(before, after))
+        self.assertEqual('22222222-2222-4222-8222-222222222222', native['sessionId'])
+
+    def test_codex_screen_exposed_card_without_substantial_history_anchor_is_rejected(self):
+        _, after = codex_screen_pair()
+        for history in ([], [''], [' '], ['/status'], ['› /status'], ['› Ask Codex to do anything']):
+            with self.subTest(history=history):
+                client = self.screen_only_codex([*history, '›'], [*history, *after[7:]])
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+        client = self.screen_only_codex(['›', 'fixture footer'], [*after[7:], 'fixture footer'])
+        with self.assertRaises(m.Deferred):
+            self.run_screen_status(client)
+        self.assertEqual(1, len(client.sent))
+        # Complete retained task history anchors the first status without any
+        # prior native card; cropping still requires its stronger Session proof.
+        history = ['› earlier fixture instruction', 'fixture completed work']
+        client = self.screen_only_codex([*history, '›'], [*history, *after[7:]])
+        self.assertEqual('11111111-1111-4111-8111-111111111111',
+                         self.run_screen_status(client)['sessionId'])
+        self.assertEqual(1, len(client.sent))
+
+    def test_codex_screen_identity_rejects_parser_recognizable_malformed_fields_before_partial_fill(self):
+        before, after = codex_screen_pair()
+        expected = m.codex_screen_identity('\n'.join(after[8:-3]))
+        for label, value in (('Session', '22222222-2222-4222-8222-222222222222'),
+                             ('cwd', '/other'), ('Permissions', 'default')):
+            for malformed in (label+'\n: '+value, label+'\u00a0: '+value,
+                              '\u00a0'+label+': '+value, '│\u2003'+label+': '+value,
+                              label+'\n:\n'+value):
+                with self.subTest(malformed=malformed):
+                    with self.assertRaisesRegex(m.Deferred, 'native-response-identity-malformed'):
+                        m.codex_screen_identity(malformed, expected=expected)
+                    client = self.screen_only_codex(before, after,
+                        stream={'source': 'stream', 'tail': [malformed]})
+                    with self.assertRaises(m.Deferred):
+                        self.run_screen_status(client)
+                    self.assertEqual(1, len(client.sent))
+                    self.assertNotIn('nativeProof', self.plan['targets'][0])
+        for valid in ('', 'Session:\t'+expected['sessionId'],
+                      '│ Session ID : '+expected['sessionId']+' │',
+                      '\tPermissions:\tFull Access', '    Directory: /work'):
+            with self.subTest(valid=valid):
+                self.assertEqual(expected, m.codex_screen_identity(valid, expected=expected))
+
+    def test_codex_advanced_stream_cannot_supply_old_identity_after_incomplete_standalone_status(self):
+        before, _ = codex_screen_pair()
+        partial = before[:-3] + ['/status', *before[-3:]]
+        client = self.screen_only_codex(before, partial, cursor='11',
+            stream={'source': 'stream', 'tail': before[6:-3]})
+        with self.assertRaisesRegex(m.Deferred, 'native-identity-unknown'):
+            self.run_screen_status(client)
+        self.assertEqual(1, len(client.sent))
+        self.assertNotIn('nativeProof', self.plan['targets'][0])
+        for command in ('/status', '/help'):
+            text = '\n'.join([*before[6:-3], command, '›'])
+            if command == '/status':
+                self.assertEqual('›', m.current_status_response('codex', text))
+            else:
+                with self.assertRaisesRegex(m.Deferred, 'native-response-boundary-changed'):
+                    m.current_status_response('codex', text)
+        # Standalone Codex syntax does not change Claude response handling.
+        self.assertEqual('/status\n❯', m.current_status_response('claude', '/status\n❯'))
+
+    def test_codex_screen_stale_repaint_exposed_marker_and_ambiguous_crop_never_prove_freshness(self):
+        before, after = codex_screen_pair()
+        cases = {
+            'unchanged': before,
+            'footer-only': before[:-1] + ['clock changed'],
+            'old-marker-exposed': before[5:],
+            'unanchored-crop': after[3:],
+            'history-exposure': [*before[:5], *after[7:]],
+            'changed-history': ['› a different instruction', *after[1:]],
+            'inserted-command': [*after[:7], '› other command', *after[7:]],
+        }
+        for label, displayed in cases.items():
+            with self.subTest(label=label):
+                client = self.screen_only_codex(before, displayed)
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+                self.assertEqual(1, len(client.sent))
+        # Two identical possible old suffix occurrences make the crop ambiguous.
+        ambiguous = before[:-3] + before[19:-3] + before[-3:]
+        self.assertIsNone(m.codex_screen_status('\n'.join(ambiguous), '\n'.join(after)))
+        for displayed in (after, after[:-1] + ['clock changed']):
+            with self.subTest(repeated_cropped=True, displayed=displayed[-1]):
+                client = self.screen_only_codex(after, displayed)
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+        client = self.screen_only_codex(['›', *after[7:-3]], after[7:])
+        with self.assertRaises(m.Deferred):
+            self.run_screen_status(client)
+        self.assertEqual(1, len(client.sent))
+
+    def test_codex_screen_missing_duplicate_and_intervening_response_boundaries_are_rejected(self):
+        before, after = codex_screen_pair()
+        cases = {
+            'missing-header': after[:8] + after[9:],
+            'unknown-header': [line.replace('v0.167.2', 'v9.9.9') if i > 7 else line
+                               for i, line in enumerate(after)],
+            'missing-session': [line for i, line in enumerate(after) if i < 8 or 'Session:' not in line],
+            'empty-permission': [line.split(':')[0]+':' if i > 7 and 'Permissions:' in line else line
+                                 for i, line in enumerate(after)],
+            'duplicate-session': after[:-3] + [after[21]] + after[-3:],
+            'duplicate-cwd': after[:-3] + ['cwd: /work'] + after[-3:],
+            'duplicate-permission': after[:-3] + ['Permissions: Full Access'] + after[-3:],
+            'ordinary-command': after[:-3] + ['› completed ordinary command'] + after[-3:],
+            'standalone-command': after[:-3] + ['/help'] + after[-3:],
+            'startup': after[:-3] + ['  >_ OpenAI Codex (v0.167.2)'] + after[-3:],
+            'resume': after[:-3] + ['To continue this session: codex resume old'] + after[-3:],
+        }
+        for label, displayed in cases.items():
+            with self.subTest(label=label):
+                client = self.screen_only_codex(before, displayed)
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
+    def test_codex_screen_stream_partial_agreement_and_conflicts_never_bypass_stream_rejection(self):
+        before, after = codex_screen_pair()
+        for tail in ([], ['/status'], ['Session: 11111111-1111-4111-8111-111111111111'],
+                     ['Directory: /work', 'Permissions: Full Access'], after[8:-3]):
+            with self.subTest(agreeing=tail):
+                client = self.screen_only_codex(before, after, stream={'source': 'stream', 'tail': tail})
+                self.assertEqual('/work', self.run_screen_status(client)['cwd'])
+                self.assertEqual(1, len(client.sent))
+        rejected = [
+            {'source': 'screen', 'tail': []}, {'source': 'stream', 'tail': [None]},
+            {'source': 'stream', 'tail': 'invalid'},
+            {'source': 'stream', 'tail': ['\x1b[2J']},
+            *[{'source': 'stream', 'tail': tail} for tail in (
+                ['Session: 22222222-2222-4222-8222-222222222222'], ['Directory: /other'],
+                ['Permissions: default'], ['Session: invalid'], ['cwd: ~/../work'],
+                ['Permissions:', 'Session: 11111111-1111-4111-8111-111111111111'],
+                ['OpenAI Codex (v9.9.9)'], ['› ordinary command'], ['/help'],
+                ['To continue this session, run: codex resume old'],
+                ['Claude Code v2.1.330'],
+                ['Session: 11111111-1111-4111-8111-111111111111'] * 2,
+                ['Session: 22222222-2222-4222-8222-222222222222', *after[8:-3]])]
+        ]
+        for stream in rejected:
+            with self.subTest(rejected=stream):
+                client = self.screen_only_codex(before, after, stream=stream)
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
+    def test_codex_screen_partial_card_waits_passively_without_resending(self):
+        before, after = codex_screen_pair()
+        client = self.screen_only_codex(before, after)
+        original = client.observe
+        reads = [0]
+        def observe(handle):
+            item, frame = original(handle)
+            if client.sent:
+                reads[0] += 1
+                if reads[0] < 4:
+                    frame['tail'] = [line for i, line in enumerate(after) if i < 8 or 'Session:' not in line]
+            return item, frame
+        client.observe = observe
+        self.assertEqual('/work', self.run_screen_status(client)['cwd'])
+        self.assertGreaterEqual(reads[0], 5)
+        self.assertEqual(1, len(client.sent))
+
+    def test_codex_screen_confirmed_original_frame_and_all_passive_guards_remain_required(self):
+        before, after = codex_screen_pair()
+        changes = {
+            'runtime': lambda c: setattr(c, 'runtime', 'other'),
+            'identity': lambda c: c.target.update(incarnationId='other'),
+            'provider': lambda c: c.target.update(agentIdentity='claude'),
+            'self': lambda c: c.self.update(leafId='gone'),
+            'busy': lambda c: c.agents[1].update(state='working'),
+            'draft': lambda c: c.read.update(draft='typed'),
+            'child': lambda c: c.agents[1].update(children=[{'state': 'working'}]),
+            'approval': lambda c: c.target.update(agentWait={'state': 'waiting'}),
+            'cursor': lambda c: c.read.update(latestCursor='11'),
+            'screen': lambda c: c.read['tail'].append('changed footer'),
+        }
+        for label, change in changes.items():
+            with self.subTest(label=label):
+                client = self.screen_only_codex(before, after)
+                original, count = client.inventory, [0]
+                def inventory():
+                    if client.sent:
+                        count[0] += 1
+                        if count[0] == 2:
+                            change(client)
+                    return original()
+                client.inventory = inventory
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
+    def test_codex_screen_home_path_keeps_strict_receiver_expansion_and_workspace_match(self):
+        before, after = codex_screen_pair('~/projects/sandbox/example')
+        with patch.object(m.Path, 'home', return_value=Path('/receiver')):
+            client = self.screen_only_codex(before, after)
+            client.target['worktreePath'] = '/receiver/projects/sandbox/example'
+            plan = copy.deepcopy(self.plan)
+            plan['targets'][0]['identity'] = m.fingerprint(client.target)
+            self.assertEqual(client.target['worktreePath'], self.run_screen_status(client, plan)['cwd'])
+            for cwd in ('~/../work', '~/work ', '$HOME/work', '/different'):
+                before, after = codex_screen_pair(cwd)
+                client = self.screen_only_codex(before, after)
+                with self.subTest(cwd=cwd), self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+
+    def test_codex_pending_observation_rejects_each_state_and_boundary_drift(self):
+        changes = {
+            'runtime': lambda c: setattr(c, 'runtime', 'other'),
+            'provider': lambda c: c.target.update(agentIdentity='claude'),
+            'identity': lambda c: c.target.update(incarnationId='other'),
+            'self': lambda c: c.self.update(leafId='gone'),
+            'busy': lambda c: c.agents[1].update(state='working'),
+            'draft': lambda c: c.read.update(draft='typed'),
+            'child': lambda c: c.agents[1].update(children=[{'state': 'working'}]),
+            'boundary': lambda c: c.read.update(tail=['› ordinary command', '›']),
+        }
+        for label, change in changes.items():
+            with self.subTest(label=label):
+                self.client = Fake()
+                client, clock = self.delayed_codex(change=change)
+                with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                    with self.assertRaises(m.Deferred):
+                        m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+                self.assertEqual(1, len(client.sent))
+                self.assertLess(clock[0], 0.59)
+
+    def test_codex_cursor_progress_with_unchanged_ordinary_screen_waits_for_delayed_status(self):
+        self.client.read['tail'] = ['› earlier ordinary command', 'done', '›']
+        client, clock = self.delayed_codex(change=lambda c: c.read.update(latestCursor='11'))
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            native = m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertGreaterEqual(clock[0], 0.59)
+        self.assertEqual('/work', native['cwd'])
+        self.assertEqual(1, len(client.sent))
+        self.assertEqual('11', self.plan['targets'][0]['nativeProof']['cursor'])
+
+    def test_codex_pending_deadline_never_resends_or_reuses_old_status(self):
+        client, clock = self.delayed_codex()
+        client.observe = Fake.observe.__get__(client)
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            with self.assertRaisesRegex(m.Deferred, 'freshness'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(client.sent))
+        self.assertLessEqual(clock[0], 3)
+
+    def test_codex_delayed_complete_response_requires_same_confirmed_frame_proof(self):
+        client, clock = self.delayed_codex()
+        original = client.observe
+        complete_reads = [0]
+        def observe(handle):
+            item, frame = original(handle)
+            if clock[0] >= 0.59:
+                complete_reads[0] += 1
+                if complete_reads[0] > 1:
+                    frame['tail'].append('later output')
+            return item, frame
+        client.observe = observe
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            with self.assertRaisesRegex(m.Deferred, 'native-response-proof-changed'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(client.sent))
+
+    def test_codex_response_after_observation_deadline_is_not_accepted(self):
+        client, clock = self.delayed_codex()
+        original = client.observe
+        def observe(handle):
+            if client.sent:
+                clock[0] = 3.1
+            return original(handle)
+        client.observe = observe
+        with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(m.Deferred, 'native-response-deadline'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(client.sent))
+
+    def test_receiver_home_cwd_strict_normalization_and_exact_workspace(self):
+        with patch.object(m.Path, 'home', return_value=Path('/receiver')):
+            self.assertEqual('/receiver', m.receiver_cwd('~'))
+            self.assertEqual('/receiver/projects/local/general', m.receiver_cwd('~/projects/local/general'))
+            for value in ('~user/work', '$HOME/work', 'relative', '~/../work', '~/./work',
+                          '~//work', '~/work/', '~/$(pwd)', '~/work\\other', '~/a/~', '~/ work', '~/work '):
+                with self.subTest(value=value), self.assertRaises(m.Deferred):
+                    m.receiver_cwd(value)
+            client, clock = self.delayed_codex()
+            real_status = m.status
+            def home_status(provider, text):
+                return real_status(provider, text.replace('Directory: /work', 'Directory: ~/work'))
+            with patch.object(m, 'status', side_effect=home_status), \
+                 patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                with self.assertRaisesRegex(m.Deferred, 'cwd-mismatch'):
+                    m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+            self.client = Fake()
+            self.client.target['worktreePath'] = '/receiver/work'
+            matching_plan = copy.deepcopy(self.plan)
+            matching_plan['targets'][0]['identity'] = m.fingerprint(self.client.target)
+            client, clock = self.delayed_codex()
+            with patch.object(m, 'status', side_effect=home_status), \
+                 patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 patch.object(m.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+                native = m.native_status(client, matching_plan, matching_plan['targets'][0], self.self_pane, Mock())
+            self.assertEqual('/receiver/work', native['cwd'])
+
+    def test_status_preserves_ambiguous_home_whitespace_and_valid_field_alignment(self):
+        def text(directory):
+            return ('OpenAI Codex (v0.167.2)\nSession: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\n'
+                    + directory + '\nPermissions: Full Access\n›')
+        with patch.object(m.Path, 'home', return_value=Path('/receiver')):
+            for value in ('~/work ', '~/work\t', '~ ', '~/ work', '~/work\u00a0'):
+                with self.subTest(value=value), self.assertRaises(m.Deferred):
+                    m.status('codex', text('    Directory:  '+value))
+            for directory, expected in (
+                    ('    Directory:       ~/work', '/receiver/work'),
+                    ('│ Directory: ~/work│', '/receiver/work'),
+                    ('    Directory:       ~', '/receiver'),
+                    ('│ Directory: /work        │', '/work'),
+                    ('    Directory: /work   ', '/work')):
+                with self.subTest(directory=directory):
+                    self.assertEqual(expected, m.status('codex', text(directory))['cwd'])
 
     def status_with_old_screen(self, fresh):
         client = Fake()

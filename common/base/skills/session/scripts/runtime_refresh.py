@@ -491,22 +491,45 @@ def make_plan(report, selected):
             'environment': report['environment'], 'remoteConfigured': report.get('remoteConfigured', False), 'targets': [rows[h] for h in selected]}
 
 
+def receiver_cwd(value):
+    """Expand only unambiguous receiver-local home displays, never shell syntax."""
+    if not token(value):
+        raise Deferred('native-identity-unknown')
+    if value == '~' or value.startswith('~/'):
+        parts = value[2:].split('/') if value != '~' else []
+        if any(not part or part != part.strip() or part in ('.', '..')
+               or not re.fullmatch(r'[\w .@+-]+', part) for part in parts):
+            raise Deferred('native-identity-unknown')
+        home = Path.home()
+        if not home.is_absolute() or str(home.resolve()) != str(home):
+            raise Deferred('native-identity-unknown')
+        return str(home.joinpath(*parts))
+    if not value.startswith('/'):
+        raise Deferred('native-identity-unknown')
+    return value
+
+
 def status(provider, text):
     # Native status output is used only for these metadata fields; never persisted verbatim.
-    def field(names):
-        matches = re.findall(r'(?im)^\s*[│|]?\s*(?:' + names + r')\s*:\s*(.*?)\s*[│|]?\s*$', text)
+    def field(names, *, preserve_trailing=False):
+        if preserve_trailing:
+            matches = re.findall(r'(?im)^[ \t]*[│|]?[ \t]*(?:' + names
+                                 + r')[ \t]*:[ \t]*([^\r\n]*?)(?:[│|][ \t]*)?\r?$', text)
+        else:
+            matches = re.findall(r'(?im)^\s*[│|]?\s*(?:' + names + r')\s*:\s*(.*?)\s*[│|]?\s*$', text)
         if not matches:
             raise Deferred('native-identity-unknown')
-        return matches[-1].strip()
+        return matches[-1] if preserve_trailing else matches[-1].strip()
     ident = field('Session|Session ID')
     try:
         if str(uuid.UUID(ident)) != ident.lower():
             raise ValueError()
     except ValueError:
         raise Deferred('native-identity-unknown') from None
-    cwd = field('Directory|cwd|Working directory')
+    displayed_cwd = field('Directory|cwd|Working directory', preserve_trailing=True)
+    cwd = receiver_cwd(displayed_cwd if displayed_cwd.startswith('~') else displayed_cwd.strip())
     permission = field('Permissions|Permission mode')
-    if not cwd.startswith('/') or not token(cwd) or not token(permission):
+    if not token(permission):
         raise Deferred('native-identity-unknown')
     result = {'sessionId': ident, 'cwd': cwd, 'permissions': permission}
     if provider == 'claude':
@@ -856,9 +879,10 @@ def current_status_response(provider, text):
                 (provider == 'claude' and re.fullmatch(r'\s*Settings\s+Status\s+Config\s+Usage\s+Stats\s*', line))):
             start = index
             other_command = False
-        if (stripped.startswith(prompt + ' ') and
-                not (provider == 'codex' and stripped == '› Ask Codex to do anything')):
-            other_command = stripped != prompt + ' /status'
+        if ((stripped.startswith(prompt + ' ') and
+                not (provider == 'codex' and stripped == '› Ask Codex to do anything'))
+                or (provider == 'codex' and stripped.startswith('/'))):
+            other_command = stripped not in (prompt + ' /status', '/status')
             start = index + 1
         if re.search(r'(?:To continue this session|codex resume|claude .*--resume)', line):
             start = index + 1
@@ -866,6 +890,126 @@ def current_status_response(provider, text):
     if other_command:
         raise Deferred('native-response-boundary-changed')
     return '\n'.join(lines[start:])
+
+
+def codex_screen_status(previous, current):
+    """Prove an appended /status card from ordered content, not a repaint hash.
+
+    Full retained history is supported. A cropped repeat additionally needs a
+    unique suffix containing the previous response's Session line. Codex may
+    retain the first historical user prompt above that suffix.
+    """
+    idle = ('›', '› Ask Codex to do anything')
+    if previous == current:
+        return None
+    before, after = previous.splitlines(), current.splitlines()
+    prompts = [i for i, line in enumerate(before) if line.strip() in idle]
+    if not prompts:
+        return None
+    # Only UI footer may be discarded. An already visible card/command after
+    # the old idle prompt cannot later acquire freshness by moving above it.
+    for line in before[prompts[-1]+1:]:
+        if (line.strip().startswith(('/', '›')) or 'OpenAI Codex (v' in line
+                or 'Claude Code v' in line
+                or re.match(r'(?i)^[ \t]*[│|]?[ \t]*(?:Session(?: ID)?|Directory|cwd|Working directory|Permissions|Permission mode)[ \t]*:', line)
+                or re.search(r'(?:To continue this session|codex resume|claude .*--resume)', line)):
+            return None
+    history = before[:prompts[-1]]
+    # Empty prompts, blank lines and a command echo do not anchor history.
+    if not any(line.strip() and line.strip() not in (*idle, '/status', '› /status')
+               for line in history):
+        return None
+    markers = [i for i, line in enumerate(after) if line.strip() in ('/status', '› /status')]
+    if not markers:
+        return None
+    index = markers[-1]
+    retained = after[:index]
+    if retained != history:
+        # A crop cannot be inferred from arbitrary shared text. Anchor it to
+        # the complete previous response and require one exact old occurrence.
+        try:
+            old = current_status_response('codex', '\n'.join(history))
+            old_identity = codex_screen_identity(old)
+        except Deferred:
+            return None
+        pinned = (1 if history and history[0].lstrip().startswith('› ')
+                  and history[0].strip() not in idle else 0)
+        overlaps = []
+        for keep in set((0, pinned)):
+            if retained[:keep] != history[:keep]:
+                continue
+            suffix = retained[keep:]
+            if len(suffix) < 2 or not any(re.fullmatch(
+                    r'[ \t]*[│|]?[ \t]*Session(?: ID)?[ \t]*:[ \t]*'
+                    + re.escape(old_identity['sessionId']) + r'[ \t]*[│|]?[ \t]*', line,
+                    flags=re.IGNORECASE) for line in suffix):
+                continue
+            starts = [i for i in range(keep, len(history)) if history[i:i+len(suffix)] == suffix]
+            if len(starts) == 1 and starts[0] + len(suffix) == len(history):
+                overlaps.append((keep, starts[0]))
+        if len(overlaps) != 1:
+            return None
+    response = after[index+1:]
+    # The marker must immediately precede a supported native header. Never
+    # search past intervening ordinary commands, startup or resume output.
+    if not response or not re.fullmatch(
+            r'[ \t]*>_ OpenAI Codex \(v(?:' + '|'.join(map(re.escape, CODEX_RESUME_VERSIONS))
+            + r')\)[ \t]*', response[0]):
+        return None
+    ends = [i for i, line in enumerate(response) if line.strip() in idle]
+    if not ends:
+        return None
+    end = ends[0]
+    for i, line in enumerate(response):
+        stripped = line.strip()
+        if ((stripped.startswith('›') and not (i == end and stripped in idle))
+                or stripped.startswith('/') or (i and 'OpenAI Codex (v' in line)
+                or 'Claude Code v' in line
+                or re.search(r'(?:To continue this session|codex resume|claude .*--resume)', line)):
+            raise Deferred('native-response-boundary-changed')
+    fresh = '\n'.join(response[:end])
+    codex_screen_identity('\n'.join(response))
+    codex_screen_identity(fresh)
+    return fresh
+
+
+def codex_screen_identity(text, expected=None):
+    """Strict card fields, or agreement of every available stream identity field."""
+    labels = (('Session|Session ID', 'Session', 'sessionId'),
+              ('Directory|cwd|Working directory', 'Directory', 'cwd'),
+              ('Permissions|Permission mode', 'Permissions', 'permissions'))
+    completed = text
+    for names, label, key in labels:
+        count = len(re.findall(r'(?im)^[ \t]*[│|]?[ \t]*(?:' + names + r')[ \t]*:', text))
+        # status() accepts \s (including Unicode/newlines). Such fields must
+        # never be mistaken for absent fields and replaced by screen values.
+        parsed_count = len(re.findall(r'(?im)^\s*[│|]?\s*(?:' + names + r')\s*:', text))
+        if parsed_count != count:
+            raise Deferred('native-response-identity-malformed')
+        if count > 1:
+            raise Deferred('native-response-identity-ambiguous')
+        if count == 1:
+            values = re.findall(r'(?im)^[ \t]*[│|]?[ \t]*(?:' + names
+                                + r')[ \t]*:[ \t]*([^\r\n]*)\r?$', text)
+            if len(values) != 1 or not values[0].strip().strip('│|').strip():
+                raise Deferred('native-identity-unknown')
+        if count == 0:
+            if expected is None:
+                raise Deferred('native-identity-unknown')
+            completed += '\n' + label + ': ' + expected[key]
+    versions = codex_versions(text)
+    if len(versions) > 1 or len(versions) != text.count('OpenAI Codex (v'):
+        raise Deferred('native-response-identity-ambiguous')
+    if versions and versions[0] not in CODEX_RESUME_VERSIONS:
+        raise Deferred('native-response-version-unknown')
+    if not versions:
+        if expected is None:
+            raise Deferred('native-identity-unknown')
+        completed += '\nOpenAI Codex (v' + expected['nativeVersion'] + ')'
+    identity = status('codex', completed)
+    if expected is not None and identity != expected:
+        raise Deferred('native-response-identity-changed')
+    return identity
 
 
 def native_query(client, plan, target, self_pane, journal, command, phase, completion=None, proof=None, keep_modal=False):
@@ -1009,7 +1153,71 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
             if fresh.strip() and (len(indices) > old_count or fresh not in previous_text):
                 return finish_response(current, fresh)
     else:
-        _, current = passive_guard(client, plan, target, self_pane)
+        # Acknowledgement/idle can precede rendering. Keep the original cursor
+        # and poll only passive observations; never repeat input or inventory.
+        deadline = time.monotonic() + 3
+        pending = Deferred('native-response-freshness-unknown')
+        for attempt in range(60):
+            if time.monotonic() >= deadline:
+                raise pending
+            _, current = passive_guard(client, plan, target, self_pane)
+            screen_fresh = None
+            if command == '/status':
+                try:
+                    screen_fresh = codex_screen_status(previous_text, screen(current))
+                except Deferred as error:
+                    if str(error) != 'native-identity-unknown':
+                        raise
+                    pending = error
+            # Cursor progress can precede screen rendering. An unchanged old
+            # ordinary-command frame has no new response boundary yet.
+            historical_boundary = False
+            try:
+                current_status_response(target['provider'], screen(current))
+            except Deferred:
+                if screen(current) != previous_text:
+                    raise
+                historical_boundary = True
+            if not historical_boundary and (screen_fresh is not None or current.get('latestCursor') not in (None, cursor)):
+                delta = obj(client.call('terminal', 'read', '--terminal', target['handle'], '--cursor', str(cursor)).get('terminal'))
+                tail = delta.get('tail')
+                if delta.get('source') != 'stream' or not isinstance(tail, list) or any(not isinstance(x, str) for x in tail):
+                    raise Deferred('native-response-output-unknown')
+                fresh = '\n'.join(tail)
+                if screen_fresh is not None:
+                    # Even an unchanged cursor must expose a well-formed stream
+                    # read. Empty/partial identity is permitted only because the
+                    # screen independently proved a new complete boundary.
+                    current_status_response('codex', fresh)
+                    if '\x1b' in fresh:
+                        raise Deferred('native-response-output-unknown')
+                    if (any(line.strip().startswith('/') and line.strip() != '/status'
+                            for line in fresh.splitlines())
+                            or any(line.strip().startswith('›') and line.strip() not in
+                                   ('›', '› /status', '› Ask Codex to do anything')
+                                   for line in fresh.splitlines())
+                            or 'Claude Code v' in fresh
+                            or re.search(r'(?:To continue this session|codex resume|claude .*--resume)', fresh)):
+                        raise Deferred('native-response-boundary-changed')
+                    codex_screen_identity(fresh, expected=codex_screen_identity(screen_fresh))
+                    response = finish_response(current, screen_fresh)
+                    if time.monotonic() >= deadline:
+                        raise Deferred('native-response-deadline')
+                    return response
+                try:
+                    response = finish_response(current, fresh)
+                except Deferred as error:
+                    if str(error) != 'native-identity-unknown':
+                        raise
+                    pending = error
+                else:
+                    if time.monotonic() >= deadline:
+                        raise Deferred('native-response-deadline')
+                    return response
+            if attempt == 59 or time.monotonic() >= deadline:
+                raise pending
+            journal.record('awaiting-native-response', handle=target['handle'], step=phase)
+            time.sleep(0.05)
     if current.get('latestCursor') in (None, cursor):
         raise Deferred('native-response-freshness-unknown')
     delta = obj(client.call('terminal', 'read', '--terminal', target['handle'], '--cursor', str(cursor)).get('terminal'))
