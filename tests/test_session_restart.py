@@ -166,6 +166,35 @@ class ModalFake(Fake):
         return super().call(*args)
 
 
+class ScreenStatusFake(Fake):
+    """Status cards repaint without completed stream records; no native evidence."""
+    def __init__(self):
+        super().__init__()
+        self.stale_status = False
+        self.conflict = False
+        # The first status preserves real task history, rather than empty UI.
+        self.frames['term_target']['tail'] = ['› earlier fixture instruction',
+                                              'fixture completed work', '›']
+
+    def call(self, *args):
+        if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/status':
+            handle = args[args.index('--terminal')+1]
+            before = copy.deepcopy(self.frames[handle])
+            result = super().call(*args)
+            frame = self.frames[handle]
+            body = ['  >_ '+frame['delta'][0], *frame['delta'][1:]]
+            old = before['tail'][:-1]
+            # A cropped old card retains its unique Session/cwd/permission suffix.
+            retained = old[-3:] if len(old) >= 4 else old
+            frame.update(latestCursor=before['latestCursor'], delta=[],
+                         tail=before['tail'] if self.stale_status else
+                         [*retained, '/status', *body, '›'])
+            if self.conflict:
+                frame['delta'] = ['Permissions: default']
+            return result
+        return super().call(*args)
+
+
 class Restart(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -696,6 +725,75 @@ class Restart(unittest.TestCase):
         verified = next(e for e in after['events'] if e['phase'] == 'preparation-verified')
         self.assertIn('screenSha256', verified['nativeProof'])
         self.assertEqual('complete', result['prepareState'])
+
+    def screen_execute(self, operation):
+        clock = [0.0]
+        with patch.object(m.rr.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(m.rr.time, 'sleep', side_effect=lambda duration: clock.__setitem__(0, clock[0]+duration)):
+            return operation()
+
+    def test_complete_batch_screen_status_prepare_and_verify_never_launch_or_lose_history(self):
+        self.client = ScreenStatusFake()
+        ident = self.prepare()
+        before = self.load(ident)
+        self.assertEqual('complete', before['prepareState'])
+        self.assertEqual(SESSION, before['targets'][0]['native']['sessionId'])
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(SESSION, after['targets'][0]['native']['sessionId'])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
+        self.assertEqual('unverified', result['targets'][0]['consumption'])
+        self.assertIsNone(result['targets'][0]['consumedVersion'])
+
+    def test_incomplete_batch_screen_status_verify_preserves_signed_failure_tail_exclusions_and_proof(self):
+        self.client = ScreenStatusFake()
+        self.client.add('tail', '/tail')
+        self.client.add('manual', '/manual')
+        self.client.stale_status = True
+        ident = self.screen_execute(lambda: self.prepare(['term_target', 'term_tail'], ['term_manual']))
+        before = self.load(ident)
+        self.assertEqual('uncertain', before['prepareState'])
+        self.assertIsNone(before['targets'][0]['native'])
+        self.client.stale_status = False
+        self.client.sent.clear()
+        with patch.object(m, 'locate', side_effect=AssertionError('ordinary discovery')):
+            result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual('complete', after['prepareState'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(before['targets'][1:], after['targets'][1:])
+        self.assertEqual('ready', after['targets'][0]['state'])
+        self.assertEqual(SESSION, after['targets'][0]['native']['sessionId'])
+        verified = next(e for e in after['events'] if e['phase'] == 'preparation-verified')
+        self.assertEqual(m.rr.output_proof(self.client.frames['term_target']), verified['nativeProof'])
+        self.assertEqual({'cursor', 'screenSha256'}, set(verified['nativeProof']))
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
+        self.assertIsNone(after['targets'][0]['attempt'])
+        self.assertEqual('unverified', result['targets'][0]['consumption'])
+        self.assertIsNone(result['targets'][0]['consumedVersion'])
+
+    def test_incomplete_batch_screen_conflict_keeps_failure_and_first_failure_stop(self):
+        self.client = ScreenStatusFake()
+        self.client.add('tail', '/tail')
+        self.client.stale_status = True
+        ident = self.screen_execute(lambda: self.prepare(['term_target', 'term_tail']))
+        before = self.load(ident)
+        self.client.stale_status = False
+        self.client.conflict = True
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual('uncertain', result['prepareState'])
+        self.assertEqual('native-response-identity-changed', result['targets'][0]['reason'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(before['targets'][1:], after['targets'][1:])
+        self.assertIsNone(after['targets'][0]['native'])
+        self.assertEqual(['/status'], self.texts())
+        self.assertEqual([], self.client.created)
 
     def test_verify_preparation_legacy_row_failure_is_retained_as_event(self):
         ident = self.interrupted_preparation()
