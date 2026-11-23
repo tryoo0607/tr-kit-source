@@ -65,7 +65,7 @@ class ClaudeFake(Fake):
         super().__init__()
         self.target['agentIdentity'] = 'claude'
         self.agents[1]['agentType'] = 'claude'
-        self.read['tail'] = ['❯']
+        self.read['tail'] = ['❯', 'Permission mode: default']
         self.delta = []
         self.responses = {
             '/status': ['Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'Working directory: /work',
@@ -81,7 +81,7 @@ class ClaudeFake(Fake):
         result = super().call(*args)
         if args[:2] == ('terminal', 'send'):
             self.delta = self.responses[args[args.index('--text')+1]]
-            self.read['tail'] = self.delta + ['❯']
+            self.read['tail'] = self.delta + ['❯', 'Permission mode: default']
             self.read['latestCursor'] = str(int(self.read['latestCursor'])+1)
         return result
 
@@ -221,22 +221,33 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual(1, len(self.client.sent))
 
     def test_success_compares_identity_and_leaves_consumption_unverified(self):
-        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access'}
+        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access', 'resumeMode': 'codex-full-access', 'nativeVersion': '0.171.0'}
         with patch.object(m, 'native_status', return_value=identity), patch.object(m, 'shell_guard'):
             result = m.apply(self.client, self.plan, self.self_pane, self.temp.name)
         row = result['results'][0]
         self.assertEqual(row['before'], row['after'])
         self.assertEqual('unverified', row['consumption'])
         texts = [args[args.index('--text')+1] for args in self.client.sent]
-        self.assertEqual(['/exit', 'codex resume '+identity['sessionId']], texts)
+        self.assertEqual(['/exit', 'codex resume '+identity['sessionId']+' --dangerously-bypass-approvals-and-sandbox'], texts)
         self.assertNotIn('--last', ' '.join(texts))
 
     def test_identity_permission_mismatch_stops(self):
-        before = {'sessionId': 'id', 'cwd': '/work', 'permissions': 'Full Access'}
+        before = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access', 'resumeMode': 'codex-full-access', 'nativeVersion': '0.171.0'}
         after = dict(before, permissions='different')
         with patch.object(m, 'native_status', side_effect=[before, after]), patch.object(m, 'shell_guard'):
             result = m.apply(self.client, self.plan, self.self_pane, self.temp.name)
         self.assertEqual('native-identity-or-permissions-mismatch', result['stopped'])
+
+    def test_codex_known_cli_upgrade_keeps_identity_mode_comparison(self):
+        before = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work',
+                  'permissions': 'Full Access', 'resumeMode': 'codex-full-access', 'nativeVersion': '0.167.2'}
+        after = dict(before, nativeVersion='0.171.0')
+        self.installation['nativeVersion'] = '0.171.0'
+        self.plan['targets'][0]['installation'] = copy.deepcopy(self.installation)
+        with patch.object(m, 'native_status', side_effect=[before, after]), patch.object(m, 'shell_guard'):
+            result = m.apply(self.client, self.plan, self.self_pane, self.temp.name)
+        self.assertEqual([], result['remaining'])
+        self.assertEqual('native-resume-observed', result['results'][0]['refresh'])
 
     def test_shell_must_be_current_and_empty(self):
         self.client.target['agentIdentity'] = None
@@ -255,6 +266,51 @@ class RuntimeRefreshTests(unittest.TestCase):
         for value in (None, [], {'schema': 99}, dict(self.plan, createdAt=time.time()-301), dict(self.plan, operationId={})):
             with self.assertRaises(m.Deferred):
                 m.validate_plan(value)
+
+    def test_resume_commands_preserve_only_two_observed_modes_and_ignore_stored_flags(self):
+        session = '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'
+        cases = [('codex', 'Full Access', '0.171.0',
+                  'codex resume '+session+' --dangerously-bypass-approvals-and-sandbox'),
+                 ('claude', 'bypass permissions', '2.1.330',
+                  'claude --dangerously-skip-permissions --resume '+session)]
+        for provider, permissions, version, expected in cases:
+            text = 'Session ID: '+session+'\ncwd: /work\nPermissions: '+permissions+'\n'
+            if version:
+                text += ('OpenAI Codex (v'+version+')\n' if provider == 'codex' else 'Version: '+version+'\n')
+            native = m.status(provider, text)
+            native.update(command='touch /tmp/not-authorized', flags=['--fake-flag'], environment={'PATH': '/fake'})
+            with self.subTest(provider=provider):
+                self.assertEqual(expected, m.resume_command(provider, native, installed_version=version))
+                legacy = dict(native)
+                legacy.pop('resumeMode')
+                with self.assertRaisesRegex(m.Deferred, 'native-resume-permissions-unverified'):
+                    m.resume_command(provider, legacy, installed_version=version)
+                native['resumeMode'] = '--fake-flag'
+                with self.assertRaisesRegex(m.Deferred, 'native-resume-permissions-unverified'):
+                    m.resume_command(provider, native, installed_version=version)
+
+    def test_unverified_default_custom_special_and_wrong_claude_version_never_get_options(self):
+        session = '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'
+        cases = [('codex', 'default', None), ('codex', 'Custom (workspace, Ask for approval)', None),
+                 ('codex', 'Full Access --fake-flag', None), ('claude', 'default', '2.1.330'),
+                 ('claude', 'bypass permissions', '2.1.331'), ('claude', 'plan', '2.1.330')]
+        for provider, permission, version in cases:
+            text = 'Session ID: '+session+'\ncwd: /work\nPermissions: '+permission+'\n'
+            if version:
+                text += ('OpenAI Codex (v'+version+')\n' if provider == 'codex' else 'Version: '+version+'\n')
+            with self.subTest(provider=provider, permission=permission, version=version):
+                native = m.status(provider, text)
+                self.assertIsNone(native['resumeMode'])
+                with self.assertRaisesRegex(m.Deferred, 'native-resume-permissions-unverified'):
+                    m.resume_command(provider, native, installed_version=version)
+
+    def test_refresh_unverified_custom_stops_before_exit(self):
+        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work',
+                    'permissions': 'Custom (workspace, Ask for approval)', 'resumeMode': None}
+        with patch.object(m, 'native_status', return_value=identity):
+            result = m.apply(self.client, self.plan, self.self_pane, self.temp.name)
+        self.assertEqual('native-resume-permissions-unverified', result['stopped'])
+        self.assertEqual([], self.client.sent)
 
     def test_claude_unverified_dependencies_defer_without_input(self):
         self.plan['targets'][0]['provider'] = 'claude'
@@ -352,6 +408,69 @@ class RuntimeRefreshTests(unittest.TestCase):
         refresh.assert_called_once()
         self.assertEqual([], self.client.sent)
 
+    def test_observed_codex_01672_placeholder_and_typed_same_text(self):
+        idle = {'source': 'screen', 'tail': ['>_ OpenAI Codex (v0.167.2)', '› Ask Codex to do anything'], 'draft': None}
+        self.assertIn('v0.167.2', m.idle_screen('codex', idle))
+        for tail in (['>_ OpenAI Codex (v0.167.2)', '›'], idle['tail']):
+            with self.subTest(tail=tail):
+                typed = dict(idle, tail=tail, draft='Ask Codex to do anything')
+                with self.assertRaisesRegex(m.Deferred, '^draft$'):
+                    m.idle_screen('codex', typed)
+        restored = dict(idle, draft=None)
+        self.assertIn('v0.167.2', m.idle_screen('codex', restored))
+        unknown = dict(idle, tail=['>_ OpenAI Codex (v0.167.3)', '› Ask Codex to do anything'])
+        with self.assertRaisesRegex(m.Deferred, '^draft$'):
+            m.idle_screen('codex', unknown)
+
+    def test_observed_codex_01710_placeholder_contract_and_unknown_patch(self):
+        header = ['  >_ OpenAI Codex (v0.171.0)', '  >_ OpenAI Codex (v0.171.0)']
+        for stage, draft, prompt in [('before', None, '› Ask Codex to do anything'),
+                                      ('typed', 'Ask Codex to do anything', '›'),
+                                      ('cleared', None, '› Ask Codex to do anything')]:
+            with self.subTest(stage=stage):
+                frame = {'source': 'screen', 'tail': header + [prompt], 'draft': draft}
+                if draft:
+                    with self.assertRaisesRegex(m.Deferred, '^draft$'):
+                        m.idle_screen('codex', frame)
+                else:
+                    self.assertIn('v0.171.0', m.idle_screen('codex', frame))
+        typed_same_screen = {'source': 'screen', 'tail': header + ['› Ask Codex to do anything'],
+                             'draft': 'Ask Codex to do anything'}
+        with self.assertRaisesRegex(m.Deferred, '^draft$'):
+            m.idle_screen('codex', typed_same_screen)
+        with self.assertRaisesRegex(m.Deferred, '^draft$'):
+            m.idle_screen('codex', {'source': 'screen', 'tail': ['OpenAI Codex (v0.171.1)', '› Ask Codex to do anything']})
+
+    def test_observed_headerless_placeholder_allows_readonly_but_never_typed_text_or_unknown_header(self):
+        empty = {'source': 'screen', 'tail': ['› Ask Codex to do anything']}
+        m.idle_screen('codex', empty)
+        for typed in (dict(empty, draft='Ask Codex to do anything'),
+                      {'source': 'screen', 'tail': ['›'], 'draft': 'Ask Codex to do anything'}):
+            with self.assertRaisesRegex(m.Deferred, '^draft$'):
+                m.idle_screen('codex', typed)
+        m.idle_screen('codex', empty)
+        for header in ('OpenAI Codex (v0.172.0)', 'OpenAI Codex (vunknown)', 'OpenAI Codex (v'):
+            for prompt in ('›', '› Ask Codex to do anything'):
+                with self.subTest(header=header, prompt=prompt):
+                    with self.assertRaisesRegex(m.Deferred, '^draft$'):
+                        m.idle_screen('codex', {'source': 'screen', 'tail': [header, prompt]})
+
+    def test_codex_fresh_status_version_gates_resume_independently_of_placeholder(self):
+        fields = 'Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\ncwd: /work\nPermissions: Full Access\n'
+        for version in ('0.167.1', '0.167.2', '0.171.0', '0.172.0', None):
+            text = ('>_ OpenAI Codex (v'+version+')\n' if version else '') + fields
+            native = m.status('codex', text)
+            self.assertEqual(version, native['nativeVersion'])
+            if version in ('0.167.1', '0.167.2', '0.171.0'):
+                self.assertEqual('codex-full-access', native['resumeMode'])
+            else:
+                self.assertIsNone(native['resumeMode'])
+                with self.assertRaises(m.Deferred):
+                    m.resume_command('codex', native, installed_version='0.171.0')
+        known = m.status('codex', 'OpenAI Codex (v0.171.0)\n'+fields)
+        with self.assertRaisesRegex(m.Deferred, 'native-resume-version-unverified'):
+            m.resume_command('codex', known, installed_version='0.172.0')
+
     def test_real_codex_omitted_roster_and_placeholder(self):
         self.client.agents[1].pop('children')
         self.client.agents[1].pop('subagentObservation')
@@ -389,13 +508,45 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual('new', m.status('codex', text + text.replace('old', 'new'))['permissions'])
 
     def test_resumed_hook_handshake_only_retries_read_only_guard(self):
-        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access'}
+        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access', 'resumeMode': 'codex-full-access', 'nativeVersion': '0.171.0'}
         with patch.object(m, 'native_status', return_value=identity), patch.object(m, 'shell_guard'), \
              patch.object(m, 'guard', side_effect=[(None, {'latestCursor': '10'}), m.Deferred('agent-identity-unknown'), None]), \
              patch.object(m.time, 'sleep'):
             result = m.apply(self.client, self.plan, self.self_pane, self.temp.name)
         self.assertEqual([], result['remaining'])
         self.assertEqual(2, len(self.client.sent))
+
+    def test_resumed_readiness_transient_child_state_requires_full_guard_before_return(self):
+        calls = []
+        def readiness(*args, **kwargs):
+            self.assertEqual([], self.client.sent)
+            calls.append(True)
+            if len(calls) == 1:
+                raise m.Deferred('child-state-unknown')
+        with patch.object(m, 'guard', side_effect=readiness), patch.object(m.time, 'sleep') as sleep:
+            m.wait_resumed(self.client, self.plan, self.plan['targets'][0], self.self_pane)
+        self.assertEqual(2, len(calls))
+        sleep.assert_called_once_with(0.2)
+        self.assertEqual([], self.client.sent)
+
+    def test_resumed_readiness_persistent_child_unknown_stops_at_deadline_without_input(self):
+        with patch.object(m, 'guard', side_effect=m.Deferred('child-state-unknown')) as guard, \
+             patch.object(m.time, 'monotonic', side_effect=[0, 0, 10]), patch.object(m.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(m.Deferred, '^child-state-unknown$'):
+                m.wait_resumed(self.client, self.plan, self.plan['targets'][0], self.self_pane)
+        self.assertEqual(2, guard.call_count)
+        sleep.assert_called_once_with(0.2)
+        self.assertEqual([], self.client.sent)
+
+    def test_resumed_readiness_never_retries_other_safety_guards(self):
+        for reason in ('child-work', 'busy-or-state-unknown', 'approval-or-wait', 'approval-or-menu', 'draft'):
+            with self.subTest(reason=reason), patch.object(m, 'guard', side_effect=m.Deferred(reason)) as guard, \
+                 patch.object(m.time, 'sleep') as sleep:
+                with self.assertRaisesRegex(m.Deferred, '^'+reason+'$'):
+                    m.wait_resumed(self.client, self.plan, self.plan['targets'][0], self.self_pane)
+                guard.assert_called_once()
+                sleep.assert_not_called()
+        self.assertEqual([], self.client.sent)
 
     def claude_plan(self):
         self.installation = dict(self.installation, nativeVersion='2.1.289', dependenciesReady=True)
@@ -570,6 +721,168 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertTrue(all('requestId' not in event for event in raw))
         self.assertTrue(all('--enter' not in args for args in client.sent if args[args.index('--text')+1].startswith('\x1b')))
 
+    def test_claude_21330_status_close_footer_requires_observed_header_version_and_footer(self):
+        text = '\n'.join(['  Settings  Status   Config   Usage   Stats',
+                          '  Version:           2.1.330',
+                          '  Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                          '  cwd: /work', '  ←/→ to switch · Esc to close'])
+        self.assertTrue(m.claude_modal(text, '/status'))
+        for invalid in (text.replace('2.1.330', '2.1.329'),
+                        text.replace('2.1.330', '2.1.331'),
+                        text.replace('Version:', 'Unknown version:'),
+                        text.replace('Settings  Status   Config   Usage   Stats', 'Unknown header'),
+                        text.replace('Esc to close', 'Esc to quit'),
+                        text.replace('Esc to close', 'Esc to close now')):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(m.claude_modal(invalid, '/status'))
+        self.assertFalse(m.claude_modal(text, '/reload-plugins'))
+        help_text = text.replace('Settings  Status   Config   Usage   Stats',
+                                 'Help  General   Commands   Custom commands')
+        self.assertFalse(m.claude_modal(help_text, '/help'))
+
+    def test_claude_21330_status_modal_still_rejects_approval_prompts(self):
+        text = 'Settings Status Config Usage Stats\nVersion: 2.1.330\n←/→ to switch · Esc to close'
+        for prompt in ('Approve this action', 'Allow once', 'Trust this', 'Select an option',
+                       'Enter to confirm', 'Yes, proceed'):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(m.claude_modal(text+'\n'+prompt, '/status'))
+
+    def test_claude_21330_native_status_closes_observed_modal_with_one_raw_escape(self):
+        self.installation.update(nativeVersion='2.1.330')
+        client = ClaudeModalFake()
+        plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+        original = client.call
+        def new_status(*args):
+            result = original(*args)
+            if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/status':
+                client.read['tail'] = ['  Settings  Status   Config   Usage   Stats',
+                                      '  Version:           2.1.330',
+                                      '  Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                                      '  cwd: /work', '  ←/→ to switch · Esc to close']
+            return result
+        with patch.object(client, 'call', side_effect=new_status):
+            identity = m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual('2.1.330', identity['nativeVersion'])
+        self.assertEqual('/work', identity['cwd'])
+        self.assertEqual('bypass permissions', identity['permissions'])
+        self.assertEqual(['/status', '\x1b'], [args[args.index('--text')+1] for args in client.sent])
+        self.assertNotIn('--enter', client.sent[-1])
+        self.assertIsNone(client.modal)
+
+    def test_claude_status_waits_for_permission_and_uses_latest_confirmed_cursor(self):
+        client, plan = self.claude_plan()
+        client.read['tail'] = ['❯']
+        original = client.call
+        stream_cursors = []
+        def render_footer(_):
+            self.assertEqual([], client.sent)
+            client.read.update(tail=['❯', 'Permission mode: default'], latestCursor='20')
+        def calls(*args):
+            if args[:2] == ('terminal', 'send'):
+                self.assertEqual('20', client.read['latestCursor'])
+                self.assertEqual('default', m.claude_permission(m.screen(client.read)))
+            if args[:2] == ('terminal', 'read'):
+                stream_cursors.append(args[args.index('--cursor')+1])
+            return original(*args)
+        with patch.object(m.time, 'sleep', side_effect=render_footer), patch.object(client, 'call', side_effect=calls):
+            native = m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual('default', native['permissions'])
+        self.assertEqual(['20'], stream_cursors)
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_claude_21330_agent_hint_permission_footer_requires_exact_observed_context(self):
+        footer = '  ⏵⏵ bypass permissions on (shift+tab to cycle)'
+        header = '  ▐▛███▛█   Claude Code v2.1.330'
+        observed = header+'\n❯\n'+footer+' · ← for agents'
+        self.assertEqual('bypass permissions', m.claude_permission(footer))
+        self.assertEqual('bypass permissions', m.claude_permission(observed))
+        for invalid in (observed.replace(header+'\n', ''),
+                        observed.replace(header, '예시: Claude Code v2.1.330'),
+                        observed.replace('▐▛███▛█', '▐▛███▜▌'),
+                        observed.replace(header, 'Claude Code v2.1.330'),
+                        observed.replace('2.1.330', '2.1.331'),
+                        observed.replace('2.1.330', '2.1.3301'),
+                        observed.replace('2.1.330', '2.1.330-beta'),
+                        observed+'\nClaude Code v2.1.331',
+                        observed+'\nClaude Code v',
+                        observed.replace('Claude Code v2.1.330', 'Version: 2.1.330'),
+                        observed.replace('← for agents', '← for tools'),
+                        observed+' extra',
+                        observed.replace('bypass permissions on', 'accept edits on')):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(m.Deferred, '^claude-permissions-unknown$'):
+                    m.claude_permission(invalid)
+
+    def test_claude_21330_agent_hint_footer_starts_status_without_permission_wait(self):
+        client = ClaudeModalFake()
+        client.read['tail'] = ['▐▛███▛█   Claude Code v2.1.330', '❯',
+                              '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents']
+        plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+        original = client.call
+        def current_version(*args):
+            result = original(*args)
+            if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/status':
+                client.read['tail'] = [line.replace('Version: 2.1.322', 'Version: 2.1.330')
+                                       for line in client.read['tail']]
+            return result
+        with patch.object(client, 'call', side_effect=current_version), patch.object(m.time, 'sleep') as sleep:
+            native = m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        sleep.assert_not_called()
+        self.assertEqual('bypass permissions', native['permissions'])
+        self.assertEqual('2.1.330', native['nativeVersion'])
+        self.assertEqual(['/status', '\x1b'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_claude_status_permission_wait_persistent_unknown_has_zero_input_and_no_modal(self):
+        client = ClaudeModalFake()
+        plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+        client.read['tail'] = ['❯']
+        for deadline in (False, True):
+            with self.subTest(deadline=deadline), patch.object(m, 'guard', wraps=m.guard) as guard, \
+                 patch.object(m.time, 'monotonic', side_effect=[0, 3] if deadline else None, return_value=0), \
+                 patch.object(m.time, 'sleep') as sleep:
+                with self.assertRaisesRegex(m.Deferred, '^claude-permissions-unknown$'):
+                    m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+                self.assertEqual(1 if deadline else 12, guard.call_count)
+                self.assertEqual(0 if deadline else 11, sleep.call_count)
+                self.assertEqual([], client.sent)
+                self.assertIsNone(client.modal)
+
+    def test_claude_status_permission_wait_never_retries_identity_draft_busy_or_other_guards(self):
+        changes = [('target-changed', lambda c: c.target.update(incarnationId='changed')),
+                   ('draft', lambda c: c.read.update(draft='pending')),
+                   ('busy-or-state-unknown', lambda c: c.agents[1].update(
+                       state='working', mainAgent={'state': 'working'}, programStatus={'state': 'working'},
+                       subagentObservation='live', children=[])),
+                   ('approval-or-wait', lambda c: c.target.update(agentWait={'state': 'waiting'})),
+                   ('child-state-unknown', lambda c: c.agents[1].update(subagentObservation='unverifiable'))]
+        for reason, change in changes:
+            client = ClaudeModalFake()
+            plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+            client.read['tail'] = ['❯']
+            with self.subTest(reason=reason), patch.object(m.time, 'sleep', side_effect=lambda _: change(client)) as sleep:
+                with self.assertRaisesRegex(m.Deferred, '^'+reason+'$'):
+                    m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+                sleep.assert_called_once_with(0.05)
+                self.assertEqual([], client.sent)
+
+    def test_claude_status_permission_wait_uses_latest_text_to_reject_stale_response(self):
+        client, plan = self.claude_plan()
+        client.read['tail'] = ['❯']
+        def render_footer(_):
+            client.read.update(tail=['❯ /status', *client.responses['/status'], '❯', 'Permission mode: default'],
+                               latestCursor='20')
+        original = client.call
+        def stale(*args):
+            if args[:2] == ('terminal', 'send'):
+                client.sent.append(args)
+                return {'send': {'accepted': True}, 'mutation': {'requestId': 'request'}}
+            return original(*args)
+        with patch.object(m.time, 'sleep', side_effect=render_footer), patch.object(m.time, 'monotonic', return_value=0), \
+             patch.object(client, 'call', side_effect=stale):
+            with self.assertRaisesRegex(m.Deferred, '^native-response-freshness-unknown$'):
+                m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
     def test_modal_raw_receipt_malformed_or_mismatched_stops_without_resend(self):
         client, plan=self.claude_plan()
         target=plan['targets'][0]
@@ -680,7 +993,7 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual([], self.client.sent)
 
     def test_installation_drift_after_resume_stops(self):
-        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access'}
+        identity = {'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'cwd': '/work', 'permissions': 'Full Access', 'resumeMode': 'codex-full-access', 'nativeVersion': '0.171.0'}
         changed = copy.deepcopy(self.installation)
         changed['plugins'][0]['enabled'] = False
         with patch.object(m, 'native_status', return_value=identity), patch.object(m, 'shell_guard'), \
@@ -720,6 +1033,74 @@ class RuntimeRefreshTests(unittest.TestCase):
         (root / 'example/.claude-plugin/plugin.json').write_text('{"name":"example","dependencies":[{"name":"helper","version":">=1"}]}')
         with patch.object(m, 'native_command', side_effect=['2.1.289 (Claude Code)', json.dumps(entries)]):
             self.assertFalse(REAL_PLUGIN_INVENTORY('claude', '/work')['dependenciesReady'])
+
+    def test_claude_all_eight_installations_include_distinct_disabled_project_contexts(self):
+        entries = [{'id': 'plugin'+str(i)+'@market', 'version': '1.0.0', 'enabled': False,
+                    'scope': 'user', 'installPath': '/private/cache'} for i in range(6)]
+        entries += [{'id': 'shared@market', 'version': '1.0.0', 'enabled': False, 'scope': 'local',
+                     'installPath': '/private/cache', 'projectPath': path}
+                    for path in ('/private/project-a', '/private/project-b')]
+        with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps(entries)]):
+            result = REAL_PLUGIN_INVENTORY('claude', '/work')
+        self.assertEqual('observed', result['state'])
+        self.assertEqual(8, len(result['plugins']))
+        contexts = [p['projectContext'] for p in result['plugins'] if p['scope'] == 'local']
+        self.assertEqual(2, len(set(contexts)))
+        self.assertTrue(all(len(value) == 64 for value in contexts))
+        self.assertEqual(8, len(m.installed_versions(result)))
+        self.assertNotIn('/private/', json.dumps(result))
+        self.assertNotIn('/private/', json.dumps(m.installed_versions(result)))
+
+    def test_claude_same_project_context_duplicate_and_unknown_context_are_refused(self):
+        base = {'id': 'shared@market', 'version': '1.0.0', 'enabled': False,
+                'scope': 'local', 'projectPath': '/private/project-a'}
+        with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps([base, base])]):
+            result = REAL_PLUGIN_INVENTORY('claude', '/work')
+        self.assertEqual('plugin-installation-ambiguous', result['reason'])
+        for scope in ('project', 'local'):
+            for path in (None, '', 'relative', '/private/../project', '//private/project', '/private/./project',
+                         '/private/project\n', [], 'C:\\private\\project'):
+                with self.subTest(scope=scope, path=path):
+                    entry = dict(base, scope=scope, projectPath=path)
+                    with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps([entry])]):
+                        result = REAL_PLUGIN_INVENTORY('claude', '/work')
+                    self.assertEqual('unverified', result['state'])
+                    self.assertEqual('plugin-project-context-unknown', result['reason'])
+        missing = dict(base)
+        missing.pop('projectPath')
+        with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps([missing])]):
+            self.assertEqual('unverified', REAL_PLUGIN_INVENTORY('claude', '/work')['state'])
+
+    def test_claude_project_context_change_remains_installation_drift(self):
+        entry = {'id': 'shared@market', 'version': '1.0.0', 'enabled': False,
+                 'scope': 'project', 'projectPath': '/private/project-a'}
+        with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps([entry])]):
+            before = REAL_PLUGIN_INVENTORY('claude', '/work')
+        entry['projectPath'] = '/private/project-b'
+        with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps([entry])]):
+            after = REAL_PLUGIN_INVENTORY('claude', '/work')
+        with patch.object(m, 'plugin_inventory', return_value=after):
+            with self.assertRaisesRegex(m.Deferred, 'installed-versions-drift'):
+                m.installation_guard({'provider': 'claude', 'identity': {'worktreePath': '/work'}, 'installation': before})
+
+    def test_claude_enabled_duplicate_contexts_keep_dependencies_and_runtime_listing_ambiguous(self):
+        root = Path(self.temp.name)
+        for name, dependencies in [('main', ['helper']), ('helper', [])]:
+            manifest = root/name/'.claude-plugin'
+            manifest.mkdir(parents=True)
+            (manifest/'plugin.json').write_text(json.dumps({'name': name, 'dependencies': dependencies}))
+        entries = [{'id': 'main@market', 'version': '1.0.0', 'enabled': True, 'scope': 'user',
+                    'installPath': str(root/'main')}]
+        entries += [{'id': 'helper@market', 'version': '1.0.0', 'enabled': True, 'scope': 'local',
+                     'projectPath': path, 'installPath': str(root/'helper')}
+                    for path in ('/private/project-a', '/private/project-b')]
+        with patch.object(m, 'native_command', side_effect=['2.1.330 (Claude Code)', json.dumps(entries)]):
+            result = REAL_PLUGIN_INVENTORY('claude', '/work')
+        self.assertEqual('observed', result['state'])
+        self.assertEqual(3, len(result['plugins']))
+        self.assertFalse(result['dependenciesReady'])
+        with self.assertRaisesRegex(m.Deferred, 'claude-runtime-plugin-list-ambiguous'):
+            m.claude_plugin_listing('', result)
 
     def test_invalid_native_inventory_fails_closed(self):
         for data in ('SECRET not-json', '[]', '{"installed":[{}]}'):

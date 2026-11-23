@@ -46,6 +46,20 @@ class NativePackage(unittest.TestCase):
             self.assertFalse((payload/'.mcp.json').exists())
             self.assertTrue((payload/'adapters'/product/'mcp').is_dir())
 
+    def test_session_restart_readonly_cli_preserves_both_payloads_without_bytecode(self):
+        for product in ('codex','claude'):
+            out=self.build(product,name='restart-'+product)
+            payload=Path(package.verify(out,product)['payload'])
+            helper=payload/'common/base/skills/session/scripts/session_restart.py'
+            env=dict(os.environ);env.pop('PYTHONDONTWRITEBYTECODE',None)
+            result=subprocess.run([sys.executable,str(helper),'list','--state',str(self.base/('absent-'+product))],
+                                  text=True,capture_output=True,env=env)
+            self.assertEqual(0,result.returncode,result.stderr)
+            self.assertEqual({'batches':[]},json.loads(result.stdout))
+            self.assertFalse((self.base/('absent-'+product)).exists())
+            self.assertFalse(list(payload.rglob('__pycache__')))
+            self.assertEqual(str(payload),package.verify(out,product)['payload'])
+
     def test_review_profile_explicitly_has_no_protection_claim(self):
         report=package.verify(self.build(),'codex');payload=Path(report['payload'])
         self.assertEqual(set(json.loads((payload/'hooks/hooks.json').read_text())['hooks']),{'SessionStart'})

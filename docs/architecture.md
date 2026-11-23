@@ -13,6 +13,55 @@
 
 공통 scripts/package.py가 자체 envelope·installation.json 생성을 소유하고 assemble.py가 승인된 자체 renderer를 받는다. 공통 lifecycle은 명시 identity와 실제 native 설치 목록을 검증한다. 공통 구현은 개인 패키지 이름/기능에 의존하지 않는다. private는 별도 source/native exact pin을 확인한 후 이 구현을 호출한다. 배치·실제 흐름·제품별 차이는 [native 연결 기록](decisions/20261120-native-private-interface.md)에 있다.
 
+## 세션 재시작 배치
+
+기존 `runtime_refresh.py`는 inspect/plan/apply와 native guard·접수를 유지한다. 새 `session_restart.py`가 재부팅 뒤에도 읽을 수 있는 선택·예외·UUID와 진행 기록을 소유하고 기존 transport/status/eligibility를 호출한다. 설치 시점과 runtime 소비를 구분하며 공통 계층만 사용한다. [결정·검증 한계](decisions/20261123-session-restart.md)를 따른다.
+
+실제 파일 배치:
+
+```text
+common/base/skills/
+├─ session/
+│  ├─ SKILL.md
+│  ├─ references/
+│  │  ├─ runtime-refresh.md
+│  │  └─ session-restart.md
+│  └─ scripts/
+│     ├─ runtime_refresh.py
+│     └─ session_restart.py
+└─ orca-update/
+   └─ SKILL.md
+tests/
+├─ test_session_runtime_refresh.py
+├─ test_session_restart.py
+└─ test_native_package.py
+```
+
+읽기·실행 흐름:
+
+```text
+재시작 목록/선택 복원 요청
+  → 수행자가 session SKILL.md의 배치 분기와 session-restart.md를 읽음
+  → 수행자가 session_restart.py prepare/list 호출
+    → prepare: 예외/self 기록 → 안전 대상 새 status → UUID/cwd/권한 저장 (exit 없음)
+    → list: 기존 호스트 로컬 배치 읽기 (runtime/대화/상태 생성 없음)
+  → native CLI 업데이트가 승인된 경우 수행자가 기존 공식 관리자 호출 → 버전/소유 재개 canary 대조
+  → 나중 명시 요청에서 수행자가 session_restart.py restart/restore/verify 호출
+    → 실행: 현재 Orca inventory/guard → 선택 native identity 대조
+      → restart: 검증된 Codex 정상 종료/exact resume; Claude 즉시 종료·shell 전이 자동 검증은 미지원으로 수동
+      → restore: 이미 실행 중이면 확인; 부재 시 원 workspace의 소유 terminal create
+      → verify: 실행 중 identity와 재시작 증거를 분리
+    → 입력 전 atomic 로컬 기록 → 실제 접수/UUID/cwd/권한 확인 → 수행자가 결과 보고
+```
+
+`~/.local/state/tr-kit/session-restart`는 배포 트리 밖의 실행 시 생성물이다. 목록 조회만으로 만들지 않는다. machine/profile에 묶인 metadata 배치와 진행 기록, integrity key, lock을 0700/0600으로 보관한다. batch에 저장된 command를 실행하지 않으며 UUID로 제한된 native resume 문장만 현재 코드에서 구성한다. 업데이트 작업이 목록 보존을 포함하면 orca-update 수행자가 session 진입점으로 연결하며 업데이트·재연결/probe 정책을 복제하지 않는다.
+
+native CLI 업데이트 연결은 session reference의 단일 계약이 소유하고, 실제 설치는 현재 호스트의 기존 공식 관리자가 수행한다. Python helper는 설치·계정/채널 전환을 실행하지 않는다. Orca 앱/runtime 업데이트는 기존 orca-update의 별도 책임이다.
+
+`runtime_refresh.status`가 제한된 native resumeMode를 기록하고 `runtime_refresh.resume_command`가 두 관측 모드의 고정 argv를 구성한다. 기존 refresh와 session_restart의 restart/restore가 같은 함수를 호출한다. 미확인 모드는 exit/create 전에 수동 처리하며, mode 없는 부재 배치나 저장 command/flag/환경으로 옵션을 추정하지 않는다. raw command는 배치에 저장하지 않는다.
+
+Codex의 headerless placeholder는 조회 조건이며 native 버전 증명이 아니다. fresh status에서 파싱한 known nativeVersion과 기존 native inventory의 현재 CLI 버전을 resume 전에 대조하고, 부재 restore도 create 직전 설치 snapshot을 확인한다. Claude project/local 설치 snapshot은 절대 projectPath를 검증한 context SHA256을 identity·정렬·installed_versions key에 사용하며 다른 프로젝트의 설치를 필터링하지 않는다. 같은 context 중복과 enabled 의존성 모호성은 계속 보류한다.
+
 ## 2026-11-20 hook 보완의 배치
 
 Python stdin 오탐 보완은 기존 common/base/scripts/secret_guard.py 안의 검사 표현과 판별만 바꿨다. 제품 adapter·등록·적용 범위는 유지한다. 실제 흐름은 [후속 결정 기록](decisions/20261120-hook-bmad-native-validation.md)에 있으며 임시 native 검증 설정을 배포 구조로 채택한 것은 아니다. 당시 미결이던 private native 계약/패키징은 [다음 연결 검증](decisions/20261120-native-private-interface.md)에서 구현·격리 검증했다. 이후 수정한 후보 전체의 재패키징·통합은 별도로 남는다.

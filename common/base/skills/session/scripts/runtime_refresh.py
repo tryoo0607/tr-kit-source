@@ -18,6 +18,13 @@ class Deferred(Exception):
     pass
 
 
+CODEX_RESUME_VERSIONS = ('0.167.1', '0.167.2', '0.171.0')
+
+
+def codex_versions(text):
+    return re.findall(r'OpenAI Codex \(v([0-9][A-Za-z0-9.+_-]{0,63})\)', text)
+
+
 def obj(value):
     if not isinstance(value, dict):
         raise Deferred('invalid-json-shape')
@@ -119,7 +126,13 @@ def idle_screen(provider, read):
     prompts = [line.strip() for line in lines if line.lstrip().startswith(prompt)]
     if not prompts:
         raise Deferred('idle-prompt-unknown')
-    placeholder = provider == 'codex' and prompts[-1] == '› Ask Codex to do anything' and 'OpenAI Codex (v0.167.1)' in text
+    versions = codex_versions(text) if provider == 'codex' else []
+    visible_header = provider == 'codex' and 'OpenAI Codex (v' in text
+    known_header = bool(versions) and all(v in CODEX_RESUME_VERSIONS for v in versions)
+    if visible_header and not known_header:
+        raise Deferred('draft')
+    placeholder = (provider == 'codex' and prompts[-1] == '› Ask Codex to do anything' and
+                   (not visible_header or known_header))
     if prompts[-1] != prompt and not placeholder:
         raise Deferred('draft')
     # A prompt may remain on screen behind a dialog. Refuse known menus and approvals.
@@ -229,6 +242,17 @@ def manifest_metadata(path, plugin_id):
             'dependencies': sorted(normalized, key=lambda x: (x['id'], x['version'] or ''))}
 
 
+def plugin_identity(plugin):
+    return plugin['id'], plugin['scope'], plugin.get('projectContext', '')
+
+
+def project_context(value):
+    if (not token(value) or not Path(value).is_absolute() or value.startswith('//')
+            or '..' in Path(value).parts or str(Path(value)) != value):
+        raise Deferred('plugin-project-context-unknown')
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
 def plugin_inventory(provider, cwd):
     """Read native installed metadata only, never infer running-session consumption."""
     base = {'provider': provider, 'scope': 'caller-config-at-cwd', 'cwd': cwd,
@@ -253,6 +277,8 @@ def plugin_inventory(provider, cwd):
             if provider == 'codex' and entry.get('installed') is not True:
                 raise Deferred('plugin-installation-unknown')
             item = {'id': ident, 'version': installed_version, 'enabled': enabled, 'scope': scope}
+            if provider == 'claude' and scope in ('project', 'local'):
+                item['projectContext'] = project_context(entry.get('projectPath'))
             if provider == 'claude' and enabled:
                 try:
                     item.update(manifest_metadata(entry.get('readFromFolder') or entry.get('installPath'), ident))
@@ -268,14 +294,16 @@ def plugin_inventory(provider, cwd):
                 if installed_version == 'unknown':
                     dependencies_ready = False
             plugins.append(item)
-        plugins.sort(key=lambda x: (x['id'], x['scope']))
-        if len({(p['id'], p['scope']) for p in plugins}) != len(plugins):
+        plugins.sort(key=plugin_identity)
+        if len({plugin_identity(p) for p in plugins}) != len(plugins):
             raise Deferred('plugin-installation-ambiguous')
         if provider == 'claude':
             enabled_by_id = {}
             for p in plugins:
                 if p['enabled']:
                     enabled_by_id.setdefault(p['id'], []).append(p)
+            if any(len(matches) != 1 for matches in enabled_by_id.values()):
+                dependencies_ready = False
             for p in plugins:
                 if not p['enabled']:
                     continue
@@ -301,7 +329,7 @@ def installation_guard(target):
 
 
 def installed_versions(inventory):
-    return {p['id'] + ':' + p['scope']: p['version'] for p in inventory['plugins']}
+    return {':'.join(part for part in plugin_identity(p) if part): p['version'] for p in inventory['plugins']}
 
 
 def inspect(client, self_pane):
@@ -387,7 +415,44 @@ def status(provider, text):
     result = {'sessionId': ident, 'cwd': cwd, 'permissions': permission}
     if provider == 'claude':
         result['nativeVersion'] = field('Version')
+    elif provider == 'codex':
+        versions = codex_versions(text)
+        result['nativeVersion'] = versions[-1] if versions else None
+    result['resumeMode'] = observed_resume_mode(provider, result)
     return result
+
+
+def observed_resume_mode(provider, native):
+    """Only native modes with an observed permission-preserving launch contract."""
+    if (provider == 'codex' and native.get('nativeVersion') in CODEX_RESUME_VERSIONS
+            and native.get('permissions') == 'Full Access'):
+        return 'codex-full-access'
+    if (provider == 'claude' and native.get('nativeVersion') == '2.1.330'
+            and native.get('permissions') == 'bypass permissions'):
+        return 'claude-bypass-permissions'
+    return None
+
+
+def resume_command(provider, native, *, installed_version):
+    """Construct fixed argv from observed native metadata, never stored commands."""
+    native = obj(native)
+    mode = observed_resume_mode(provider, native)
+    if mode is None or native.get('resumeMode') != mode:
+        raise Deferred('native-resume-permissions-unverified')
+    if not ((provider == 'codex' and installed_version in CODEX_RESUME_VERSIONS) or
+            (provider == 'claude' and installed_version == '2.1.330')):
+        raise Deferred('native-resume-version-unverified')
+    ident = native.get('sessionId')
+    try:
+        if not isinstance(ident, str) or str(uuid.UUID(ident)) != ident.lower():
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise Deferred('native-identity-unknown') from None
+    if mode == 'codex-full-access':
+        args = ['codex', 'resume', ident, '--dangerously-bypass-approvals-and-sandbox']
+    else:
+        args = ['claude', '--dangerously-skip-permissions', '--resume', ident]
+    return shlex.join(args)
 
 
 class Journal:
@@ -532,6 +597,20 @@ def wait_idle(client, target):
         raise Deferred('idle-wait-unsatisfied')
 
 
+def wait_resumed(client, plan, target, self_pane):
+    """Read-only bounded handshake for a resumed native hook row."""
+    wait_idle(client, target)
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            guard(client, plan, target, self_pane)
+            return
+        except Deferred as error:
+            if str(error) not in ('agent-identity-unknown', 'child-state-unknown') or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+
+
 def native_status(client, plan, target, self_pane, journal):
     _, fresh = native_query(client, plan, target, self_pane, journal, '/status', 'status')
     identity = status(target['provider'], fresh)
@@ -595,8 +674,10 @@ def claude_modal(text, command):
     if re.search(r'(?im)((?<![-\w])approve\b|allow once|trust this|select an option|enter to confirm|yes, proceed)', text):
         return False
     if command == '/status':
+        observed_close = (re.search(r'(?m)^\s*Version:\s*2\.1\.330\s*$', text) and
+                          re.search(r'(?m)^\s*←/→ to switch · Esc to close\s*$', text))
         return bool(re.search(r'(?m)^\s*Settings\s+Status\s+Config\s+Usage\s+Stats\s*$', text) and
-                    'Esc to cancel' in text)
+                    ('Esc to cancel' in text or observed_close))
     if command == '/help':
         return bool(re.search(r'(?m)^\s*Help\s+General\s+Commands\s+Custom commands\s*$', text) and
                     'Esc to cancel' in text)
@@ -635,11 +716,29 @@ def claude_permission(text):
         return fields[-1].strip()
     if re.search(r'(?m)^\s*⏵⏵ bypass permissions on \(shift\+tab to cycle\)\s*$', text):
         return 'bypass permissions'
+    versions = re.findall(r'Claude Code v([A-Za-z0-9][A-Za-z0-9.+_-]{0,63})', text)
+    if (re.search(r'(?m)^[ \t]*▐▛███▛█   Claude Code v2\.1\.330[ \t]*$', text)
+            and versions and len(versions) == text.count('Claude Code v')
+            and all(version == '2.1.330' for version in versions)
+            and re.search(r'(?m)^\s*⏵⏵ bypass permissions on \(shift\+tab to cycle\) · ← for agents\s*$', text)):
+        return 'bypass permissions'
     raise Deferred('claude-permissions-unknown')
 
 
 def native_query(client, plan, target, self_pane, journal, command, phase, completion=None):
     _, previous = guard(client, plan, target, self_pane)
+    if target['provider'] == 'claude' and command == '/status':
+        deadline = time.monotonic() + 3
+        for attempt in range(12):
+            try:
+                claude_permission(screen(previous))
+                break
+            except Deferred as error:
+                if (str(error) != 'claude-permissions-unknown' or attempt == 11
+                        or time.monotonic() >= deadline):
+                    raise
+                time.sleep(0.05)
+                _, previous = guard(client, plan, target, self_pane)
     cursor = previous.get('latestCursor')
     if cursor is None:
         raise Deferred('native-response-freshness-unknown')
@@ -898,6 +997,7 @@ def refresh(client, plan, target, self_pane, journal):
     journal.record('installation-before', handle=target['handle'], installation=installation_before)
     before = native_status(client, plan, target, self_pane, journal)
     journal.record('identity-before', handle=target['handle'], **before)
+    command = resume_command(target['provider'], before, installed_version=installation_before.get('nativeVersion'))
     _, exit_frame = guard(client, plan, target, self_pane)
     normal_exit = {'sessionId': before['sessionId'], 'cursor': exit_frame.get('latestCursor')}
     if not re.fullmatch(r'\d+', str(normal_exit['cursor'])):
@@ -916,23 +1016,11 @@ def refresh(client, plan, target, self_pane, journal):
             time.sleep(0.2)
     shell_guard(client, plan, target, normal_exit)
     journal.record('native-exit-observed', handle=target['handle'], sessionId=before['sessionId'], shellCwd=before['cwd'])
-    command = 'codex resume ' + shlex.quote(before['sessionId'])
     send(client, journal, target, command, 'exact-resume')
-    wait_idle(client, target)
-    # Native UI readiness can precede publication of its resumed hook row. Read only
-    # during this bounded handshake; never retry a send or tolerate changed identity.
-    deadline = time.monotonic() + 10
-    while True:
-        try:
-            guard(client, plan, target, self_pane)
-            break
-        except Deferred as e:
-            if str(e) != 'agent-identity-unknown' or time.monotonic() >= deadline:
-                raise
-            time.sleep(0.2)
+    wait_resumed(client, plan, target, self_pane)
     after = native_status(client, plan, target, self_pane, journal)
     journal.record('identity-after', handle=target['handle'], **after)
-    if before != after:
+    if any(before.get(key) != after.get(key) for key in ('sessionId', 'cwd', 'permissions', 'resumeMode')):
         raise Deferred('native-identity-or-permissions-mismatch')
     installation_after = installation_guard(target)
     journal.record('installation-after', handle=target['handle'], installation=installation_after)
