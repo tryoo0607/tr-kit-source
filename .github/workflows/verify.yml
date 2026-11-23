@@ -26,6 +26,7 @@ jobs:
           import toolchain
           version = tomllib.loads(Path('common/base/scripts/secret-tools.toml').read_text())['gitleaks']['version']
           prefix = Path.home()/'.local/share/tr-kit/gitleaks'/version
+          prefix.parent.mkdir(parents=True, exist_ok=True)
           plan = toolchain.plan('gitleaks', prefix, Path.cwd())
           toolchain.apply(plan, toolchain.plan_id(plan))
           with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
