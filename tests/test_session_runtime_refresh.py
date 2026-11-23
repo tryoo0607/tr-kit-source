@@ -1,9 +1,14 @@
 import copy
+from contextlib import redirect_stderr, redirect_stdout
+import fcntl
+import io
 import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
+import signal
+import sys
 import tempfile
 import time
 import unittest
@@ -189,6 +194,34 @@ class RuntimeRefreshTests(unittest.TestCase):
                 self.assertIn('stopped', result)
                 self.assertEqual([], client.sent)
 
+    def test_metadata_wait_rechecks_state_before_whole_apply(self):
+        changes = [('busy-or-state-unknown', lambda c: c.agents[1].update(state='working')),
+                   ('draft', lambda c: c.read.update(draft='pending', tail=['› pending'])),
+                   ('runtime-changed', lambda c: setattr(c, 'runtime', 'new')),
+                   ('target-changed', lambda c: c.target.update(incarnationId='new')),
+                   ('self-unidentified', lambda c: c.self.update(leafId='new'))]
+        for expected, mutate in changes:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as folder:
+                client = Fake()
+                def lookup(*args):
+                    mutate(client)
+                    return self.installation
+                with patch.object(m, 'plugin_inventory', side_effect=lookup):
+                    result = m.apply(client, self.plan, self.self_pane, folder)
+                self.assertEqual(expected, result['stopped'])
+                self.assertEqual([], client.sent)
+
+    def test_five_minutes_remains_apply_start_deadline(self):
+        now = [1000.0]
+        plan = dict(self.plan, createdAt=now[0])
+        def lookup(*args):
+            now[0] = 1301.0
+            return self.installation
+        with patch.object(m.time, 'time', side_effect=lambda: now[0]), patch.object(m, 'plugin_inventory', side_effect=lookup):
+            result = m.apply(self.client, plan, self.self_pane, self.temp.name)
+        self.assertEqual(1, len(self.client.sent))
+        self.assertEqual('native-response-freshness-unknown', result['stopped'])
+
     def test_remote_apply_is_delegated_without_input(self):
         self.plan['environment'] = 'remote'
         with self.assertRaisesRegex(m.Deferred, 'delegate'):
@@ -359,13 +392,36 @@ class RuntimeRefreshTests(unittest.TestCase):
                 self.assertEqual(['/status'], [a[a.index('--text')+1] for a in client.sent])
                 self.assertEqual([], result['results'])
 
-    def test_complete_fresh_status_ignores_valid_old_screen(self):
+    def test_complete_stream_status_disagreeing_with_current_screen_is_unverified(self):
         client = self.status_with_old_screen([
             'Session: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b', 'Directory: /work', 'Permissions: fresh'])
         with m.Journal(self.temp.name, self.plan['operationId']) as journal:
-            result = m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, journal)
-        self.assertEqual('01a1c848-8ff2-7e90-bcec-44a3ca07a21b', result['sessionId'])
-        self.assertEqual('fresh', result['permissions'])
+            with self.assertRaisesRegex(m.Deferred, 'native-response-identity-changed'):
+                m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, journal)
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_status_boundary_rejects_historical_fields_after_completed_ordinary_prompt(self):
+        for provider, prompt in (('codex', '›'), ('claude', '❯')):
+            fields = ['Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                      'cwd: /work', 'Permissions: Full Access', 'Version: 2.1.330']
+            for question in ('say hello', 'Ask Codex to do anything else'):
+                with self.subTest(provider=provider, question=question):
+                    text = '\n'.join(fields + [prompt+' '+question, 'Completed answer', prompt])
+                    with self.assertRaisesRegex(m.Deferred, 'native-response-boundary-changed'):
+                        m.current_status_response(provider, text)
+
+    def test_status_boundary_keeps_known_codex_placeholder_and_subsequent_status(self):
+        fields = ['Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                  'cwd: /work', 'Permissions: Full Access', 'Version: 2.1.330']
+        text = '\n'.join(fields + ['› Ask Codex to do anything'])
+        self.assertEqual(text, m.current_status_response('codex', text))
+        for provider, prompt in (('codex', '›'), ('claude', '❯')):
+            with self.subTest(provider=provider):
+                fresh = [line.replace('01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                                      '11111111-1111-4111-8111-111111111111') for line in fields]
+                text = '\n'.join(fields + [prompt+' say hello', 'Completed answer', prompt,
+                                          prompt+' /status'] + fresh + [prompt])
+                self.assertEqual('\n'.join(fresh+[prompt]), m.current_status_response(provider, text))
 
     def test_final_journal_fsync_failure_preserves_completed_targets(self):
         second = copy.deepcopy(self.plan['targets'][0])
@@ -622,13 +678,13 @@ class RuntimeRefreshTests(unittest.TestCase):
         validate=lambda text:m.claude_plugin_listing(text,self.installation)
         args=(client,plan,target,self.self_pane,'/plugin list --enabled',frame(heading),'────',validate,'claude-runtime-plugin-list-unknown')
         frames=[(client.target,frame(rows)) for rows in (heading,complete)]
-        with patch.object(m,'guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
+        with patch.object(m,'passive_guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
             _,text=m.claude_complete_response(*args)
         self.assertEqual({'example@market:user':'1.0.0'},validate(text))
         self.assertEqual(2,guard.call_count)
         self.assertEqual([],client.sent)
         for changed in (frame(heading+['❯ /status','❯']),frame(heading+complete),dict(frame(complete),latestCursor='7')):
-            with patch.object(m,'guard',return_value=(client.target,changed)),patch.object(m.time,'sleep'):
+            with patch.object(m,'passive_guard',return_value=(client.target,changed)),patch.object(m.time,'sleep'):
                 with self.assertRaisesRegex(m.Deferred,'boundary-changed'):
                     m.claude_complete_response(*args)
 
@@ -655,19 +711,20 @@ class RuntimeRefreshTests(unittest.TestCase):
         before={'source':'screen','tail':['❯'],'latestCursor':'10'}
         early=dict(before,latestCursor='11')
         ready=dict(early,tail=['❯ /plugin list --enabled','• example@market (v1.0.0, user) ✔ enabled','❯'])
-        frames=[(client.target,frame) for frame in (before,early,ready)]
-        with patch.object(m,'guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
+        frames=[(client.target,frame) for frame in (early,ready)]
+        with patch.object(m,'guard',return_value=(client.target,before)), \
+             patch.object(m,'passive_guard',side_effect=frames) as guard,patch.object(m.time,'sleep'):
             _,text=m.native_query(client,plan,target,self.self_pane,Mock(),'/plugin list --enabled','plugin-preflight',
                 completion=(lambda text:m.claude_plugin_listing(text,self.installation),'claude-runtime-plugin-list-unknown'))
         self.assertEqual({'example@market:user':'1.0.0'},m.claude_plugin_listing(text,self.installation))
-        self.assertEqual(3,guard.call_count)
+        self.assertEqual(2,guard.call_count)
         self.assertEqual(1,len(client.sent))
 
     def test_claude_partial_reload_waits_for_summary_without_resending(self):
         client,plan=self.claude_plan();target=plan['targets'][0]
         initial={'source':'screen','tail':['❯ /reload-plugins','────','❯'],'latestCursor':'6'}
         complete=dict(initial,tail=['❯ /reload-plugins',*client.responses['/reload-plugins'],'────','❯'])
-        with patch.object(m,'guard',return_value=(client.target,complete)),patch.object(m.time,'sleep'):
+        with patch.object(m,'passive_guard',return_value=(client.target,complete)),patch.object(m.time,'sleep'):
             _,text=m.claude_complete_response(client,plan,target,self.self_pane,'/reload-plugins',initial,'────',
                 lambda text:m.claude_reload_summary(text,self.installation),'claude-reload-completion-unknown')
         self.assertEqual(1,m.claude_reload_summary(text,self.installation)['plugins'])
@@ -768,6 +825,63 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual(['/status', '\x1b'], [args[args.index('--text')+1] for args in client.sent])
         self.assertNotIn('--enter', client.sent[-1])
         self.assertIsNone(client.modal)
+
+    def test_claude_modal_response_proof_survives_last_inventory_before_escape(self):
+        client = ClaudeModalFake()
+        plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+        original = m.installation_guard
+        modal_checks = []
+        def changing(target):
+            result = original(target)
+            if client.modal == '/status':
+                modal_checks.append(True)
+                if len(modal_checks) == 1:
+                    client.read['latestCursor'] = '11'
+                    client.read['tail'] = [line.replace('01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
+                                                        '11111111-1111-4111-8111-111111111111')
+                                           for line in client.read['tail']]
+            return result
+        with patch.object(m, 'installation_guard', side_effect=changing):
+            with self.assertRaisesRegex(m.Deferred, 'native-response-proof-changed'):
+                m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(1, len(modal_checks))
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+        self.assertNotIn('nativeProof', plan['targets'][0])
+
+    def test_claude_current_modal_missing_uuid_never_fills_it_from_history(self):
+        client = ClaudeModalFake()
+        client.read['tail'] = ['Session ID: 11111111-1111-4111-8111-111111111111',
+                               'cwd: /work', 'Version: 2.1.330', '❯',
+                               'Permission mode: bypass permissions']
+        plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+        call = client.call
+        def incomplete(*args):
+            result = call(*args)
+            if args[:2] == ('terminal', 'send'):
+                client.read['tail'] = ['Session ID: 11111111-1111-4111-8111-111111111111',
+                    'cwd: /work', 'Version: 2.1.330', '❯',
+                    'Settings Status Config Usage Stats', 'Version: 2.1.330', 'cwd: /work',
+                    '←/→ to switch · Esc to close']
+            return result
+        with patch.object(client, 'call', side_effect=incomplete):
+            with self.assertRaisesRegex(m.Deferred, 'native-identity-unknown'):
+                m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+        self.assertNotIn('nativeProof', plan['targets'][0])
+
+    def test_status_response_observation_has_no_second_installation_lookup(self):
+        client, plan = self.claude_plan()
+        calls = []
+        lookup = m.installation_guard
+        def before_input_only(target):
+            calls.append(True)
+            self.assertEqual([], client.sent)
+            return lookup(target)
+        with patch.object(m, 'installation_guard', side_effect=before_input_only):
+            native = m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+        self.assertEqual('/work', native['cwd'])
+        self.assertEqual([True], calls)
+        self.assertTrue(plan['targets'][0]['nativeProof'])
 
     def test_claude_status_waits_for_permission_and_uses_latest_confirmed_cursor(self):
         client, plan = self.claude_plan()
@@ -949,7 +1063,9 @@ class RuntimeRefreshTests(unittest.TestCase):
             for case, extra in (('repeat',[marker,body,'❯']),('echo-only',[marker,'❯']),('stale',[])):
                 current=dict(previous,tail=previous['tail']+extra)
                 first=iter([previous])
-                with self.subTest(command=command,case=case), patch.object(m,'guard',side_effect=lambda *a,**k:(client.target,next(first,current))),patch.object(m.time,'sleep'):
+                with self.subTest(command=command,case=case), \
+                     patch.object(m,'guard',return_value=(client.target,previous)), \
+                     patch.object(m,'passive_guard',return_value=(client.target,current)),patch.object(m.time,'sleep'):
                     if case == 'repeat':
                         _, fresh=m.native_query(client,plan,target,self.self_pane,Mock(),command,'repeat')
                         self.assertEqual(body,fresh)
@@ -1244,6 +1360,214 @@ class RuntimeRefreshTests(unittest.TestCase):
             m.Orca('host; touch /tmp/pwned').call('terminal', 'list')
         self.assertEqual(m.Orca().executable, run.call_args.args[0][0])
         self.assertNotIn('shell', run.call_args.kwargs)
+
+
+class NativeInventoryBounds(unittest.TestCase):
+    """Real owned native processes, OS pipes and groups; no installed CLI."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        env = patch.dict(os.environ, {'PATH': str(self.root) + os.pathsep + os.environ['PATH']})
+        env.start()
+        self.addCleanup(env.stop)
+        self.payload = {'installed': [{'pluginId': 'owned@test', 'version': '1.0.0',
+                                       'enabled': True, 'installed': True}]}
+
+    def executable(self, body, version="print('codex-cli 0.171.0')", provider='codex'):
+        path = self.root / provider
+        path.write_text('#!' + sys.executable + '\nimport os, sys, time, json, subprocess\n'
+                        'from pathlib import Path\n'
+                        "if sys.argv[1:] == ['--version']:\n    " + version + '\n    sys.exit(0)\n' + body + '\n')
+        path.chmod(0o700)
+
+    def output(self):
+        return 'print(' + repr(json.dumps(self.payload)) + ')'
+
+    def inventory(self):
+        return REAL_PLUGIN_INVENTORY('codex', str(self.root))
+
+    def child(self):
+        return ("child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                "Path('child.pid').write_text(str(child.pid))\n")
+
+    def assert_dead(self, pid):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                if (Path('/proc') / str(pid) / 'stat').read_text().split()[2] == 'Z':
+                    return
+            except FileNotFoundError:
+                return
+            time.sleep(0.02)
+        self.fail('owned child still running')
+
+    def test_cold_beyond_fifteen_seconds_matches_warm_with_safe_progress(self):
+        self.executable(self.output())
+        warm = self.inventory()
+        self.executable('time.sleep(15.2)\n' + self.output())
+        progress = io.StringIO()
+        start = time.monotonic()
+        with redirect_stderr(progress):
+            cold = self.inventory()
+        self.assertGreater(time.monotonic() - start, 15)
+        self.assertEqual(warm, cold)
+        self.assertEqual('observed', cold['state'])
+        frames = [json.loads(line) for line in progress.getvalue().splitlines()]
+        self.assertGreaterEqual(len(frames), 3)
+        self.assertTrue(all(set(f) == {'phase', 'provider', 'elapsedSeconds', 'timeoutSeconds'} for f in frames))
+        self.assertTrue(all(f['timeoutSeconds'] == 180 for f in frames))
+        self.assertNotIn(str(self.root), progress.getvalue())
+        self.assertNotIn('owned@test', progress.getvalue())
+        self.executable('time.sleep(0.06)\n' + self.output())
+        client = Fake()
+        client.target['worktreePath'] = str(self.root)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(m, 'Orca', return_value=client), patch.object(m, 'INVENTORY_PROGRESS_INTERVAL', 0.01), \
+             patch.dict(os.environ, {'ORCA_PANE_KEY': m.pane(client.self)}), redirect_stdout(stdout), redirect_stderr(stderr):
+            self.assertEqual(0, m.main(['inspect']))
+        self.assertEqual('observed', json.loads(stdout.getvalue())['targets'][1]['installation']['state'])
+        self.assertTrue(stderr.getvalue())
+
+    def test_diagnostics_nonzero_invalid_encoding_and_shapes_are_unverified(self):
+        entries = self.payload['installed']
+        cases = [(self.output() + '\nsys.stderr.write(' + repr(diagnostic) + ')', 'native-cli-diagnostics-unverified')
+                 for diagnostic in ('warning: SECRET partial catalogue', 'SECRET unknown diagnostic', '  ')]
+        cases += [(self.output() + '\nsys.exit(3)', 'native-cli-failed'),
+                  ("os.write(1, b'\\xff')", 'native-cli-invalid-encoding'),
+                  ("os.write(2, b'\\xff')\n" + self.output(), 'native-cli-invalid-encoding')]
+        cases += [('print(' + repr(data) + ')', None) for data in ('SECRET invalid', '{}', '[]', '{"installed":[{}]}',
+                                                                 json.dumps({'installed': entries * 2}))]
+        for body, reason in cases:
+            with self.subTest(body=body):
+                self.executable(body)
+                result = self.inventory()
+                self.assertEqual('unverified', result['state'])
+                if reason:
+                    self.assertEqual(reason, result['reason'])
+                self.assertNotIn('SECRET', json.dumps(result))
+
+    def test_deeply_nested_owned_inventory_returns_safe_unverified_json(self):
+        payload = '{"installed":[],"nested":' + '['*10000 + ']'*10000 + '}'
+        self.assertEqual(20026, len(payload.encode('utf-8')))
+        self.executable('sys.stdout.write(' + repr(payload) + ')')
+        result = self.inventory()
+        self.assertEqual('unverified', result['state'])
+        self.assertEqual('native-inventory-unreadable', result['reason'])
+        self.assertNotIn('plugins', result)
+        self.assertNotIn('nested', json.dumps(result))
+        self.assertEqual(result, json.loads(json.dumps(result)))
+
+    def test_whole_apply_blocks_exit_zero_partial_inventory_without_input(self):
+        self.executable(self.output())
+        client = Fake()
+        client.target['worktreePath'] = str(self.root)
+        own = m.pane(client.self)
+        plan = m.make_plan(m.inspect(client, own), ['term_target'])
+        self.executable(self.output() + "\nsys.stderr.write('SECRET partial catalogue')")
+        result = m.apply(client, plan, own, self.root/'journal')
+        self.assertEqual('installed-versions-unverified', result['stopped'])
+        self.assertEqual([], client.sent)
+        self.assertNotIn('SECRET', json.dumps(result))
+
+    def test_real_floods_bound_both_pipes_and_cleanup_owned_children(self):
+        for fd, limit in ((1, m.NATIVE_STDOUT_LIMIT), (2, m.NATIVE_STDERR_LIMIT)):
+            with self.subTest(fd=fd):
+                self.executable(self.child() + 'os.write(' + str(fd) + ", b'SECRET' * " + str(limit//6 + 1) + ')\ntime.sleep(30)')
+                start = time.monotonic()
+                result = self.inventory()
+                self.assertEqual('native-cli-output-limit', result['reason'])
+                self.assertLess(time.monotonic() - start, 3)
+                self.assertNotIn('SECRET', json.dumps(result))
+                self.assert_dead(int((self.root/'child.pid').read_text()))
+        # Simultaneous pressure exceeds stderr before stdout: no sequential-pipe deadlock.
+        self.executable(self.child() + "os.write(1, b'x'*100000)\nos.write(2, b'y'*100000)\ntime.sleep(30)")
+        self.assertEqual('native-cli-output-limit', self.inventory()['reason'])
+        self.assert_dead(int((self.root/'child.pid').read_text()))
+
+    def test_timeout_after_leader_exit_still_reaps_owned_group(self):
+        self.executable(self.child() + self.output())
+        progress = io.StringIO()
+        start = time.monotonic()
+        with patch.object(m, 'CODEX_INVENTORY_TIMEOUT', 0.2), patch.object(m, 'INVENTORY_PROGRESS_INTERVAL', 0.03), redirect_stderr(progress):
+            result = self.inventory()
+        self.assertEqual('native-cli-unavailable-or-timeout', result['reason'])
+        self.assertLess(time.monotonic() - start, 2)
+        self.assert_dead(int((self.root/'child.pid').read_text()))
+        self.assertNotIn(str(self.root), progress.getvalue())
+        self.executable("child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\nPath('child.pid').write_text(str(child.pid))\n" + self.output())
+        self.assertEqual('observed', self.inventory()['state'])
+        self.assert_dead(int((self.root/'child.pid').read_text()))
+
+    def test_only_codex_inventory_has_longer_deadline(self):
+        self.executable('time.sleep(0.3)\n' + self.output(), "time.sleep(0.3); print('codex-cli 0.171.0')")
+        with patch.object(m, 'NATIVE_TIMEOUT', 0.15), patch.object(m, 'CODEX_INVENTORY_TIMEOUT', 0.6):
+            with self.assertRaisesRegex(m.Deferred, 'timeout'):
+                m.native_command('codex', ['--version'], str(self.root))
+            self.assertEqual(self.payload, json.loads(m.native_command('codex', ['plugin', 'list', '--json'], str(self.root))))
+            self.executable("time.sleep(0.3)\nprint('[]')", provider='claude')
+            with self.assertRaisesRegex(m.Deferred, 'timeout'):
+                m.native_command('claude', ['plugin', 'list', '--json'], str(self.root))
+
+    def test_full_non_drained_stderr_does_not_block_deadline_cleanup_or_repeat(self):
+        self.executable(self.child() + 'time.sleep(30)')
+        read_fd, write_fd = os.pipe()
+        try:
+            os.set_blocking(write_fd, False)
+            while True:
+                try:
+                    os.write(write_fd, b'x' * 4096)
+                except BlockingIOError:
+                    break
+            os.set_blocking(write_fd, True)
+            original_flags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+            code = ('import importlib.util, json, os, sys, fcntl, threading\n'
+                    's=importlib.util.spec_from_file_location("owned", ' + repr(str(SCRIPT)) + ')\n'
+                    'm=importlib.util.module_from_spec(s); s.loader.exec_module(m)\n'
+                    'm.CODEX_INVENTORY_TIMEOUT=0.15; m.INVENTORY_PROGRESS_INTERVAL=0.01\n'
+                    'flags=fcntl.fcntl(2,fcntl.F_GETFL); fds=len(os.listdir("/proc/self/fd")); threads=threading.active_count()\n'
+                    'results=[]; pids=[]\n'
+                    'for _ in range(3):\n'
+                    ' results.append(m.plugin_inventory("codex", ' + repr(str(self.root)) + '))\n'
+                    ' pids.append(int(open(' + repr(str(self.root/'child.pid')) + ').read()))\n'
+                    'print(json.dumps({"results":results,"pids":pids,"flagsSame":flags==fcntl.fcntl(2,fcntl.F_GETFL),'
+                    '"fdsSame":fds==len(os.listdir("/proc/self/fd")),"threadsSame":threads==threading.active_count()}))\n')
+            helper = subprocess.Popen([sys.executable, '-B', '-c', code], stdout=subprocess.PIPE, stderr=write_fd,
+                                      text=True, start_new_session=True)
+            try:
+                output, _ = helper.communicate(timeout=4)
+            except subprocess.TimeoutExpired:
+                os.killpg(helper.pid, signal.SIGKILL)
+                helper.communicate()
+                self.fail('full stderr blocked inventory deadline')
+            self.assertEqual(0, helper.returncode)
+            result = json.loads(output)
+            self.assertTrue(result['flagsSame'] and result['fdsSame'] and result['threadsSame'])
+            self.assertEqual(original_flags, fcntl.fcntl(write_fd, fcntl.F_GETFL))
+            self.assertTrue(all(r['reason'] == 'native-cli-unavailable-or-timeout' for r in result['results']))
+            for pid in result['pids']:
+                self.assert_dead(pid)
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+    def test_closed_broken_and_custom_stderr_cannot_break_inventory(self):
+        self.executable('time.sleep(0.06)\n' + self.output())
+        class Unwritable:
+            def fileno(self):
+                raise OSError('SECRET unwritable')
+            def write(self, value):
+                raise AssertionError('unbounded Python writer used')
+        closed = io.StringIO()
+        closed.close()
+        read_fd, write_fd = os.pipe()
+        os.close(read_fd)
+        with os.fdopen(write_fd, 'w') as broken:
+            flags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+            for sink in (closed, Unwritable(), broken):
+                with self.subTest(sink=type(sink)), redirect_stderr(sink), patch.object(m, 'INVENTORY_PROGRESS_INTERVAL', 0.01):
+                    self.assertEqual('observed', self.inventory()['state'])
+            self.assertEqual(flags, fcntl.fcntl(write_fd, fcntl.F_GETFL))
 
 
 if __name__ == '__main__':
