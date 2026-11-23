@@ -840,4 +840,3 @@ def diagnostic_suffix(diag, stage):
     count = diag.get('count')
     return ((' stage=' + stage + '; findings=' + str(count) + '; rules=' + ','.join(rules))
                           if type(count) is int and 0 < count <= 100000 and rules else '')
-

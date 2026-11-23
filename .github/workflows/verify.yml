@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 jobs:
-  isolated-check:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
