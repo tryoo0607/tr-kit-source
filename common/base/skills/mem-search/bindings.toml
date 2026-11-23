@@ -1,8 +1,0 @@
-# 의도: description을 YAML folded scalar로 보정한다.
-# 보존: 검색 동작과 description의 의미는 바꾸지 않는다. 변환은 형식 보정이며 upstream NOTICE를 함께 전달한다.
-schema_version = 1
-[[replacements]]
-file = "SKILL.md"
-old = "description: Smart search (default). Search claude-mem's persistent cross-session memory database in three steps: search, timeline, then selected get_observations. Use when user asks \"did we already solve this?\", \"how did we do X last time?\", or needs work from previous sessions."
-new = "description: >-\n  Smart search (default). Search claude-mem's persistent cross-session memory database in three steps: search, timeline, then selected get_observations. Use when user asks \"did we already solve this?\", \"how did we do X last time?\", or needs work from previous sessions."
-count = 1

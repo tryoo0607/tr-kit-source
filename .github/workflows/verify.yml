@@ -1,0 +1,25 @@
+name: verify-only
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install 'PyYAML==6.0.3'
+      - name: Prepare pinned scanner outside source
+        run: |
+          python3 -B -c 'import os,sys; from pathlib import Path; sys.path.insert(0,"common/base/scripts"); import toolchain; p=toolchain.plan("gitleaks",Path(os.environ["RUNNER_TEMP"])/"g5-scanner",Path.cwd()); toolchain.apply(p,toolchain.plan_id(p))'
+      - name: Run local CI equivalent
+        run: python3 -B scripts/ci-check.py --gitleaks "$RUNNER_TEMP/g5-scanner/bin/gitleaks" --output "$RUNNER_TEMP/g5-verification"
+      # Deliberately no push trigger, credentials, source fetch/vendor step,
+      # artifact upload, deployment keys or delivery/publishing job.

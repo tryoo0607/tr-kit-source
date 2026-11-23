@@ -1,72 +1,72 @@
-[
-  {
-    "name": "기존 repo에 병렬 공간 준비",
-    "before": [
-      {"path": "skills/project/SKILL.md"},
-      {"path": "skills/project/references/management.md"},
-      {"path": "skills/project/references/structure.md", "section": "workspace 기준"},
-      {"path": "skills/project/references/tools/worktrunk.md"},
-      {"path": "skills/worktrunk/SKILL.md"},
-      {"path": "skills/worktrunk/reference/switch.md"}
-    ],
-    "after": [
-      {"path": "skills/project/SKILL.md"},
-      {"path": "skills/project/references/management.md"},
-      {"path": "skills/project/references/structure.md", "section": "workspace 기준"},
-      {"path": "skills/worktrunk/SKILL.md"},
-      {"path": "skills/worktrunk/upstream/reference/switch.md"}
-    ]
-  },
-  {
-    "name": "Worktrunk 경로 설정 직접 확인",
-    "before": [
-      {"path": "skills/worktrunk/SKILL.md"},
-      {"path": "skills/worktrunk/reference/config.md", "section": "Worktree path template"}
-    ],
-    "after": [
-      {"path": "skills/worktrunk/SKILL.md"},
-      {"path": "skills/worktrunk/upstream/reference/config.md", "section": "Worktree path template"}
-    ]
-  },
-  {
-    "name": "Orca 등록과 외부 공간 인식",
-    "before": [
-      {"path": "skills/project/SKILL.md"},
-      {"path": "skills/project/references/management.md"},
-      {"path": "skills/project/references/tools/orca.md"},
-      {"path": "skills/orca-cli/SKILL.md"}
-    ],
-    "after": [
-      {"path": "skills/project/SKILL.md"},
-      {"path": "skills/project/references/management.md"},
-      {"path": "skills/orca-cli/SKILL.md"}
-    ],
-    "unmeasured": ["동일 호스트/CLI 버전의 Orca guide와 실제 명령 출력. 양쪽 모두 필요하지만 이번 정적 합계에서 제외"]
-  },
-  {
-    "name": "Orca 기존 공간 에이전트 실행",
-    "before": [
-      {"path": "skills/session/SKILL.md"},
-      {"path": "skills/session/references/orca.md"},
-      {"path": "skills/orca-cli/SKILL.md"}
-    ],
-    "after": [
-      {"path": "skills/session/SKILL.md"},
-      {"path": "skills/orca-cli/SKILL.md"}
-    ],
-    "unmeasured": ["동일 호스트/CLI 버전의 Orca guide와 실제 명령 출력. 양쪽 모두 필요하지만 이번 정적 합계에서 제외"]
-  },
-  {
-    "name": "비대상 대조: 문서 맥락 조회",
-    "before": [
-      {"path": "skills/document/SKILL.md"},
-      {"path": "skills/document/references/types/context.md"}
-    ],
-    "after": [
-      {"path": "skills/document/SKILL.md"},
-      {"path": "skills/document/references/types/context.md"}
-    ],
-    "allowed_growth_chars": 28,
-    "growth_reason": "본문 동작은 동일하며 역할 metadata 표시 추가분만 허용"
-  }
-]
+{
+  "schema_version": 1,
+  "discovery": {"before": "common/base/skills", "after": "common/base/skills"},
+  "cases": [
+    {
+      "name": "skill 저작의 자체 기준 선택",
+      "before": [
+        {"path": "common/base/skills/plugin-authoring/SKILL.md"},
+        {"path": "common/base/skills/plugin-authoring/references/skill/authoring.md"},
+        {"path": "common/base/skills/plugin-authoring/references/shared/structure-view.md"},
+        {"path": "common/base/skills/plugin-authoring/references/shared/reading-flow.md"},
+        {"path": "common/base/skills/plugin-authoring/references/shared/behavior-tests.md"}
+      ],
+      "after": [
+        {"path": "common/base/skills/plugin-authoring/SKILL.md"},
+        {"path": "common/base/skills/plugin-authoring/references/skill/authoring.md"},
+        {"path": "common/base/skills/plugin-authoring/references/shared/structure-view.md"},
+        {"path": "common/base/skills/plugin-authoring/references/shared/reading-flow.md"},
+        {"path": "common/base/skills/plugin-authoring/references/shared/behavior-tests.md"}
+      ],
+      "unmeasured": ["공식 skill-creator 지침과 도구 출력, 작업 대상·원문 요구·호스트 주입 및 작성 후 대상별 감사. 이 목록은 자체 저작 기준 선택 부분만 선언한다"]
+    },
+    {
+      "name": "Worktrunk 호출 준비의 자체 연결",
+      "before": [{"path": "common/base/skills/worktrunk/SKILL.md"}],
+      "after": [{"path": "common/base/skills/worktrunk/SKILL.md"}],
+      "unmeasured": ["공식 설치 CLI의 요청별 help·실행 출력, repo/호스트의 적용 지침과 사용자 작업 데이터"]
+    },
+    {
+      "name": "Orca 등록의 자체 기준",
+      "before": [
+        {"path": "common/base/skills/project/SKILL.md"},
+        {"path": "common/base/skills/project/references/management.md", "section": "연결과 공간 준비"},
+        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/references/external-connection.md"}
+      ],
+      "after": [
+        {"path": "common/base/skills/project/SKILL.md"},
+        {"path": "common/base/skills/project/references/management.md", "section": "연결과 공간 준비"},
+        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/references/external-connection.md"}
+      ],
+      "unmeasured": ["project management의 공통 전제/결과 절, 실제 provider 선언·공식 Orca guide·명령 출력·환경 주입"]
+    },
+    {
+      "name": "Orca 기존 공간 agent 실행의 자체 연결",
+      "before": [
+        {"path": "common/base/skills/session/SKILL.md"},
+        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/references/external-connection.md"}
+      ],
+      "after": [
+        {"path": "common/base/skills/session/SKILL.md"},
+        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/references/external-connection.md"}
+      ],
+      "unmeasured": ["위임/인계 없는 직접 조작 경로만 선언. 실제 provider·Orca guide·명령 출력·호스트 및 승인 자료는 제외"]
+    },
+    {
+      "name": "비대상 대조: 문서 맥락 조회의 자체 기준",
+      "before": [
+        {"path": "common/base/skills/document/SKILL.md"},
+        {"path": "common/base/skills/document/references/types/context.md"}
+      ],
+      "after": [
+        {"path": "common/base/skills/document/SKILL.md"},
+        {"path": "common/base/skills/document/references/types/context.md"}
+      ],
+      "unmeasured": ["요청에 따라 선택할 구현 연결·공식 기능·실제 프로젝트 자료와 환경 주입"]
+    }
+  ]
+}

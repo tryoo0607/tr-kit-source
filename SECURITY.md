@@ -1,15 +1,7 @@
-# Security Policy
+# 검사와 보고
 
-## Supported versions
+비밀 원문·개인 로그·인증 파일을 이슈나 패키지에 첨부하지 않는다. 로컬에서 실제 전송 범위를 공통 security-scan으로 검사하고, 원문 보호·Gitleaks·제품 권한·사용자 승인·호스트 역할의 상태를 각각 확인한다.
 
-보안 수정은 최신 release 계열에 제공한다. 이전 release에서 발견된 문제도 최신 버전에서 재현되는지
-확인한 뒤 처리한다.
+로컬 hook은 trust와 제품별 실행 범위에 의존하며 우회 불가능한 OS 경계가 아니다. `review` 패키지는 초기 지침 hook만 포함하므로 운영 보호가 활성화됐다고 보고하지 않는다. `guarded` 패키지도 공식 scanner·로컬 upstream binding·제품 native 시험이 필요하다. 보호 설정 부재나 검사 실패를 우회 옵션으로 해소하지 않는다.
 
-## Reporting a vulnerability
-
-취약점, 자격증명 노출 또는 개인 정보 노출 가능성은 public issue에 올리지 말고 GitHub의
-**Security → Report a vulnerability**를 사용한다. 재현에 필요한 최소 정보와 영향 범위만 포함하고,
-실제 secret이나 개인 데이터는 첨부하지 않는다.
-
-비공개 보고 채널이 활성화되지 않았으면 세부 정보를 공개하지 말고 저장소 소유자에게 채널 개설을
-요청한다.
+운영 전환 전 실패·오탐·미실행 범위를 docs/verification.md와 대조한다. 문제 보고에는 민감하지 않은 재현 입력, 제품/패키지 버전, 관측한 오류와 영향 범위만 포함한다.

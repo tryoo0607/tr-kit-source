@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "claude-mem": {{SERVER_JSON}}
+  }
+}

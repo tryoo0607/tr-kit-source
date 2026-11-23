@@ -2,9 +2,9 @@
 
 ## 입력과 전제
 
-repo 루트와 검사할 경로, 고정한 로컬 rule 파일을 확인한다. `semgrep --version`을 배포 manifest와 대조하고 실행 파일이 없거나 버전이 다르면 설치 담당으로 돌려준다. Community Edition은 함수나 파일 경계를 넘는 분석에 한계가 있다.
+repo 루트와 검사할 경로, 고정한 로컬 rule 파일을 확인한다. `semgrep --version`을 [선택 버전](../../../scripts/security-tools.toml)과 대조하고 실행 파일이 없거나 버전이 다르면 설치 담당으로 돌려준다. Community Edition은 함수나 파일 경계를 넘는 분석에 한계가 있다.
 
-격리 toolchain을 사용하는 환경에서는 setup이 제공한 `env.sh`를 해당 shell에서 명시 적용한다. 그 설정은 Semgrep settings와 log를 toolchain의 state로 분리한다. 읽기 전용 홈 경로 오류를 더 강한 권한이나 전역 설정 변경으로 우회하지 않는다.
+격리 toolchain이 이미 설정돼 있으면 확인한 해당 환경을 사용한다. 도구 준비가 별도로 요청된 경우만 [공식 도구 준비·확인](../../../references/toolchain.md)의 명시 계획/설치/검증을 연결한다. 일반 검사 요청에서 자동 설치하거나 env.sh를 source하지 않는다. 검사로 생성되는 settings·log·출력 경로는 승인 범위에 포함되는지 확인한다. 읽기 전용 홈 경로 오류를 더 강한 권한이나 전역 설정 변경으로 우회하지 않는다.
 
 ## 수행 방법과 절차
 

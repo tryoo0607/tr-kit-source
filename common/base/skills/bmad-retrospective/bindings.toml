@@ -1,8 +1,0 @@
-# 의도: description을 YAML folded scalar로 보정한다.
-# 보존: 회고 진입 조건과 본문의 전문 절차 의미를 유지한다.
-schema_version = 1
-[[replacements]]
-file = "SKILL.md"
-old = "description: 'Review a finished epic folder in the ticket tree against the evidence it left behind — the epic file, each ticket's story file and plan, diffs, commits — and produce a retrospective with sourced findings, action items, and an acceptance decision. Use when the user says \"run a retrospective\" or \"lets retro the epic [epic]\". Supports -H/--headless'"
-new = "description: >-\n  Review a finished epic folder in the ticket tree against the evidence it left behind — the epic file, each ticket's story file and plan, diffs, commits — and produce a retrospective with sourced findings, action items, and an acceptance decision. Use when the user says \"run a retrospective\" or \"lets retro the epic [epic]\". Supports -H/--headless"
-count = 1

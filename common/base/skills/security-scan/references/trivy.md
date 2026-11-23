@@ -2,7 +2,7 @@
 
 ## 입력과 전제
 
-`trivy --version`과 대상 이미지 digest 또는 경로를 확인한다. 배포 manifest의 실행 버전을 사용하고 DB 및 checks의 갱신 시점을 확인한다. 클러스터 접근과 원격 repo 검사는 별도 요청 범위이며 로컬 검사 대신 자동 실행하지 않는다.
+`trivy --version`과 대상 이미지 digest 또는 경로를 확인한다. DB·cache·출력 파일의 생성·갱신과 네트워크 조회가 필요한지 확인해 승인 범위에 포함한다. source 이관은 실제 scanner 실행 승인이 아니다. [선택 버전](../../../scripts/security-tools.toml)의 실행 버전을 사용하고 DB 및 checks의 갱신 시점을 확인한다. 클러스터 접근과 원격 repo 검사는 별도 요청 범위이며 로컬 검사 대신 자동 실행하지 않는다.
 
 ## 수행 방법과 절차
 

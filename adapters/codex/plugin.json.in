@@ -1,0 +1,11 @@
+{
+  "name": "tr-codex",
+  "version": "{{VERSION}}",
+  "description": "tr-kit common workflows and policy connections",
+  "skills": "./common/base/skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "tr-kit (Codex)",
+    "shortDescription": "공통 작업 원칙과 공식 기능 연결"
+  }
+}
