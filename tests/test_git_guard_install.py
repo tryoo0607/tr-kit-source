@@ -1,273 +1,274 @@
-"""Enrollment, effective hooks, chaining and conflict-safe recovery in disposable repositories."""
+"""Explicit enrollment tested only with disposable Git repositories/local remotes."""
+import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
-import unittest
+import sys
+from unittest import mock
 
-from test_commit_guard import GuardFixture, module
+from test_secret_legacy import GuardFixture, ROOT, guard, REAL_TRUSTED_SCANNER
 
-installer = module('git_guard_install', 'git-guard-install.py')
+sys.path.insert(0,str(ROOT/'common/base/scripts'))
+import git_guard_install as installer
 
 
 class InstallTests(GuardFixture):
     def setUp(self):
         super().setUp()
-        self.state = self.base / 'stable-runtime'
+        self.state=self.base/'stable runtime'
+        self.real_scanner=REAL_TRUSTED_SCANNER()
+        self.hooks=self.repo/'.git/hooks'
+        self.key='ghp_'+hashlib.sha256(b'G1 synthetic no real account').hexdigest()[:36]
 
-    def enroll(self, **kwargs):
-        report = installer.plan(self.repo, self.state, self.scanner, **kwargs)
-        installer.apply(report)
+    def plan(self,**kwargs):
+        return installer.plan(self.repo,self.state,self.real_scanner,**kwargs)
+
+    def enroll(self,**kwargs):
+        report=self.plan(**kwargs)
+        installer.apply(report,installer.plan_id(report))
         return report
 
-    def test_plan_readonly_bytes_modes_and_rollback(self):
-        hooks = self.repo / '.git/hooks'
-        original = hooks / 'pre-commit'
-        original.write_bytes(b'#!/bin/sh\nexit 0\n# custom bytes\n')
-        original.chmod(0o751)
-        before = installer.snapshot(original)
-        other = hooks / 'post-commit'
-        other.write_text('untouched')
-        report = installer.plan(self.repo, self.state, self.scanner)
-        self.assertEqual(before, installer.snapshot(original))
-        self.assertFalse(self.state.exists())
-        installer.apply(report)
-        self.assertEqual('active', installer.status(self.state)['status'])
-        self.stage('clean', 'benign')
-        self.git('commit', '-qm', 'test: allowed')
-        self.assertEqual('rolled-back', installer.status(self.state, True)['status'])
-        self.assertEqual(before, installer.snapshot(original))
-        self.assertEqual('untouched', other.read_text())
-        self.assertFalse((hooks / 'pre-push').exists())
-        self.assertEqual('rolled-back', installer.status(self.state, True)['status'])
+    def custom(self,event,body,mode=0o755):
+        p=self.hooks/event;p.write_text(body);p.chmod(mode);return p
+
+    def cli(self,action,*args):
+        return subprocess.run([sys.executable,'-B',str(ROOT/'scripts/git-guard-install.py'),
+             action,'--state',str(self.state),*args],capture_output=True)
+
+    def test_readonly_plan_public_receipt_and_byte_mode_restore(self):
+        hook=self.custom('pre-commit','#!/bin/sh\n# custom\nexit 0\n',0o751)
+        before=installer.snapshot(hook)
+        post=self.hooks/'post-commit';post.write_text('unrelated')
+        report=self.plan()
+        self.assertEqual(before,installer.snapshot(hook));self.assertFalse(self.state.exists())
+        self.assertNotIn('bytes',json.dumps(installer.public(report)))
+        installer.apply(report,installer.plan_id(report))
+        self.assertEqual('active',installer.status(self.state)['status'])
+        self.assertEqual(0o700,self.state.stat().st_mode & 0o777)
+        self.assertEqual(0o600,(self.state/'receipt.json').stat().st_mode & 0o777)
+        self.stage('clean','benign');self.git('commit','-qm','test: clean')
+        self.assertEqual('rolled-back',installer.status(self.state,True)['status'])
+        self.assertEqual(before,installer.snapshot(hook));self.assertFalse((self.hooks/'pre-push').exists())
+        self.assertEqual('unrelated',post.read_text())
+        self.assertEqual('rolled-back',installer.status(self.state,True)['status'])
+        self.assertFalse(list(self.state.rglob('gitleaks')))
 
     def test_actual_commit_blocks_artifact_and_secret_without_index_mutation(self):
         self.enroll(local_only=['evidence/**'])
-        self.stage('evidence/run', 'benign')
-        before = self.git('write-tree').stdout
-        p = self.git('commit', '-qm', 'test: blocked', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertIn(b'local-only', p.stderr)
-        self.assertEqual(before, self.git('write-tree').stdout)
-        self.git('rm', '--cached', 'evidence/run')
-        self.stage('file', 'SYNTHETIC_SECRET')
-        p = self.git('commit', '-qm', 'test: blocked', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertNotIn(b'SYNTHETIC_SECRET', p.stderr)
+        self.stage('evidence/run.txt','benign');before=self.git('write-tree').stdout
+        bad=self.git('commit','-qm','test: blocked',check=False)
+        self.assertNotEqual(0,bad.returncode);self.assertIn(b'policy_violation',bad.stdout+bad.stderr)
+        self.assertEqual(before,self.git('write-tree').stdout)
+        self.git('rm','--cached','evidence/run.txt');self.stage('fixture',self.key)
+        bad=self.git('commit','-qm','test: secret',check=False)
+        self.assertNotEqual(0,bad.returncode);self.assertNotIn(self.key.encode(),bad.stdout+bad.stderr)
 
-    def test_existing_hook_failure_preserved_and_later_edit_conflict(self):
-        hook = self.repo / '.git/hooks/pre-commit'
-        hook.write_text('#!/bin/sh\nexit 17\n')
-        hook.chmod(0o755)
-        self.enroll()
-        self.stage('clean', 'benign')
-        direct = subprocess.run([str(hook)], cwd=self.repo, capture_output=True)
-        self.assertEqual(17, direct.returncode)
-        p = self.git('commit', '-qm', 'test: rejected by original', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertFalse(self.git('rev-parse', '--verify', 'HEAD', check=False).returncode == 0)
-        hook.write_text('later user edit')
-        self.assertEqual('conflict', installer.status(self.state)['status'])
-        with self.assertRaisesRegex(installer.InstallError, 'rollback conflict'):
-            installer.status(self.state, True)
-        self.assertEqual('later user edit', hook.read_text())
+    def test_original_exit_and_arguments_preserved(self):
+        log=self.base/'args'
+        hook=self.custom('pre-commit','#!/usr/bin/env python3\nimport sys,json\nfrom pathlib import Path\n'+
+                         f'Path({str(log)!r}).write_text(json.dumps(sys.argv[1:]))\nraise SystemExit(17)\n')
+        self.enroll();self.stage('clean','benign')
+        p=subprocess.run([str(hook),'literal arg','--flag'],cwd=self.repo,capture_output=True)
+        self.assertEqual(17,p.returncode)
+        self.assertEqual(['literal arg','--flag'],json.loads(log.read_text()))
 
-    def test_legacy_precommit_cannot_stage_secret_after_initial_guard(self):
-        hook = self.repo / '.git/hooks/pre-commit'
-        hook.write_text('#!/usr/bin/env python3\nimport subprocess,sys\nfrom pathlib import Path\n'
-                        'Path("legacy-args").write_text(repr(sys.argv[1:]))\n'
-                        'Path("legacy-secret").write_text("SYNTHETIC_SECRET")\n'
-                        'subprocess.run(["git", "add", "--", "legacy-secret"], check=True)\n')
-        hook.chmod(0o755)
-        self.enroll()
-        self.stage('clean', 'benign')
-        direct = subprocess.run([str(hook), 'literal arg', '--flag'], cwd=self.repo, capture_output=True)
-        self.assertNotEqual(0, direct.returncode)
-        self.assertIn(b'secret detected', direct.stderr)
-        self.assertNotIn(b'SYNTHETIC_SECRET', direct.stderr)
-        self.assertEqual("['literal arg', '--flag']", (self.repo / 'legacy-args').read_text())
-        # Restore the initial benign index so the actual commit reaches the legacy hook again.
-        self.git('rm', '--cached', 'legacy-secret')
-        p = self.git('commit', '-qm', 'test: legacy staging blocked', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertIn(b'secret detected', p.stderr)
-        self.assertNotEqual(0, self.git('rev-parse', '--verify', 'HEAD', check=False).returncode)
-        self.assertIn(b'legacy-secret', self.git('diff', '--cached', '--name-only').stdout)
+    def test_existing_precommit_cannot_stage_secret_after_first_check(self):
+        self.custom('pre-commit','#!/usr/bin/env python3\nimport subprocess\nfrom pathlib import Path\n'+
+                    f'Path("injected").write_text({self.key!r})\n'+
+                    'subprocess.run(["git","add","--","injected"],check=True)\n')
+        self.enroll();self.stage('clean','benign')
+        p=self.git('commit','-qm','test: hook mutation',check=False)
+        self.assertNotEqual(0,p.returncode);self.assertIn(b'finding',p.stdout+p.stderr)
+        self.assertNotIn(self.key.encode(),p.stdout+p.stderr)
+        self.assertNotEqual(0,self.git('rev-parse','--verify','HEAD',check=False).returncode)
+        self.assertIn(b'injected',self.git('diff','--cached','--name-only').stdout)
 
-    def test_pre_push_chain_receives_exact_argv_stdin_and_blocks_outgoing_secret(self):
-        log = self.base / 'push-log'
-        hook = self.repo / '.git/hooks/pre-push'
-        hook.write_text('#!/usr/bin/env python3\nimport sys,json\nfrom pathlib import Path\n' +
-                        f'Path({str(log)!r}).write_text(json.dumps([sys.argv[1:],sys.stdin.read()]))\n')
-        hook.chmod(0o755)
-        self.enroll()
-        self.stage('clean', 'benign')
-        tip = self.commit()
-        payload = self.push_data(tip).encode()
-        result = subprocess.run([str(hook), 'remote odd', 'url space'], cwd=self.repo, input=payload, capture_output=True)
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual([['remote odd', 'url space'], payload.decode()], json.loads(log.read_text()))
-        self.stage('bad', 'SYNTHETIC_SECRET')
-        bad = self.commit()
-        result = subprocess.run([str(hook), 'remote', 'url'], cwd=self.repo, input=self.push_data(bad, tip).encode(), capture_output=True)
-        self.assertNotEqual(0, result.returncode)
-        self.assertNotIn(b'SYNTHETIC_SECRET', result.stderr)
+    def test_prepush_exact_stdin_argv_and_original_failure(self):
+        log=self.base/'push-log'
+        hook=self.custom('pre-push','#!/usr/bin/env python3\nimport sys,json\nfrom pathlib import Path\n'+
+             f'Path({str(log)!r}).write_text(json.dumps([sys.argv[1:],sys.stdin.read()]))\nraise SystemExit(19)\n')
+        self.stage('clean','benign');tip=self.commit();self.enroll()
+        data=self.push_data(tip).encode()
+        p=subprocess.run([str(hook),'remote odd','url space'],cwd=self.repo,input=data,capture_output=True)
+        self.assertEqual(19,p.returncode)
+        self.assertEqual([['remote odd','url space'],data.decode()],json.loads(log.read_text()))
 
-    def test_actual_push_to_local_bare_remote(self):
-        self.enroll()
-        remote = self.base / 'remote.git'
-        subprocess.run(['git', 'init', '--bare', '-q', str(remote)], check=True)
-        subprocess.run(['git', '-C', str(remote), 'config', 'receive.denyDeleteCurrent', 'ignore'], check=True)
-        self.git('remote', 'add', 'fixture', str(remote))
-        self.stage('clean', 'benign')
-        self.git('commit', '-qm', 'test: benign')
-        self.git('push', 'fixture', 'HEAD:refs/heads/main')
-        self.stage('bad', 'SYNTHETIC_SECRET')
-        self.commit()
-        p = self.git('push', 'fixture', 'HEAD:refs/heads/main', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertIn(b'secret detected', p.stderr)
-        self.git('push', 'fixture', ':refs/heads/main')
+    def test_actual_local_bare_remote_push_blocked_and_delete_ref_supported(self):
+        self.enroll();remote=self.base/'remote.git'
+        subprocess.run(['git','init','--bare','-q',str(remote)],check=True)
+        self.git('remote','add','fixture',str(remote));self.stage('clean','benign')
+        self.git('commit','-qm','test: clean');self.git('push','fixture','HEAD:refs/heads/main')
+        original=subprocess.run(['git','--git-dir',str(remote),'rev-parse','refs/heads/main'],capture_output=True,check=True).stdout
+        self.stage('secret',self.key);tree=self.git('write-tree').stdout.decode().strip()
+        # Create the outgoing fixture without disabling or bypassing any hook.
+        tip=self.git('commit-tree',tree,'-p','HEAD',input=b'test: synthetic outgoing\n').stdout.decode().strip()
+        bad=self.git('push','fixture',tip+':refs/heads/main',check=False)
+        self.assertNotEqual(0,bad.returncode);self.assertNotIn(self.key.encode(),bad.stdout+bad.stderr)
+        after=subprocess.run(['git','--git-dir',str(remote),'rev-parse','refs/heads/main'],capture_output=True,check=True).stdout
+        self.assertEqual(original,after)
+        self.git('push','fixture',':refs/heads/main')
 
-    def test_custom_hooks_path_and_linked_worktree_not_implicitly_enrolled(self):
-        custom = self.base / 'custom hooks'
-        custom.mkdir()
-        self.git('config', 'core.hooksPath', str(custom))
-        self.stage('clean', 'benign')
-        self.commit()
-        linked = self.base / 'linked'
-        self.git('worktree', 'add', '-q', str(linked))
-        report = self.enroll()
-        self.assertEqual(str(custom), report['hooks'])
-        # Other worktrees that share hooks remain unenrolled, preserving their original behavior.
-        (linked / 'other').write_text('SYNTHETIC_SECRET')
-        subprocess.run(['git', '-C', str(linked), 'add', 'other'], check=True)
-        subprocess.run(['git', '-C', str(linked), 'commit', '-qm', 'test: unenrolled'], check=True)
-        self.assertEqual(str(custom), self.git('config', '--get', 'core.hooksPath').stdout.decode().strip())
-        installer.status(self.state, True)
-        # Enroll the linked worktree explicitly with its effective common hooks path.
-        report = installer.plan(linked, self.base / 'linked-runtime', self.scanner)
-        self.assertEqual(str(custom), report['hooks'])
-        installer.apply(report)
-        (linked / 'new').write_text('SYNTHETIC_SECRET')
-        subprocess.run(['git', '-C', str(linked), 'add', 'new'], check=True)
-        p = subprocess.run(['git', '-C', str(linked), 'commit', '-qm', 'test: blocked'], capture_output=True)
-        self.assertNotEqual(0, p.returncode)
+    def test_custom_hooks_linked_worktree_does_not_inherit_enrollment(self):
+        self.stage('clean','benign');self.commit()
+        linked=self.base/'linked';self.git('worktree','add','-q',str(linked))
+        hooks=self.base/'custom hooks';hooks.mkdir();self.git('config','core.hooksPath',str(hooks))
+        self.hooks=hooks
+        log=self.base/'original-ran'
+        self.custom('pre-commit',f'#!/bin/sh\nprintf ran >> {str(log)!r}\n')
+        report=self.enroll();self.assertEqual(str(hooks),report['hooks'])
+        (linked/'other').write_text(self.key)
+        subprocess.run(['git','-C',str(linked),'add','--','other'],check=True)
+        p=subprocess.run(['git','-C',str(linked),'commit','-qm','test: not enrolled'],capture_output=True)
+        self.assertEqual(0,p.returncode,p.stderr);self.assertEqual('ran',log.read_text())
+        self.assertEqual(str(hooks),self.git('config','--get','core.hooksPath').stdout.decode().strip())
+        self.assertEqual('rolled-back',installer.status(self.state,True)['status'])
 
-    def test_relative_hooks_path_and_preapply_conflict(self):
-        custom = self.repo / 'custom hooks'
-        custom.mkdir()
-        self.git('config', 'core.hooksPath', 'custom hooks')
-        report = installer.plan(self.repo, self.state, self.scanner)
-        self.assertEqual(str(custom), report['hooks'])
-        hook = custom / 'pre-commit'
-        hook.write_text('later user hook')
-        with self.assertRaisesRegex(installer.InstallError, 'pre-apply conflict'):
-            installer.apply(report)
+    def test_relative_missing_hooks_directory_and_recovery(self):
+        self.hooks=self.repo/'custom hooks';self.git('config','core.hooksPath','custom hooks')
+        report=self.plan();self.assertFalse(self.hooks.exists());self.assertFalse(self.state.exists())
+        installer.apply(report);self.assertTrue((self.hooks/'pre-commit').is_file())
+        installer.status(self.state,True);self.assertFalse(self.hooks.exists())
+
+    def test_preapply_conflicts_change_no_target_files(self):
+        report=self.plan();hook=self.custom('pre-commit','user edit')
+        with self.assertRaisesRegex(installer.InstallError,'file conflict'):installer.apply(report)
+        self.assertFalse(self.state.exists());self.assertEqual('user edit',hook.read_text())
+        hook.unlink();report=self.plan();self.git('config','core.hooksPath',str(self.base/'new hooks'))
+        with self.assertRaisesRegex(installer.InstallError,'configuration/path'):installer.apply(report)
+        self.assertFalse(self.state.exists());self.assertFalse((self.base/'new hooks').exists())
+
+    def test_plan_digest_changed_rejected_without_writes(self):
+        report=self.plan()
+        with self.assertRaisesRegex(installer.InstallError,'reviewed plan'):installer.apply(report,'0'*64)
         self.assertFalse(self.state.exists())
-        self.assertEqual('later user hook', hook.read_text())
 
-    def test_preapply_hooks_configuration_drift_changes_no_files(self):
-        hooks = self.repo / '.git/hooks'
-        original = hooks / 'pre-commit'
-        original.write_text('#!/bin/sh\nexit 0\n')
-        original.chmod(0o755)
-        before = installer.snapshot(original)
-        report = installer.plan(self.repo, self.state, self.scanner)
-        new_hooks = self.base / 'new-hooks'
-        self.git('config', 'core.hooksPath', str(new_hooks))
-        with self.assertRaisesRegex(installer.InstallError, 'configuration changed'):
-            installer.apply(report)
-        self.assertFalse(self.state.exists())
-        self.assertFalse(new_hooks.exists())
-        self.assertEqual(before, installer.snapshot(original))
-        self.assertFalse((hooks / 'pre-push').exists())
-        self.assertFalse((hooks / 'pre-commit.tr-kit-original').exists())
+    def test_postinstall_edits_config_and_symlinks_prevent_rollback(self):
+        self.enroll();hook=self.hooks/'pre-commit';hook.write_text('later user edit')
+        self.assertEqual('conflict',installer.status(self.state)['status'])
+        with self.assertRaisesRegex(installer.InstallError,'rollback conflict'):installer.status(self.state,True)
+        self.assertEqual('later user edit',hook.read_text());self.assertTrue((self.hooks/'pre-push').is_file())
 
-    def test_preapply_effective_hooks_path_drift_changes_no_files(self):
-        old_hooks = self.base / 'old-hooks'
-        new_hooks = self.base / 'new-hooks'
-        old_hooks.mkdir()
-        new_hooks.mkdir()
-        link = self.base / 'hooks-link'
-        link.symlink_to(old_hooks, target_is_directory=True)
-        self.git('config', 'core.hooksPath', str(link))
-        report = installer.plan(self.repo, self.state, self.scanner)
-        self.assertEqual(str(old_hooks), report['hooks'])
-        link.unlink()
-        link.symlink_to(new_hooks, target_is_directory=True)
-        with self.assertRaisesRegex(installer.InstallError, 'effective hooks path changed'):
-            installer.apply(report)
-        self.assertFalse(self.state.exists())
-        self.assertEqual([], list(old_hooks.iterdir()))
-        self.assertEqual([], list(new_hooks.iterdir()))
+    def test_partial_apply_failure_restores_original_bytes_and_modes(self):
+        hook=self.custom('pre-commit','#!/bin/sh\nexit 0\n',0o751);before=installer.snapshot(hook)
+        report=self.plan();save=installer.save;once=[False]
+        def broken(path,value):
+            if path==self.hooks/'pre-push' and not once[0]:
+                once[0]=True;raise OSError('injected write failure')
+            return save(path,value)
+        with mock.patch.object(installer,'save',side_effect=broken):
+            with self.assertRaises(OSError):installer.apply(report)
+        self.assertEqual(before,installer.snapshot(hook));self.assertFalse((self.hooks/'pre-push').exists())
+        self.assertEqual('rolled-back',installer.status(self.state)['status'])
+        self.assertFalse((self.hooks/'.tr-kit-guard.lock').exists())
 
-    def test_backup_enrollment_verification_and_no_secret_exemption(self):
-        with self.assertRaisesRegex(installer.InstallError, 'verified'):
-            installer.plan(self.repo, self.state, self.scanner, allow_artifacts=['evidence/**'])
-        backup = self.base / 'tr-local-docs'
-        self.repo.rename(backup)
-        self.repo = backup
-        self.enroll(local_only=['_bmad-output/**'], allow_artifacts=['_bmad-output/**'])
-        self.stage('_bmad-output/clean', 'benign')
-        self.git('commit', '-qm', 'test: backup allowed')
-        self.stage('_bmad-output/secret', 'SYNTHETIC_SECRET')
-        self.assertNotEqual(0, self.git('commit', '-qm', 'test: backup secret blocked', check=False).returncode)
-
-    def test_backup_allowance_requires_exact_directory_component(self):
-        backup = self.base / 'tr-local-docs'
-        self.repo.rename(backup)
-        self.repo = backup
-        for pattern in ('other_bmad-output/**', 'project/other_bmad-output/**', '*/other_bmad-output/**'):
-            with self.subTest(pattern=pattern), self.assertRaisesRegex(installer.InstallError, 'explicit'):
-                installer.plan(self.repo, self.state, self.scanner, allow_artifacts=[pattern])
-        for pattern in ('_bmad-output/**', 'project/_bmad-output/**', '*/_bmad-output/**', '**/_bmad-output/**'):
-            with self.subTest(pattern=pattern):
-                report = installer.plan(self.repo, self.state, self.scanner, allow_artifacts=[pattern])
-                self.assertEqual(str(backup), report['repository'])
-
-    def test_manager_symlink_runtime_and_config_conflicts(self):
-        hook = self.repo / '.git/hooks/pre-commit'
-        hook.write_text('#!/bin/sh\n# generated by pre-commit\n')
-        with self.assertRaisesRegex(installer.InstallError, 'unsupported'):
-            installer.plan(self.repo, self.state, self.scanner)
-        hook.unlink()
-        hook.symlink_to(self.scanner)
-        with self.assertRaisesRegex(installer.InstallError, 'symlink'):
-            installer.plan(self.repo, self.state, self.scanner)
-        hook.unlink()
-        with self.assertRaisesRegex(installer.InstallError, 'outside'):
-            installer.plan(self.repo, self.repo / 'runtime', self.scanner)
+    def test_symlink_managed_hook_backup_and_state_rejected(self):
+        target=self.hooks/'pre-commit';target.symlink_to(self.real_scanner)
+        with self.assertRaisesRegex(installer.InstallError,'symlink'):self.plan()
+        target.unlink();self.custom('pre-commit','#!/bin/sh\n# generated by pre-commit\n')
+        with self.assertRaisesRegex(installer.InstallError,'managed'):self.plan()
+        target.unlink();(self.hooks/'pre-commit.tr-kit-original').write_text('occupied')
+        with self.assertRaisesRegex(installer.InstallError,'occupied'):self.plan()
+        (self.hooks/'pre-commit.tr-kit-original').unlink()
+        with self.assertRaisesRegex(installer.InstallError,'outside'):
+            installer.plan(self.repo,self.repo/'state',self.real_scanner)
         self.enroll()
-        self.git('config', 'core.hooksPath', '/later/change')
-        with self.assertRaisesRegex(installer.InstallError, 'configuration changed'):
-            installer.status(self.state, True)
+        with self.assertRaisesRegex(installer.InstallError,'state must be new'):self.plan()
+        with self.assertRaisesRegex(installer.InstallError,'managed'):
+            installer.plan(self.repo,self.base/'other-state',self.real_scanner)
+
+    def test_policy_edit_blocks_hook_and_conflict_safe_restore(self):
+        self.enroll();self.stage('clean','benign')
+        policy=self.state/'policy.json';data=json.loads(policy.read_text());data['gitleaks']=str(self.base/'missing')
+        policy.write_text(json.dumps(data))
+        bad=self.git('commit','-qm','test: unavailable',check=False)
+        self.assertNotEqual(0,bad.returncode);self.assertIn(b'unavailable',bad.stdout+bad.stderr)
+        self.assertEqual('conflict',installer.status(self.state)['status'])
+
+    def test_cli_requires_explicit_paths_and_reviewed_plan(self):
+        p=self.cli('plan','--repo',str(self.repo),'--gitleaks',str(self.real_scanner))
+        self.assertEqual(0,p.returncode,p.stderr);report=json.loads(p.stdout)
+        bad=self.cli('apply','--repo',str(self.repo),'--gitleaks',str(self.real_scanner))
+        self.assertNotEqual(0,bad.returncode);self.assertFalse(self.state.exists())
+        p=self.cli('apply','--repo',str(self.repo),'--gitleaks',str(self.real_scanner),'--expect-plan',report['plan_id'])
+        self.assertEqual(0,p.returncode,p.stderr);self.assertEqual('active',json.loads(p.stdout)['status'])
+        self.assertEqual('rolled-back',json.loads(self.cli('rollback').stdout)['status'])
+
+    def test_backup_exception_does_not_exempt_secrets(self):
+        backup=self.base/'tr-local-docs';self.repo.rename(backup);self.repo=backup;self.hooks=backup/'.git/hooks'
+        self.enroll(local_only=['_bmad-output/**'],allow_artifacts=['_bmad-output/**'])
+        self.stage('_bmad-output/report.md','benign');self.git('commit','-qm','test: backup allowed')
+        self.stage('_bmad-output/secret.md',self.key)
+        p=self.git('commit','-qm','test: backup secret',check=False)
+        self.assertNotEqual(0,p.returncode);self.assertIn(b'finding',p.stdout+p.stderr)
+
+    def test_external_scanner_missing_does_not_prevent_original_restore(self):
+        import tomllib
+        prefix=self.base/'fixture-provision';(prefix/'bin').mkdir(parents=True)
+        scanner=prefix/'bin/gitleaks';scanner.write_bytes(self.scanner.read_bytes());scanner.chmod(0o755)
+        pin=tomllib.loads((ROOT/'common/base/scripts/secret-tools.toml').read_text())['gitleaks']
+        (prefix/'provisioned.json').write_text(json.dumps({'version':pin['version'],
+            'archive_sha256':pin['linux_x64_sha256'],'binary_sha256':installer.digest(scanner.read_bytes())}))
+        report=installer.plan(self.repo,self.state,scanner);installer.apply(report)
+        scanner.unlink()
+        self.assertEqual('unavailable',installer.status(self.state)['status'])
+        self.stage('clean','benign');bad=self.git('commit','-qm','test: missing scanner',check=False)
+        self.assertNotEqual(0,bad.returncode)
+        self.assertEqual('rolled-back',installer.status(self.state,True)['status'])
+
+    def test_hooks_lock_refuses_concurrent_plan_without_mutation(self):
+        lock=self.hooks/'.tr-kit-guard.lock';lock.write_text('another operation')
+        with self.assertRaisesRegex(installer.InstallError,'lock'):self.plan()
+        self.assertFalse(self.state.exists());self.assertEqual('another operation',lock.read_text())
+
+    def test_unexecutable_original_is_preserved_without_execution(self):
+        marker=self.base/'should-not-exist'
+        hook=self.custom('pre-commit',f'#!/bin/sh\ntouch {str(marker)!r}\n',0o644)
+        before=installer.snapshot(hook);self.enroll();self.stage('clean','benign')
+        self.git('commit','-qm','test: non executable original')
+        self.assertFalse(marker.exists());installer.status(self.state,True)
+        self.assertEqual(before,installer.snapshot(hook))
+
+    def test_relative_hooks_config_symlink_retarget_is_detected(self):
+        first=self.base/'first-hooks';second=self.base/'second-hooks';first.mkdir();second.mkdir()
+        link=self.base/'hook-link';link.symlink_to(first,target_is_directory=True)
+        self.git('config','core.hooksPath',str(link));report=self.plan()
+        link.unlink();link.symlink_to(second,target_is_directory=True)
+        with self.assertRaisesRegex(installer.InstallError,'configuration/path'):installer.apply(report)
+        self.assertFalse(self.state.exists());self.assertEqual([],list(first.iterdir()))
+
+    def test_alternate_index_is_scanned_by_real_commit_hook(self):
+        self.enroll();self.stage('clean','benign');self.git('commit','-qm','test: initial')
+        alternate=self.base/'alternate-index';env=dict(os.environ,GIT_INDEX_FILE=str(alternate))
+        subprocess.run(['git','-C',str(self.repo),'read-tree','HEAD'],env=env,check=True)
+        (self.repo/'bad').write_text(self.key)
+        subprocess.run(['git','-C',str(self.repo),'add','--','bad'],env=env,check=True)
+        p=subprocess.run([str(self.hooks/'pre-commit')],cwd=self.repo,env=env,capture_output=True)
+        self.assertNotEqual(0,p.returncode);self.assertIn(b'finding',p.stdout+p.stderr)
+        self.assertNotIn(b'bad',self.git('diff','--cached','--name-only').stdout)
 
 
-if __name__ == '__main__':
-    unittest.main()
+class PolicyTests(GuardFixture):
+    def test_handwritten_unrestricted_exceptions_fail_in_index_and_push(self):
+        self.entry['allow_artifacts']=['evidence/**'];self.save_policy();self.stage('evidence/a','benign')
+        with self.assertRaisesRegex(guard.GuardError,'artifact allowances'):guard.check_index(self.repo,self.policy)
+        with self.assertRaisesRegex(guard.GuardError,'artifact allowances'):guard.check_push(self.repo,self.policy,'')
 
-@unittest.skipUnless(os.environ.get('TR_GITLEAKS_TEST_BINARY'), 'real Gitleaks integration is opt-in')
-class RealGitHookTests(GuardFixture):
-    def test_real_gitleaks_commit_push_and_rollback(self):
-        self.scanner = Path(os.environ['TR_GITLEAKS_TEST_BINARY'])
-        state = self.base / 'real-runtime'
-        installer.apply(installer.plan(self.repo, state, self.scanner))
-        self.stage('clean', 'ordinary fixture content')
-        self.git('commit', '-qm', 'test: clean real scanner')
-        remote = self.base / 'real-remote.git'
-        subprocess.run(['git', 'init', '--bare', '-q', str(remote)], check=True)
-        self.git('remote', 'add', 'fixture', str(remote))
-        self.git('push', 'fixture', 'HEAD:refs/heads/check')
-        token = 'ghp_' + 'F7zR4mN8qT2vL6cX9bW3sH5kJ1dP0eA4rU8i'
-        self.stage('bad', token)
-        before = self.git('write-tree').stdout
-        p = self.git('commit', '-qm', 'test: synthetic secret', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertNotIn(token.encode(), p.stderr)
-        self.assertEqual(before, self.git('write-tree').stdout)
-        self.commit()
-        p = self.git('push', 'fixture', 'HEAD:refs/heads/check', check=False)
-        self.assertNotEqual(0, p.returncode)
-        self.assertNotIn(token.encode(), p.stderr)
-        self.assertEqual('rolled-back', installer.status(state, True)['status'])
+    def test_exact_backup_suffix_and_actual_git_root(self):
+        root=self.base/'tr-local-docs';self.repo.rename(root);self.repo=root
+        for pattern in ['evidence/**','other_bmad-output/**','p/_bmad-output/*','/p/_bmad-output/**','../_bmad-output/**','p//_bmad-output/**']:
+            with self.subTest(pattern=pattern),self.assertRaises(guard.GuardError):
+                guard.validate_artifact_policy(root,{'allow_artifacts':[pattern]})
+        for pattern in ['_bmad-output/**','project/_bmad-output/**','*/_bmad-output/**','**/_bmad-output/**']:
+            guard.validate_artifact_policy(root,{'allow_artifacts':[pattern]})
+        # A declared path alias cannot give another actual root the backup exception.
+        self.entry['path']=str(root);self.entry['allow_artifacts']=['_bmad-output/**'];self.save_policy()
+        self.stage('_bmad-output/report.md','benign');guard.check_index(root,self.policy)
+
+    def test_data_only_cat_heredoc_with_own_source_is_not_environment_output(self):
+        source=(ROOT/'common/base/scripts/git_guard_install.py').read_text()
+        command="cat > example.py <<'PY'\n"+source+"\nPY\n"
+        self.assertIsNone(guard.disclosure_reason(guard.literal_command_view(command)))
+        # Actual shell disclosure remains executable and blocked after the terminator.
+        self.assertIsNotNone(guard.disclosure_reason(guard.literal_command_view(command+'printenv\n')))

@@ -8,7 +8,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import tomllib
+import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from profile_config import identifier, load as load_config, path_value
 
 
 def digest(path):
@@ -21,7 +24,7 @@ def owned(root, relative):
         raise ValueError('fixed directory must not be a symlink')
     root = root.resolve()
     relative = Path(relative)
-    if relative.is_absolute() or '..' in relative.parts:
+    if relative.is_absolute() or not relative.parts or '..' in relative.parts:
         raise ValueError('expected a safe relative path')
     path = root / relative
     if not path.resolve().is_relative_to(root):
@@ -29,32 +32,44 @@ def owned(root, relative):
     return path
 
 
+def fixed(path):
+    path = Path(path).expanduser().absolute()
+    if any(p.is_symlink() for p in [path, *path.parents]):
+        raise ValueError('fixed path must not contain a symlink')
+    return path
+
+
 def scope_path(root, ownership, group=None, project=None):
-    root = Path(root).expanduser().resolve()
+    root = fixed(path_value(str(root)))
+    if ownership not in {'environment', 'group', 'project'}:
+        raise ValueError('unknown ownership')
     if ownership == 'environment':
         return root / 'environment'
-    if not group or Path(group).name != group or group in ('.', '..'):
+    if not isinstance(group, str) or identifier(group) != group:
         raise ValueError('group must be one path component')
     base = root / 'groups' / group
     if ownership == 'group':
         return base / 'common'
-    if not project or Path(project).name != project or project in ('.', '..'):
+    if not isinstance(project, str) or identifier(project) != project:
         raise ValueError('project must be one stable identifier (shared by worktrees)')
     return base / 'projects' / project
 
 
 def prepare(scope, apply=False):
-    scope = Path(scope).resolve()
+    scope = fixed(scope)
     paths = [scope / 'originals', scope / 'extracted']
+    for path in paths:
+        fixed(path)
+        if path.exists() and not path.is_dir():
+            raise ValueError('fixed directory is not a directory')
     if apply:
         for path in paths:
-            if path.is_symlink():
-                raise ValueError('fixed directories must not be symlinks')
             path.mkdir(parents=True, exist_ok=True)
     return {'status': 'prepared' if apply else 'planned', 'directories': list(map(str, paths))}
 
 
 def output_paths(scope, relative):
+    scope = fixed(scope)
     return (owned(Path(scope) / 'originals', relative),
             owned(Path(scope) / 'extracted', str(relative) + '/content.md'),
             owned(Path(scope) / 'extracted', str(relative) + '/provenance.json'))
@@ -71,11 +86,18 @@ def freshness(scope, relative):
         return 'fresh' if (not data.get('stale') and data['original'] == str(source.resolve())
                            and data['sha256'] == digest(source)
                            and data['output_sha256'] == digest(output)) else 'stale'
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return 'stale'
 
 
 def extract(scope, relative, command, options=None):
+    if not isinstance(command, list) or not command or any(not isinstance(x, str) or not x for x in command):
+        raise ValueError('expected explicit command array')
+    options = options or []
+    if not isinstance(options, list) or any(not isinstance(x, str) for x in options):
+        raise ValueError('expected option string array')
+    if any(x in {'--output', '--to'} or x.startswith(('--output=', '--to=')) for x in options):
+        raise ValueError('output and format are owned by the helper')
     source, output, meta = output_paths(scope, relative)
     try:
         if not (Path(scope) / 'originals').is_dir():
@@ -86,16 +108,18 @@ def extract(scope, relative, command, options=None):
     except FileNotFoundError:
         return {'status': 'missing', 'original': str(source)}
     except OSError as exc:
-        return {'status': 'unavailable', 'original': str(source), 'error': str(exc)}
+        return {'status': 'unavailable', 'original': str(source), 'error': type(exc).__name__}
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         before = digest(source)
-        version = subprocess.run([*command, '--version'], capture_output=True, text=True, check=True).stdout.strip()
+        version = subprocess.run([*command, '--version'], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
         with tempfile.TemporaryDirectory(prefix='.convert-', dir=output.parent) as work:
             offline = dict(os.environ, HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1')
             result = subprocess.run([*command, 'convert', str(source), '--to', 'md', '--output', work, *(options or [])],
-                                    capture_output=True, text=True, env=offline)
+                                    capture_output=True, text=True, env=offline, timeout=600)
             candidates = list(Path(work).rglob('*.md'))
+            if any(p.is_symlink() or not p.resolve().is_relative_to(Path(work)) for p in candidates):
+                raise RuntimeError('conversion output escaped temporary directory')
             if result.returncode or len(candidates) != 1 or not candidates[0].stat().st_size:
                 raise RuntimeError('conversion failed or did not produce exactly one nonempty Markdown output')
             if digest(source) != before:
@@ -134,26 +158,26 @@ def extract(scope, relative, command, options=None):
         if meta.is_file():
             try:
                 old = json.loads(meta.read_text())
-                old.update(stale=True, error=str(exc))
+                old.update(stale=True, error=type(exc).__name__)
                 temporary = meta.with_suffix('.tmp')
                 temporary.write_text(json.dumps(old, indent=2) + '\n')
                 os.replace(temporary, meta)
-            except (OSError, ValueError):
+            except (OSError, ValueError, TypeError, AttributeError):
                 pass
-        return {'status': 'stale' if output.exists() else 'unindexed', 'original': str(source), 'error': str(exc)}
+        return {'status': 'stale' if output.exists() else 'unindexed', 'original': str(source), 'error': type(exc).__name__}
 
 
 def state_path(scope):
-    scope = Path(scope).resolve()
+    scope = fixed(scope)
     key = hashlib.sha256(str(scope).encode()).hexdigest()[:16]
-    base = Path(os.environ.get('TR_ASSETS_STATE_ROOT', str(Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'tr-kit/assets'))).expanduser().resolve()
+    base = fixed(os.environ.get('TR_ASSETS_STATE_ROOT', str(Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'tr-kit/assets')))
     if base == scope or base.is_relative_to(scope):
         raise ValueError('state root must be outside the original scope')
-    return base / key
+    return fixed(base / key)
 
 
 def qmd_connection(scope):
-    scope = Path(scope).resolve()
+    scope = fixed(scope)
     key = hashlib.sha256(str(scope).encode()).hexdigest()[:16]
     # A dedicated config AND dedicated named index isolate qmd update from all other collections.
     for child in ['config','cache','corpus']:
@@ -165,7 +189,7 @@ def qmd_connection(scope):
 
 
 def index(scope):
-    scope = Path(scope).resolve()
+    scope = fixed(scope)
     if not (scope / 'originals').is_dir() or not (scope / 'extracted').is_dir():
         return {'status': 'unavailable'}
     if not shutil.which('qmd'):
@@ -185,20 +209,26 @@ def index(scope):
     # Missing or inaccessible originals are not confirmed deletions. Search validates
     # current originals and freshness before presenting retained indexed candidates.
     for args in (['collection', 'add', str(stage), '--name', 'assets', '--mask', '**/*.md'], ['update']):
-        result = subprocess.run(command + args, env=env, capture_output=True, text=True)
+        try:
+            result = subprocess.run(command + args, env=env, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {'status': 'unindexed', 'error': type(exc).__name__}
         if result.returncode and not ('already exists' in result.stdout + result.stderr and args[0] == 'collection'):
-            return {'status': 'unindexed', 'error': result.stderr or result.stdout}
+            return {'status': 'unindexed', 'error': 'qmd_index_failed'}
     corpus_files = sorted(str(p.relative_to(stage)) for p in stage.rglob('*.md'))
     (state_path(scope) / 'indexed.json').write_text(json.dumps({'files': corpus_files}))
     return {'status': 'indexed' if wanted else ('stale' if corpus_files else 'empty'), 'count': len(wanted)}
 
 
 def search(scopes, query, limit=5):
+    if type(limit) is not int or limit < 1 or not isinstance(query, str) or not query:
+        raise ValueError('nonempty query and positive limit required')
     reports, results, seen = [], [], set()
     for name in scopes:  # caller supplies explicit authorized order; no recursive discovery
-        scope = Path(name).resolve()
+        scope = Path(name).absolute()
         try:
-            originals = scope / 'originals'
+            scope = fixed(scope)
+            originals = fixed(scope / 'originals')
             if not originals.is_dir():
                 reports.append({'scope': str(scope), 'status': 'unavailable'})
                 continue
@@ -214,18 +244,21 @@ def search(scopes, query, limit=5):
                     indexed_files = set(json.loads((state_path(scope) / 'indexed.json').read_text()).get('files', []))
                 except (OSError, ValueError, TypeError, AttributeError) as exc:
                     indexed = False
-                    search_error = str(exc)
+                    search_error = type(exc).__name__
             if indexed and shutil.which('qmd'):
                 command, env = qmd_connection(scope)
                 try:
                     proc = subprocess.run(command + ['search', query, '-c', 'assets', '--format', 'json', '--full-path'],
-                                          env=env, capture_output=True, text=True)
+                                          env=env, capture_output=True, text=True, timeout=60)
                     if proc.returncode:
-                        raise ValueError(proc.stderr or 'QMD search failed')
+                        raise ValueError('QMD search failed')
                     hits = json.loads(proc.stdout or '[]')
                     if not isinstance(hits,list) or any(not isinstance(hit,dict) for hit in hits):
                         raise ValueError('invalid QMD JSON response')
                     for hit in hits:
+                        rawpath = hit.get('file', hit.get('path', ''))
+                        if not isinstance(rawpath, str) or not rawpath:
+                            raise ValueError('invalid QMD hit path')
                         hitpath = Path(hit.get('file', hit.get('path', '')))
                         try:
                             relative = hitpath.resolve().relative_to(state_path(scope) / 'corpus').as_posix().removesuffix('.md')
@@ -234,9 +267,9 @@ def search(scopes, query, limit=5):
                         if (statuses.get(relative) == 'fresh' and relative + '.md' in indexed_files
                                 and digest(hitpath) == digest(output_paths(scope, relative)[1])):
                             matches.add(relative)
-                except (OSError, ValueError) as exc:
+                except (OSError, ValueError, subprocess.SubprocessError) as exc:
                     indexed = False
-                    search_error = str(exc)
+                    search_error = type(exc).__name__
             elif indexed:
                 indexed = False
                 search_error = 'QMD is unavailable; filename/path fallback only'
@@ -260,17 +293,18 @@ def search(scopes, query, limit=5):
             reports.append({'scope': str(scope), 'status': status, **({'error':search_error} if search_error else {})})
             if len(results) >= limit:
                 break
-        except (OSError, ValueError) as exc:
-            reports.append({'scope': str(scope), 'status': 'unavailable', 'error': str(exc)})
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            reports.append({'scope': str(scope), 'status': 'unavailable', 'error': type(exc).__name__})
     return {'scopes': reports, 'results': results[:limit], 'remaining_scopes': [str(p) for p in scopes[len(reports):]]}
 
 
 def configured_scope(config, ownership, group, project, root=None):
-    data = {}
-    if config and Path(config).expanduser().exists():
-        data = tomllib.loads(Path(config).expanduser().read_text())
-        if type(data.get('schema_version')) is not int or data['schema_version'] != 1:
-            raise ValueError('unsupported common config')
+    # A passed config is explicit: missing or invalid never becomes a default scope.
+    data = load_config(config) if config else {}
+    if ownership not in {'environment', 'group', 'project'}:
+        raise ValueError('unknown ownership')
+    if ownership in {'group', 'project'}: identifier(group)
+    if ownership == 'project': identifier(project)
     if ownership == 'project':
         override = data.get('projects', {}).get(project, {}).get('assets')
     elif ownership == 'group':
@@ -278,10 +312,7 @@ def configured_scope(config, ownership, group, project, root=None):
     else:
         override = data.get('common', {}).get('assets')
     if override:
-        override = Path(override).expanduser()
-        if not override.is_absolute() or '..' in override.parts:
-            raise ValueError('absolute safe scope override required')
-        return override
+        return fixed(path_value(override))
     base = root or data.get('roots', {}).get('assets', str(Path.home() / 'projects/_tr-assets'))
     return scope_path(base, ownership, group, project)
 
@@ -291,7 +322,7 @@ def main():
     p.add_argument('action', choices=['scope', 'prepare', 'extract', 'index', 'search'])
     p.add_argument('--scope', action='append', default=[])
     p.add_argument('--root')
-    p.add_argument('--config', default=str(Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'tr-kit/config.toml'))
+    p.add_argument('--config')
     p.add_argument('--ownership', choices=['environment', 'group', 'project'], default='project')
     p.add_argument('--group'); p.add_argument('--project')
     p.add_argument('--apply', action='store_true')
@@ -299,7 +330,9 @@ def main():
     p.add_argument('--docling-command', nargs='+', default=['docling'])
     p.add_argument('--docling-args', default='[]', help='JSON array of explicit Docling convert options; no automatic model downloads')
     a = p.parse_args()
-    scopes = a.scope or [str(configured_scope(a.config, a.ownership, a.group, a.project, a.root))]
+    default_config = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'tr-kit/config.toml'
+    selected_config = None if a.scope else (a.config if a.config is not None else (default_config if default_config.exists() else None))
+    scopes = a.scope or [str(configured_scope(selected_config, a.ownership, a.group, a.project, a.root))]
     if len(scopes) > 1 and a.action != 'search':
         p.error('multiple scopes are supported only for sequential search')
     if a.action == 'scope': result = {'scope': scopes[0]}
@@ -319,4 +352,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        print(json.dumps({'status': 'unavailable', 'error': type(exc).__name__}))
+        raise SystemExit(2)

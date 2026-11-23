@@ -16,6 +16,13 @@ assets = load('assets', 'assets.py')
 ignores = load('ignores', 'git-excludes.py')
 
 class AssetsTests(unittest.TestCase):
+    def setUp(self):
+        state = tempfile.TemporaryDirectory()
+        self.addCleanup(state.cleanup)
+        env = patch.dict(os.environ, {'TR_ASSETS_STATE_ROOT': state.name})
+        env.start()
+        self.addCleanup(env.stop)
+
     def test_plan_and_scopes(self):
         with tempfile.TemporaryDirectory() as tmp:
             scope = assets.scope_path(tmp, 'project', 'team', 'app')
@@ -188,7 +195,7 @@ class AssetsTests(unittest.TestCase):
     def test_git_global_and_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); home=root/'home'; home.mkdir()
-            with patch.dict(os.environ, {'HOME': str(home), 'GIT_CONFIG_NOSYSTEM':'1', 'GIT_CONFIG_GLOBAL':str(home/'gitconfig')}):
+            with patch.dict(os.environ, {'GIT_CONFIG_NOSYSTEM':'1', 'GIT_CONFIG_GLOBAL':str(home/'gitconfig')}):
                 normal, backup = root/'normal', root/'tr-local-docs'
                 for repo in [normal, backup]:
                     subprocess.run(['git','init',str(repo)], check=True, capture_output=True)

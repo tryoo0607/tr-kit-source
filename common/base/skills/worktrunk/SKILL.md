@@ -1,7 +1,6 @@
 ---
 name: worktrunk
 description: Worktrunk CLI의 worktree 조회, 생성과 정리, 설정과 문제 해결을 수행한다. 프로젝트 배치는 project, 에이전트 실행은 session에 맡긴다.
-license: upstream/LICENSE
 metadata:
   tr-role: external-wrapper
 ---
@@ -15,7 +14,7 @@ metadata:
 ## 수행 방법과 절차
 
 1. 해당 호스트의 CLI와 기존 공간을 확인한다. 같은 repo에서 브랜치 인자가 공간을 선택하며, 다른 repo 또는 현재 공간 기준 명령에는 실행 위치를 지정한다. 충분한 기존 지침과 조회 결과는 재사용한다.
-2. 아래에서 요청에 필요한 공식 명령 자료만 읽는다. 원본 전체 안내인 upstream/GUIDE.md는 기본 로드하지 않는다. 설치 버전 도움말로 실제 지원을 확인한다.
+2. 아래 요청에 맞는 설치 CLI의 공식 도움말만 읽는다. `wt --version`으로 버전을 확인하고 같은 버전·명령의 확인 결과는 재사용한다. 도움말 부재나 미지원 옵션을 동봉 원문·다른 버전 자료로 보충하지 않는다.
 3. 기존 공간이 있으면 재사용하고 요청된 조작만 수행한다. 시작 commit 부재, 경로 충돌이나 도구 부재는 해당 조작을 보류한다. 사용자 설정을 작업 공간 요청의 부수 효과로 바꾸지 않는다.
 4. 실제 경로, Git 연결, 브랜치/시작 상태와 오류를 반환한다. 정리에서는 미반영 변경과 사용 중 세션, 브랜치 삭제 부수 효과를 확인한다. 추가 등록과 에이전트 실행을 자동 수행하지 않는다.
 
@@ -23,11 +22,11 @@ metadata:
 
 | 요청 | 선택 조건 | 읽을 reference |
 |---|---|---|
-| 공간 조회 | 기존 결과로 부족함 | [list](upstream/reference/list.md)의 Columns, Worktree와 요청된 출력 옵션 |
-| 공간 생성 또는 전환 | 해당 조작이 필요함 | [switch](upstream/reference/switch.md)의 Creating a branch, Creating worktrees, Command reference |
-| 공간 정리 | 해당 조작이 필요함 | [remove](upstream/reference/remove.md)의 동작, 옵션과 실패 조건 |
-| 경로 설정과 명령 설정 | 설정 확인/변경이 요청됨 | [config](upstream/reference/config.md)의 해당 설정 절 |
-| hook 설정 또는 승인 오류 | 해당 요청이나 오류가 발생함 | [hook](upstream/reference/hook.md)의 관련 절과 설치 CLI 승인 도움말 |
+| 공간 조회 | 기존 결과로 부족함 | `wt list --help`의 요청된 출력 옵션 |
+| 공간 생성 또는 전환 | 해당 조작이 필요함 | `wt switch --help`의 생성·전환·시작 ref·경로 옵션 |
+| 공간 정리 | 해당 조작이 필요함 | `wt remove --help`의 삭제 범위·옵션·실패 조건 |
+| 경로 설정과 명령 설정 | 설정 확인/변경이 요청됨 | `wt config --help`와 필요한 하위 명령의 `--help` |
+| hook 설정 또는 승인 오류 | 해당 요청이나 오류가 발생함 | `wt hook --help`, `wt config approvals --help`의 해당 동작 |
 
 ## 제약과 주의점
 

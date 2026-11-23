@@ -1,0 +1,8 @@
+# Inert fragment; explicit native registration and activation are separate.
+[mcp_servers.claude-mem]
+command = {{COMMAND}}
+args = {{ARGS}}
+enabled = false
+
+[mcp_servers.claude-mem.env]
+CLAUDE_MEM_WORKER_AUTOSTART = "false"

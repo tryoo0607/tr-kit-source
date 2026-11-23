@@ -1,6 +1,6 @@
 ---
 name: security-scan
-description: Semgrep로 코드 취약 패턴을, Trivy로 이미지와 의존성 및 IaC를, Gitleaks로 커밋과 전송 대상 비밀 및 등록된 산출물을 검사한다. 보안 스캔 요청이나 관련 변경의 검증에 사용한다. 일반 코드 리뷰와 배포 실행은 담당하지 않는다.
+description: Semgrep로 코드 취약 패턴을, Trivy로 이미지와 의존성 및 IaC를, Gitleaks로 커밋과 전송 대상 비밀 및 등록된 산출물을 검사한다. 명시한 저장소의 Git guard 등록·상태 확인·복귀도 다룬다. 일반 코드 리뷰와 배포 실행은 담당하지 않는다.
 metadata:
   tr-role: external-wrapper
 ---
@@ -9,11 +9,11 @@ metadata:
 
 ## 목적과 역할 경계
 
-설치된 CLI로 검사하고 결과와 검사 한계를 반환한다. 작업 계획과 완료 판단은 BMAD에, 재사용 지식과 기록 연결은 document에 맡긴다. 도구 설치나 로그인, 원격 서비스 연동을 검사 중 자동 수행하지 않는다.
+설치된 CLI로 검사하고 결과와 검사 한계를 반환한다. 상위 개발 작업의 계획·최종 완료 판단은 그 담당(BMAD 등)에, 재사용 지식과 기록 연결은 document에 맡긴다. 독립 보안 검사의 결과·완료 판단은 이 skill이 소유하며 BMAD를 필수 관문으로 요구하지 않는다. 도구 설치나 로그인, 원격 서비스 연동을 검사 중 자동 수행하지 않는다.
 
 ## 입력과 전제
 
-대상 경로 또는 이미지 digest, 검사 목적과 범위, 사용할 규칙과 제외 경로를 확인한다. 이미 받은 검사 결과가 현재 대상과 버전에 유효하면 재사용한다. 도구 버전 기준은 [실행 도구 manifest](../../scripts/dev-tools.toml)에서 확인한다.
+대상 경로 또는 이미지 digest, 검사 목적과 범위, 사용할 규칙과 제외 경로를 확인한다. 이미 받은 검사 결과가 현재 대상과 버전에 유효하면 재사용한다. 도구 버전 기준은 [Semgrep·Trivy pin](../../scripts/security-tools.toml)과 [Gitleaks pin](../../scripts/secret-tools.toml)에서 확인한다.
 
 ## 요청별 분기
 
@@ -21,7 +21,9 @@ metadata:
 |---|---|---|
 | 코드 취약 패턴이나 자체 규칙 검사 | 해당 요청이 포함됨 | [Semgrep](references/semgrep.md) |
 | 이미지, 의존성, IaC 검사 | 해당 요청이 포함됨 | [Trivy](references/trivy.md) |
-| staged 내용, 전송 commit의 비밀 또는 로컬 전용 산출물 검사와 Git guard 등록 | 해당 요청이 포함됨 | [Gitleaks](references/gitleaks.md) |
+| 명시한 파일 묶음/게시 payload의 전송 비밀 검사 | Git index/outgoing 검사가 아닌 실제 전송 폴더가 선택됨 | [산출물 전송](references/artifacts.md) |
+| staged 내용, 전송 commit의 비밀 또는 등록된 로컬 전용 경로 정책 검사 | 해당 요청이 포함됨 | [Gitleaks](references/gitleaks.md) |
+| 명시 저장소의 Git guard 등록 계획·적용·상태·복귀 | 해당 요청이 포함됨. 단순 검사 요청은 등록 승인이 아님 | [Gitleaks](references/gitleaks.md)의 등록·상태·복귀 |
 
 여러 검사가 필요하면 해당 분기만 각각 적용한다. Semgrep은 코드 패턴, Trivy는 패키지 취약점과 설정 검사를 우선 담당하고 같은 결과를 중복 이슈로 만들지 않는다.
 
