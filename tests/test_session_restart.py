@@ -226,6 +226,206 @@ class Restart(unittest.TestCase):
     def texts(self):
         return [a[a.index('--text')+1] for a in self.client.sent]
 
+    def management_batch(self):
+        own = self.client.terms['term_self']
+        own.update(worktreeId='repo::/work', worktreePath='/work', agentIdentity=None)
+        self.client.agents.pop('term_self')
+        self.client.frames['term_self'] = {'source': 'screen', 'tail': ['Python management helper running'],
+                                           'latestCursor': '10'}
+        ident = self.prepare()
+        self.client.replace_handle()
+        self.client.sent.clear()
+        return ident
+
+    def test_management_helper_restarts_same_batch_without_self_input_in_either_order(self):
+        for target_first in (False, True):
+            with self.subTest(target_first=target_first), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder) / 'state'
+                self.client = Fake()
+                ident = self.management_batch()
+                if target_first:
+                    self.client.terms['term_self'] = self.client.terms.pop('term_self')
+                with m.Store(self.root) as store:
+                    before = store.load(ident)
+                    before['events'].append({'phase': 'stopped', 'reason': 'original-failure-receipt'})
+                    store.save(before)
+                files = {p.name for p in self.root.iterdir()}
+                key = (self.root / 'integrity.key').read_bytes()
+                with patch.object(m.rr, 'management_process_proof', return_value={'owned': 'fixed-process'}):
+                    result = self.execute(ident)
+                self.assertEqual('restarted', result['targets'][0]['state'])
+                self.assertEqual(['/status', '/exit', CODEX_RESUME+SESSION+CODEX_OPTION, '/status'], self.texts())
+                self.assertEqual({'term_replacement'}, {a[a.index('--terminal')+1] for a in self.client.sent})
+                after = self.load(ident)
+                for field in ('batchId', 'createdAt', 'binding', 'preparedRuntime'):
+                    self.assertEqual(before[field], after[field])
+                for field in ('terminal', 'native', 'choice', 'targetId'):
+                    self.assertEqual(before['targets'][0][field], after['targets'][0][field])
+                self.assertEqual(before['events'], after['events'][:len(before['events'])])
+                self.assertEqual(files, {p.name for p in self.root.iterdir()})
+                self.assertEqual(key, (self.root / 'integrity.key').read_bytes())
+                self.assertNotIn('management_self', json.dumps(after))
+
+    def test_management_helper_requires_os_proof_before_any_candidate_query(self):
+        ident = self.management_batch()
+        self.client.terms['term_self'] = self.client.terms.pop('term_self')
+        with patch.object(m.rr, 'management_process_proof', side_effect=m.Deferred('management-process-unverifiable')):
+            self.assertEqual('management-process-unverifiable', self.execute(ident)['targets'][0]['reason'])
+        self.assertEqual([], self.client.sent)
+        self.assertEqual([], self.client.created)
+
+    def test_management_helper_rejects_agent_child_draft_wait_and_access(self):
+        for unsafe in ('agent', 'child', 'draft', 'wait', 'writable', 'fingerprint', 'native-hint'):
+            with self.subTest(unsafe=unsafe), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder) / 'state'
+                self.client = Fake()
+                ident = self.management_batch()
+                if unsafe == 'agent':
+                    self.client.agents['term_self'] = {'paneKey': self.self_pane, 'agentType': 'codex'}
+                elif unsafe == 'child':
+                    self.client.agents['term_replacement']['parentPaneKey'] = self.self_pane
+                elif unsafe == 'draft':
+                    self.client.frames['term_self']['draft'] = 'typed work'
+                elif unsafe == 'wait':
+                    self.client.terms['term_self']['agentWait'] = {'kind': 'approval'}
+                elif unsafe == 'native-hint':
+                    self.client.terms['term_self']['agentIdentity'] = 'codex'
+                elif unsafe == 'fingerprint':
+                    self.client.terms['term_self']['ptyId'] = None
+                else:
+                    self.client.terms['term_self']['writable'] = False
+                with patch.object(m.rr, 'management_process_proof', return_value={'owned': True}):
+                    self.assertIn(self.execute(ident)['targets'][0]['state'], ('deferred', 'failed'))
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_explicit_unknown_exception_cannot_be_overridden_by_management_proof(self):
+        ident = self.management_batch()
+        with m.Store(self.root) as store:
+            batch = store.load(ident)
+            batch['targets'].append({'targetId': 'term_old_exception',
+                'terminal': {**copy.deepcopy(batch['targets'][0]['terminal']),
+                             'handle': 'term_old_exception', 'leafId': 'excluded'},
+                'provider': 'codex', 'choice': 'manual', 'native': None,
+                'state': 'manual-restart-required', 'reason': 'explicit-exception', 'attempt': None})
+            store.save(batch)
+        with patch.object(m.rr, 'management_process_proof', side_effect=AssertionError('must not classify')):
+            self.assertEqual('excluded-identity-unknown-after-runtime-change', self.execute(ident)['targets'][0]['reason'])
+        self.assertEqual([], self.client.sent)
+
+    def test_management_proof_stays_fixed_and_stops_after_slow_target_observation(self):
+        for drift in ('runtime', 'fingerprint', 'process', 'draft', 'agent', 'child', 'wait'):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder) / 'state'
+                self.client = Fake()
+                ident = self.management_batch()
+                evidence = {'generation': 1}
+                lookup = m.rr.plugin_inventory
+                changed = []
+                def slow_lookup(*args):
+                    result = lookup(*args)
+                    if getattr(self.client, 'management_self', None) and not changed:
+                        changed.append(True)
+                        if drift == 'runtime':
+                            self.client.runtime = 'runtime-3'
+                        elif drift == 'fingerprint':
+                            self.client.terms['term_self']['incarnationId'] = 'changed'
+                        elif drift == 'process':
+                            evidence['generation'] = 2
+                        elif drift == 'draft':
+                            self.client.frames['term_self']['draft'] = 'work'
+                        elif drift == 'agent':
+                            self.client.agents['term_self'] = {'paneKey': self.self_pane}
+                        elif drift == 'child':
+                            self.client.agents['term_replacement']['parentPaneKey'] = self.self_pane
+                        else:
+                            self.client.terms['term_self']['agentWait'] = {'kind': 'approval'}
+                    return result
+                with patch.object(m.rr, 'management_process_proof', side_effect=lambda: copy.deepcopy(evidence)), \
+                     patch.object(m.rr, 'plugin_inventory', side_effect=slow_lookup):
+                    self.assertEqual('deferred', self.execute(ident)['targets'][0]['state'])
+                self.assertEqual([True], changed)
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_management_drift_during_durable_send_stops_exit_and_resume(self):
+        for phase in ('status', 'normal-exit', 'exact-resume'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder) / 'state'
+                self.client = Fake()
+                ident = self.management_batch()
+                record = m.Recorder.record
+                process = {'generation': 1}
+                def interleave(recorder, event, **values):
+                    result = record(recorder, event, **values)
+                    if event == 'sending' and values.get('step') == phase:
+                        process['generation'] = 2
+                    return result
+                with patch.object(m.rr, 'management_process_proof', side_effect=lambda: copy.deepcopy(process)), \
+                     patch.object(m.Recorder, 'record', new=interleave):
+                    self.assertEqual('failed', self.execute(ident)['targets'][0]['state'])
+                expected = {'status': [], 'normal-exit': ['/status'], 'exact-resume': ['/status', '/exit']}[phase]
+                self.assertEqual(expected, self.texts())
+                self.assertEqual([], self.client.created)
+
+    def test_management_restore_rechecks_after_final_installation_and_record(self):
+        for drift in ('installation', 'record'):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder) / 'state'
+                self.client = Fake()
+                ident = self.management_batch()
+                self.client.remove('term_replacement')
+                guard, record = m.rr.installation_guard, m.Recorder.record
+                changed = []
+                process = {'generation': 1}
+                def final_installation(target):
+                    result = guard(target)
+                    if drift == 'installation' and 'handle' not in target:
+                        changed.append(True)
+                        self.client.frames['term_self']['draft'] = 'work arrived'
+                    return result
+                def final_record(recorder, event, **values):
+                    result = record(recorder, event, **values)
+                    if drift == 'record' and event == 'sending' and values.get('step') == 'owned-restore-terminal':
+                        changed.append(True)
+                        process['generation'] = 2
+                    return result
+                with patch.object(m.rr, 'management_process_proof', side_effect=lambda: copy.deepcopy(process)), \
+                     patch.object(m.rr, 'installation_guard', side_effect=final_installation), \
+                     patch.object(m.Recorder, 'record', new=final_record):
+                    self.assertIn(self.execute(ident, 'restore')['targets'][0]['state'], ('deferred', 'failed'))
+                self.assertEqual([True], changed)
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_management_helper_can_restore_absent_uuid_without_self_input(self):
+        ident = self.management_batch()
+        self.client.remove('term_replacement')
+        with patch.object(m.rr, 'management_process_proof', return_value={'owned': True}):
+            self.assertEqual('restarted', self.execute(ident, 'restore')['targets'][0]['state'])
+        self.assertEqual(1, len(self.client.created))
+        self.assertEqual({'term_restored'}, {a[a.index('--terminal')+1] for a in self.client.sent})
+
+    def test_execute_clears_previous_management_authority(self):
+        ident = self.prepare()
+        self.client.management_self = {'stale': True}
+        self.assertEqual('restarted', self.execute(ident)['targets'][0]['state'])
+        self.assertIsNone(self.client.management_self)
+
+    def test_management_exception_is_not_activated_for_same_runtime_or_other_workspace(self):
+        for same_runtime in (True, False):
+            with self.subTest(same_runtime=same_runtime), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder) / 'state'
+                self.client = Fake()
+                ident = self.management_batch()
+                if same_runtime:
+                    self.client.runtime = 'runtime-1'
+                else:
+                    self.client.terms['term_self'].update(worktreeId='repo::/caller', worktreePath='/caller')
+                with patch.object(m.rr, 'management_process_proof', side_effect=AssertionError('not applicable')):
+                    self.assertEqual('restarted', self.execute(ident)['targets'][0]['state'])
+                self.assertIsNone(self.client.management_self)
+
     def test_prepare_survives_new_process_boundary_and_never_exits(self):
         ident = self.prepare()
         self.assertEqual(['/status'], self.texts())

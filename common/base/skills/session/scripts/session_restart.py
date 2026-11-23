@@ -286,6 +286,7 @@ def current_plan(client, self_pane):
 
 
 def prepare(client, store, selected, excluded, self_pane):
+    client.management_self = None
     if not selected or len(selected) != len(set(selected)) or len(excluded) != len(set(excluded)):
         raise Deferred('explicit-unique-targets-required')
     check_other_attempts(store)
@@ -381,6 +382,19 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
     old = row['terminal']
     related = [t for t in terms if t.get('executionHostId') == old['executionHostId']
                and t.get('worktreeId') == old['worktreeId']]
+    changed_runtime = client.runtime != batch['preparedRuntime']
+    # Native/manual exceptions win before any management classification or
+    # candidate query, including unknown exception UUIDs after replacement.
+    if changed_runtime and any(blocked_by_exception(batch, item, client.runtime) for item in related):
+        raise Deferred('excluded-identity-unknown-after-runtime-change')
+    own = next(t for t in terms if rr.pane(t) == self_pane)
+    if (changed_runtime and own in related
+            and getattr(client, 'management_self', None) is None):
+        proof = rr.management_observation(client, self_pane, terms, ps)
+        if proof['runtimeId'] != client.runtime:
+            raise Deferred('management-self-changed')
+        client.management_self = proof
+    rr.management_self_check(client, terms, ps)
     allowed = [r for r in batch['targets'] if r['choice'] == 'restart' and r.get('native') is not None]
     def selected(item):
         return any(r['terminal']['worktreeId'] == item.get('worktreeId')
@@ -389,9 +403,6 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
     candidates = []
     for item in related:
         if blocked_by_exception(batch, item, client.runtime) or rr.pane(item) == self_pane:
-            # An excluded/own pane can now contain this UUID: absence is uncertain.
-            if client.runtime != batch['preparedRuntime']:
-                raise Deferred('excluded-identity-unknown-after-runtime-change')
             continue
         rr.fingerprint(item)
         if item.get('worktreePath') != old['worktreePath']:
@@ -542,6 +553,7 @@ def owned_launch(client, batch, row, self_pane, log, installation):
             raise Deferred('runtime-changed')
         if launch_state(terms, ps, old, self_pane) != before:
             raise Deferred('restore-safety-state-changed')
+        rr.management_self_check(client, terms, ps)
         for target in proofs:
             matches = [t for t in terms if t.get('handle') == target['handle']]
             if len(matches) != 1 or rr.fingerprint(matches[0]) != target['identity']:
@@ -558,7 +570,9 @@ def owned_launch(client, batch, row, self_pane, log, installation):
                 raise Deferred('restore-safety-state-changed')
             if not target.get('nativeProof') or rr.output_proof(frame) != target['nativeProof']:
                 raise Deferred('native-response-proof-changed')
+        rr.management_self_check(client, process_only=True)
         log.record('sending', step='owned-restore-terminal')
+        rr.management_self_check(client, process_only=True)
         result = client.call('terminal', 'create', '--worktree', 'id:' + old['worktreeId'],
                              '--title', 'Session restore', '--command', command)
         # Contract is intentionally strict: a changed/unknown receipt is a partial
@@ -687,6 +701,8 @@ def verify_preparation(client, store, batch, self_pane):
 
 
 def execute(client, store, batch_id, self_pane, mode):
+    # A reused client never inherits a previous invocation's exception authority.
+    client.management_self = None
     if mode not in ('restart', 'restore', 'verify'):
         raise Deferred('invalid-operation')
     batch = store.load(batch_id)
