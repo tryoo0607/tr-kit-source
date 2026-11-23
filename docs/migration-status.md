@@ -11,7 +11,7 @@
 |3 보고·승인 | [보완·실제 모델 시험](decisions/20261120-reporting-approval-validation.md) 수행 | Claude 분량 초과·기존 운영 hook 분류 차단과 제한된 시험 범위를 미결로 유지 |
 |4 문서·목차 | [현재/이력 교정과 백업 절 순서](decisions/20261123-status-docs-and-backup-order.md) | 상세 검수·비대상은 기록 참조. 다른 발견을 해결로 변경하지 않음 |
 |5 후보 통합 | [새 후보 검증 완료](decisions/20261123-candidate-pin-native-validation.md) | exact pin4개 정렬·새 묶음8개·전체 회귀·양 제품 native 연결/경계·제거 확인. 남은 실제 모델/실자료·운영 한계는 유지 |
-|6 운영 적용 | 아직 진행하지 않음 | 승인한 대상/범위에서 commit·전송/설치·신뢰·새 세션 검증. 실제 배포 요청과 호스트 가드/제품 권한을 독립 확인 |
+|6 운영 적용 | [게시·세 호스트 native 설치·연결·개별 trust·새 지침 전달](decisions/20261123-host-runtime-connection.md#운영-적용-결과--2026-11-23) 확인 | dev01 Codex/inno-desktop Claude 명령 성공. nas-vm 명령은 sandbox loopback 오류로 미실행, Orca 시작은 기존 셸 질문 간섭. 실제 업무·실자료/장기 압축 등 전체 적합은 미확인 |
 
 현재 후보의 source/native exact pin은5번에서 정렬·격리 검증했다. 운영 version/manifest가 달라지면 관련 pin·private 묶음을 재대조하며 전체 운영 적합은 아직 판정하지 않는다. 운영 자료/DB·백업 timer·Wiki 수집을 자동 활성화하지 않는다. PTBMAF·Design Doc·Obsidian·NotebookLM, README 전면 재작성·kit 안내 artifact는 아래 사용자 후속 구상에 보존하며 이번4번에서 도입하지 않는다.
 
