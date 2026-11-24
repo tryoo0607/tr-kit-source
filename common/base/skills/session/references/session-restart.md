@@ -66,6 +66,20 @@ status-only 미완료 준비는 명시 `verify`로 검증한다. signed 배치�
 
 이 경로는 exit/resume/create·모달 탐색/닫기 없이 조회한다. 새 Claude status 모달이 생기면 원 proof와 함께 열린 채 유지될 수 있으며 이후 조작 전에 수동 정리가 필요하다. 현재 열린 모달 등 unsafe 상태는 입력 전에 보류한다. fresh 조회의 첫 실패도 기록하고 준비 미해결 상태를 유지하며 자동 재조회하지 않는다. 새 접수조차 유실됐으면 다음 verify도 차단한다. 새 배치나 다른 state 디렉터리, 기록·key 삭제/수정으로 우회하지 않는다.
 
+## 명시 수동 예외의 신원 확인과 재검증
+
+원 배치의 명시 `manual` Claude 예외가 선택 대화와 같은 workspace에 있을 때, 승인된 `identify-exception --batch <원 UUID> --target <원 targetId>`로 예외 신원을 한 번만 별도 확인한다. 사용자 UUID/PID/path 입력은 받지 않는다. 원 Store/key/서명/binding·선택·수동 state/reason·native 값(null 포함)·기존 events는 보존하고, 별도 `exceptionAttestation`과 정확히 대응하는 event를 추가한다. 없는/잘못된 Store·선택 대상·self·중복 확인은 native 조회 전에 거부한다. `list`의 `exceptionIdentity`는 이 별도 확인 metadata이며 `nativePrepared`를 대체하지 않는다.
+
+현재 로컬 complete list/ps에서 원 pane/workspace/호스트의 유일한 Claude를 찾고, 기존 bounded `native_command`로 공식 Claude2.1.331 `agents --json`을 두 번 조회한다. query 실행체는 공식 native331이어야 하고, 대상 실행체는 관측된319/329/331 경로만 허용한다. producer의 검증된 절대 실행 파일을 version과 두 agents 조회의 `executable`로 고정해 전달하며, target cwd에서 bare `claude`나 상대 PATH를 다시 해석하지 않는다. 각 bounded 조회 전후와 최종 proof 경계에서 같은 파일 identity를 대조한다. 이 내부 선택 인자를 쓰지 않는 기존 runner 호출의 동작은 유지한다. Linux 같은 UID, 단일 PID namespace, 양수 PID/start tick, 실행 파일 identity, 실제 cwd와 `ORCA_PANE_KEY`를 두 조회 전후에 대조한다. names/status/JSON startedAt은 identity authority가 아니며 실제 시작 증명은 proc start tick이다. 같은 cwd의 관련 process가 읽히지 않거나 background를 포함해 같은 pane·PID·UUID가 모호하면 중단한다. private registry·transcript·argv를 읽지 않고 환경 원문은 저장·출력하지 않는다.
+
+후속 선택 `verify/restore/restart`는 과거 attestation에서 UUID/원 pane/workspace만 기대값으로 읽고 현재 공식 API/process로 새 증명을 만든다. 새 boot/PID/start/namespace는 같은 UUID·원 pane/workspace가 새로 입증될 때만 허용하며 과거 attestation은 고치지 않는다. 이 invocation에서 얻은 live 또는 absent 판정과 runtime/terminal/API 기대값은 이후 wait·설치 조회 동안 고정하고 재기준화하지 않는다. live이면 같은 process 증명도 고정한다. manual의 terminal 화면은 조회하지 않으며, manual/self에는 입력·종료·launch를 수행하지 않는다. 기존 관리 helper의 self 화면 관측은 유지한다. 알려진 예외 pane만 선택 후보에서 제외하고, 부재 증명의 ps 허용 집합에도 방금 입증한 pane만 더한다. ps-only agent, unknown exception, 새 UUID/pane, 다른 producer, 선택/native 충돌과 중복은 계속 거부한다.
+
+선택과 확인된 manual이 모두 꺼진 재부팅 흐름도 지원한다. 원 manual pane가 complete local terminal 목록 어디에도 없고, ps에도 원 pane·parent/child/subagent 연관이 없으며, 원 workspace의 ps-only/unknown agent가 없을 때만 `known absent` 후보가 된다. 이어 두 공식 active JSON 전체에서 expected manual UUID가 없음을 확인하고, 다른 cwd를 포함한 공식 active interactive/background process 전체를 bounded 지원 proc 증명으로 전후 대조하여 원 pane 재사용이 없음을 확인한다. 다른 pane/cwd에서 expected UUID가 살아 있거나, 원 pane에 nonagent/unknown terminal이 남았거나, active process의 proc/목록을 읽지 못하면 부재로 전환하지 않는다. live 신원 확인의 다른 cwd process 무조회 범위는 유지한다. 이 부재 증명은 저장된 live attestation을 바꾸지 않고 invocation 메모리에만 둔다. 부재인 예외 pane는 ps 허용 집합에 넣지 않는다.
+
+부재 proof의 고정 대상은 expected UUID·원 pane/workspace·producer/query 실행체와 absent 판정이다. active process 전체는 각 두 공식 조회 전후에 검증하지만 그 목록을 manual 부재 identity로 삼지 않는다. 정상적으로 create한 선택 process가 나타나도 같은 manual 부재를 다시 확인할 수 있으며, manual의 live/absent 전환이나 UUID/pane 재사용은 같은 invocation에서 새 authority로 채택하지 않는다. 매 full guard는 공식 부재와 fresh Orca 부재를 다시 확인한다.
+
+긴 lookup 뒤 새 공식 JSON으로 같은 UUID/live proof 또는 같은 known-absent proof를 재확인하고, 그 뒤 fresh list/ps와 최종 선택 frame/modal·management proof를 대조한다. 예외가 있는 create는 durable sending을 이 최종 공식 조회 앞으로 기록해, 저장 중 바뀐 같은 PID의 UUID나 부재 상태도 create 전에 거부한다. 마지막 선택 frame 뒤에는 고정 로컬 실행체와 live process 증명만 읽으며 새 설치/native 조회·wait를 넣지 않는다. 실패 후 receipt를 보존하고 재조회로 새 authority를 만들거나 create를 재시도하지 않는다. 마지막 공식 관측과 frame·create 사이의 비원자 경합은 남는다. 실제 PC reboot와 운영 배포는 이 source 구현의 검증 범위가 아니다.
+
 ## 연계와 의존
 
 | 대상 | 입력과 필요한 결과 | 부재·오류 처리 |

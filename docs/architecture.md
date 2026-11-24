@@ -28,12 +28,14 @@ common/base/skills/
 │  │  └─ session-restart.md
 │  └─ scripts/
 │     ├─ runtime_refresh.py
+│     ├─ claude_live_sessions.py
 │     └─ session_restart.py
 └─ orca-update/
    └─ SKILL.md
 tests/
 ├─ test_session_runtime_refresh.py
 ├─ test_session_restart.py
+├─ test_claude_live_sessions.py
 └─ test_native_package.py
 ```
 
@@ -50,7 +52,8 @@ tests/
     → 실행: 현재 Orca inventory/guard → 선택 native identity 대조
       → restart: 검증된 Codex 정상 종료/exact resume; Claude 즉시 종료·shell 전이 자동 검증은 미지원으로 수동
       → restore: 이미 실행 중이면 확인; 부재 시 선택 status의 frame/cursor 증거 보존
-        → 마지막 설치 조회 → fresh list/ps·선택 frame 증거 대조 → durable 기록 → 원 workspace 소유 create
+        → 마지막 설치 조회 → fresh list/ps → 예외가 있으면 durable 기록/공식 신원 재확인
+        → 선택 frame 증거 대조 → 예외가 없으면 durable 기록 → 원 workspace 소유 create
       → verify: 실행 중 identity와 재시작 증거를 분리
     → 입력 전 atomic 로컬 기록 → 실제 접수/UUID/cwd/권한 확인 → 수행자가 결과 보고
 ```
@@ -339,3 +342,25 @@ Claude-Mem은 schema2 binding의 두 review를 plan hash에 묶고 start/MCP 전
 R-52의 `continue-prepare`는 기존 session_restart.py 안에서만 동작한다. 별도 transport·skill·hook·schema·provider를 추가하지 않는다. CLI의 existing-only Store → signed 원 batch/exact zero-input event pair → fresh binding/runtime/원 fingerprint 검증 → manual 결정과 started durable 저장 → 기존 prepare와 공유하는 순차 `prepare_rows` → `target_from/native_status` full guard/Recorder/Store 순서다. 기존 prepare도 같은 row 준비기를 사용하며 첫 실패 중단 계약은 유지한다.
 
 기존 status-only verify는 정확한 원 실패에 연결된 단일 manual 결정 event만 추가 허용한다. 새 status의 sending/accepted 짝과 requestId를 검증한 원 queried 행에만 재조회하며 미조회 tail은 계속 제외한다. 기존 restart/restore/locate·권한 구성·runtime helper 증명은 변경하지 않는다. 비에이전트 관리 shell의 과거 self 행 부재는 새로운 schema나 추정으로 채우지 않고 현재 unique self와 원 manual/self 무입력을 유지한다. 상세 실행 경계는 [단일 운영 계약](../common/base/skills/session/references/session-restart.md#명시-수동-예외-뒤-원래-미조회-tail-준비-계속), 승인과 한계는 [결정](decisions/20261124-session-prepare-continuation.md)에 있다.
+
+## 수동 예외 신원과 Claude331 활성 목록 — 2026-11-24
+
+위 파일 트리에 `claude_live_sessions.py` 한 개를 추가했다. 배치와 signed historical attestation/event는 `session_restart.py`가 소유하고, 새 helper는 기존 `runtime_refresh.native_command`의 공식 Claude331 JSON과 제한된 Linux proc identity만 조합한다. private registry를 재구현하거나 새 provider/skill/hook을 추가하지 않는다. 실행 흐름과 운영 경계는 [단일 session 계약](../common/base/skills/session/references/session-restart.md#명시-수동-예외의-신원-확인과-재검증)을 따른다.
+
+```text
+명시 identify-exception → existing-only signed Store/원 manual row/binding 검증
+  → complete local Orca list/ps → 원 pane/workspace
+  → claude_live_sessions → 검증된 절대 producer 경로 → bounded native_command
+    → 공식331 version/agents JSON ↔ Linux proc identity; 각 조회 전후 실행 파일 대조
+  → 원 행/history 보존 + 별도 attestation/event 원자 저장
+후속 선택 recovery → 과거 UUID/원 pane/workspace → fresh live 또는 strict known-absent proof를 invocation에 고정
+  → 긴 대기 뒤 공식 JSON/동일 판정 비교 → fresh Orca list/ps → 최종 선택 frame/management 대조 → 입력/create
+  → 수동 예외 화면 무조회; 예외/self 무입력·무종료·무launch; 기존 관리 self 관측 유지
+Claude reload → fresh /status.nativeVersion → 기존 listing parser의 선택적331 문법 → 기존 reload 검증
+```
+
+이전 query hardening의 생성물·전송·권한 계약은 유지한다. helper의 파일 추가와 runtime의 실제 연결 변경만 이 절에서 갱신하며 과거 검증 결과를 새 helper의 native 실행 증거로 취급하지 않는다.
+
+Cold-start 보완은 원 manual pane/연관 agent와 expected UUID가 모두 증명 가능하게 부재인 경우에만 메모리의 absent proof를 만든다. stored attestation/native/history는 유지하고, 정상 선택 create 뒤에도 같은 manual 부재를 검증한다. 긴 공식 조회는 passive/shell guard 및 owned-create의 최종 inventory보다 앞에서 수행하고, management callback은 그 fresh metadata와 고정 로컬 proof만 대조한다. 따라서 exception 조회 도중 생긴 선택/ps 후보도 최종 launch_state가 거부한다. 상세 조건과 제한은 위 단일 session 계약이 소유한다.
+
+Producer binding은 기존 runner의 내부 optional `executable` 인자로 연결한다. helper가 공식331 canonical absolute file의 identity를 검증하고 version/두 agents 호출에 같은 path를 넘기므로, caller cwd와 target cwd에서 상대 PATH가 달라도 target의 다른 `claude`를 선택하지 않는다. runner는 전달 파일을 검증한 뒤 그 절대 경로를 실행하며 stdin/timeout/output/진단/group cleanup 경계는 그대로 소유한다. helper의 각 호출 전후 및 최종 proof 경계가 교체된 실행 파일을 거부한다. 다른 기존 caller는 기본 bare provider 동작을 보존한다.

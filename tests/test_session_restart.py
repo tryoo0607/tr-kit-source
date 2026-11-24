@@ -7,6 +7,7 @@ import io
 import os
 from pathlib import Path
 import tempfile
+import stat
 import subprocess
 import sys
 import unittest
@@ -2362,6 +2363,379 @@ class Restart(unittest.TestCase):
             for args in ([], ['--batch', str(uuid.uuid4())], ['--batch', str(uuid.uuid4()), '--target', 'term_x'], ['--batch', str(uuid.uuid4()), '--exclude', 'term_x']):
                 self.assertEqual(2, m.main(['recover-prepare', '--state', str(missing), *args]))
         self.assertFalse(missing.exists())
+
+
+    def manual_proof(self, session_id='01a1c848-8ff2-7e90-bcec-44a3ca07a21c', pid=123, start=100):
+        exe = {'path': str(Path.home() / '.local/share/claude/versions/2.1.331'),
+               'device': 1, 'inode': 42, 'uid': os.getuid(), 'mode': stat.S_IFREG | 0o700,
+               'size': 100, 'mtimeNs': 1}
+        process = {'pid': pid, 'uid': os.getuid(), 'startTicks': start, 'pidNamespace': 'pid:[42]',
+                   'executable': exe, 'cwd': '/work', 'paneKey': 'tab:excluded'}
+        return {'producerVersion': '2.1.331', 'queryExecutable': exe, 'pid': pid,
+                'sessionId': session_id, 'cwd': '/work', 'kind': 'interactive',
+                'paneKey': 'tab:excluded', 'process': process}
+
+    def identified_manual_batch(self, *, absent=False, change_runtime=False):
+        self.client = Fake('claude')
+        self.client.add('excluded', '/work', 'claude')
+        ident = self.prepare(excluded=['term_excluded'])
+        self.live_proof = self.manual_proof()
+        def observe(adapter, cwd, pane, *, expected=None):
+            self.assertEqual(('/work', 'tab:excluded'), (cwd, pane))
+            if expected is not None and self.live_proof['sessionId'] != expected:
+                raise m.Deferred('exception-live-identity-mismatch')
+            return copy.deepcopy(self.live_proof)
+        self.live_observe = patch.object(m.live, 'observe', side_effect=observe)
+        self.live_observe.start(); self.addCleanup(self.live_observe.stop)
+        def recheck(adapter, proof):
+            if proof != self.live_proof:
+                raise m.Deferred('exception-live-proof-changed')
+        self.live_recheck = patch.object(m.live, 'recheck', side_effect=recheck)
+        self.live_recheck.start(); self.addCleanup(self.live_recheck.stop)
+        with m.Store(self.root) as store:
+            original = copy.deepcopy(store.load(ident))
+            m.identify_exception(self.client, store, ident, 'term_excluded', self.self_pane)
+        after = self.load(ident)
+        for before, row in zip(original['targets'], after['targets']):
+            self.assertEqual(before, {k: v for k, v in row.items() if k != 'exceptionAttestation'})
+        self.assertEqual(original['events'], after['events'][:-1])
+        real_observe = self.client.observe
+        def selected_only(handle):
+            self.assertNotEqual('term_excluded', handle, 'manual pane must never be observed')
+            return real_observe(handle)
+        guard = patch.object(self.client, 'observe', side_effect=selected_only)
+        guard.start(); self.addCleanup(guard.stop)
+        if change_runtime:
+            self.client.replace_handle()
+        if absent:
+            self.client.remove('term_replacement' if change_runtime else 'term_target')
+        self.client.sent.clear()
+        return ident
+
+    def test_known_manual_same_workspace_live_selected_after_runtime_and_pid_change(self):
+        ident = self.identified_manual_batch(change_runtime=True)
+        old = copy.deepcopy(self.load(ident)['targets'][1]['exceptionAttestation'])
+        self.live_proof.update(pid=456)
+        self.live_proof['process'].update(pid=456, startTicks=200, pidNamespace='pid:[99]')
+        result = self.execute(ident, 'verify')
+        self.assertEqual('already-running', result['targets'][0]['state'])
+        self.assertEqual(old, self.load(ident)['targets'][1]['exceptionAttestation'])
+        self.assertTrue(self.client.sent)
+        self.assertTrue(all(a[a.index('--terminal')+1] == 'term_replacement' for a in self.client.sent))
+        self.assertEqual([], self.client.created)
+
+    def test_known_manual_absent_selected_restores_exact_uuid_once(self):
+        ident = self.identified_manual_batch(absent=True, change_runtime=True)
+        old = copy.deepcopy(self.load(ident)['targets'][1])
+        result = self.execute(ident, 'restore')
+        self.assertEqual('restarted', result['targets'][0]['state'], result)
+        self.assertEqual(1, len(self.client.created))
+        self.assertIn('--resume ' + SESSION, self.client.created[0][-1])
+        self.assertEqual(old, self.load(ident)['targets'][1])
+        result = self.execute(ident, 'restore')
+        self.assertEqual('already-running', result['targets'][0]['state'], result)
+        self.assertEqual(1, len(self.client.created))
+        self.assertTrue(all(a[a.index('--terminal')+1] == 'term_restored' for a in self.client.sent))
+
+    def test_known_manual_does_not_cover_ps_only_agent(self):
+        ident = self.identified_manual_batch(absent=True, change_runtime=True)
+        inventory = self.client.inventory
+        def orphan():
+            ts, ps = inventory()
+            next(w for w in ps['worktrees'] if w['worktreeId'] == 'repo::/work')['agents'].append(
+                {'paneKey': 'tab:unknown', 'agentType': 'claude'})
+            return ts, ps
+        with patch.object(self.client, 'inventory', side_effect=orphan):
+            result = self.execute(ident, 'restore')
+        self.assertEqual('unmatched-agent-identity', result['targets'][0]['reason'])
+        self.assertEqual([], self.client.created)
+        self.assertEqual([], self.client.sent)
+
+    def test_identify_exception_rejects_wrong_target_and_existing_attestation_before_native(self):
+        ident = self.identified_manual_batch()
+        with m.Store(self.root) as store, patch.object(m.live, 'observe', side_effect=AssertionError('no native query')):
+            for target in ('term_target', 'term_self', 'term_unknown'):
+                with self.subTest(target=target), self.assertRaisesRegex(m.Deferred, 'exception-target-invalid'):
+                    m.identify_exception(self.client, store, ident, target, self.self_pane)
+            with self.assertRaisesRegex(m.Deferred, 'exception-already-identified'):
+                m.identify_exception(self.client, store, ident, 'term_excluded', self.self_pane)
+        self.assertEqual([], self.client.sent)
+
+    def test_identify_missing_store_invalid_record_and_missing_target_never_lookup_native(self):
+        for mode in ('missing', 'invalid', 'target'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)/'state'
+                ident = str(uuid.uuid4())
+                if mode != 'missing':
+                    with m.Store(root) as store:
+                        if mode == 'invalid':
+                            bad = root/(ident+'.json'); bad.write_text('{}'); bad.chmod(0o600)
+                        else:
+                            ident = m.prepare(self.client, store, ['term_target'], [], self.self_pane)['batchId']
+                with patch.object(m.rr, 'Orca', side_effect=AssertionError('no runtime')), \
+                     patch.object(m.live, 'observe', side_effect=AssertionError('no native')), redirect_stdout(io.StringIO()):
+                    self.assertEqual(2, m.main(['identify-exception', '--state', str(root), '--batch', ident,
+                                              '--target', 'term_missing']))
+                if mode == 'missing': self.assertFalse(root.exists())
+
+    def test_attestation_binding_event_collisions_and_partial_storage_fail_closed(self):
+        ident = self.identified_manual_batch()
+        original = self.load(ident)
+        for case in ('event', 'operation', 'terminal', 'binding', 'uuid-collision', 'producer', 'process'):
+            with self.subTest(case=case):
+                batch = copy.deepcopy(original)
+                row = batch['targets'][1]
+                value = row['exceptionAttestation']
+                if case == 'event': batch['events'].pop()
+                elif case == 'operation': value['operationId'] = str(uuid.uuid4())
+                elif case == 'terminal': value['terminal'] = {**value['terminal'], 'leafId': 'other'}
+                elif case == 'binding': value['binding'] = {'machine': 'other', 'profile': 'other'}
+                elif case == 'uuid-collision': value['identity']['sessionId'] = SESSION
+                elif case == 'producer': value['identity']['producerVersion'] = '2.1.329'
+                else: value['identity']['process']['startTicks'] = 0
+                with self.assertRaises(m.Deferred): m.validate_batch(batch)
+        with m.Store(self.root) as store:
+            body = store.load(ident)
+            body['targets'][1].pop('exceptionAttestation')
+            body['events'] = body['events'][:-1]
+            store.save(body)
+            with patch.object(store, 'save', side_effect=OSError('owned storage failure')), self.assertRaises(OSError):
+                m.identify_exception(self.client, store, ident, 'term_excluded', self.self_pane)
+            self.assertEqual(body['events'], store.load(ident)['events'])
+            self.assertNotIn('exceptionAttestation', store.load(ident)['targets'][1])
+        self.assertEqual([], self.client.sent)
+        self.assertEqual([], self.client.created)
+
+    def test_attested_manual_mismatch_pane_duplicate_and_unsupported_producer_stop_before_selected_input(self):
+        ident = self.identified_manual_batch(change_runtime=True)
+        base = copy.deepcopy(self.live_proof)
+        for case in ('uuid', 'pane', 'process', 'producer', 'duplicate'):
+            with self.subTest(case=case):
+                self.live_proof = copy.deepcopy(base)
+                if case == 'uuid': self.live_proof['sessionId'] = str(uuid.uuid4())
+                elif case == 'pane': self.client.terms['term_excluded']['leafId'] = 'other'
+                elif case == 'process': self.live_proof['process']['cwd'] = '/elsewhere'
+                elif case == 'producer': self.live_proof['producerVersion'] = '2.1.329'
+                else:
+                    self.client.add('duplicate', '/work', 'claude')
+                    self.client.terms['term_duplicate']['leafId'] = 'excluded'
+                if case in ('process', 'producer'):
+                    # The real helper refuses these observations, before returning a proof.
+                    with patch.object(m.live, 'observe', side_effect=m.Deferred('exception-process-unverifiable')):
+                        result = self.execute(ident, 'verify')
+                else:
+                    result = self.execute(ident, 'verify')
+                self.assertIn(result['targets'][0]['state'], ('deferred', 'failed'))
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+                self.client.terms['term_excluded']['leafId'] = 'excluded'
+                self.client.remove('term_duplicate')
+
+    def test_exception_proof_is_frozen_over_inventory_wait_and_final_create_receipt(self):
+        for boundary in ('inventory', 'durable-sending', 'durable-uuid', 'selected-status'):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.identified_manual_batch(absent=boundary != 'selected-status', change_runtime=True)
+                changed = []
+                def drift():
+                    if boundary == 'durable-uuid':
+                        self.live_proof['sessionId'] = str(uuid.uuid4())
+                    else:
+                        self.live_proof['process']['startTicks'] += 1
+                    changed.append(True)
+                inventory = m.rr.plugin_inventory
+                record = m.Recorder.record
+                call = self.client.call
+                def slow(*args):
+                    value = inventory(*args)
+                    if getattr(self.client, 'exception_proofs', {}) and boundary == 'inventory' and not changed:
+                        drift()
+                    return value
+                def sending(recorder, phase, **values):
+                    value = record(recorder, phase, **values)
+                    if boundary in ('durable-sending', 'durable-uuid') and values.get('step') == 'owned-restore-terminal': drift()
+                    return value
+                def status(*args):
+                    value = call(*args)
+                    if boundary == 'selected-status' and args[:2] == ('terminal', 'wait') and not changed:
+                        drift()
+                    return value
+                with patch.object(m.rr, 'plugin_inventory', side_effect=slow), \
+                     patch.object(m.Recorder, 'record', new=sending), patch.object(self.client, 'call', side_effect=status):
+                    result = self.execute(ident, 'verify' if boundary == 'selected-status' else 'restore')
+                self.assertEqual([True], changed)
+                self.assertEqual('exception-live-identity-mismatch' if boundary == 'durable-uuid' else
+                                 'exception-live-proof-changed', result['targets'][0]['reason'])
+                self.assertEqual([], self.client.created)
+                self.assertEqual([], self.client.sent)
+                if boundary in ('durable-sending', 'durable-uuid'):
+                    self.assertTrue(any(e.get('step') == 'owned-restore-terminal' and e['phase'] == 'sending'
+                                        for e in self.load(ident)['events']))
+
+
+    def cold_manual_batch(self):
+        ident = self.identified_manual_batch(absent=True, change_runtime=True)
+        self.client.remove('term_excluded')
+        self.cold_state = 'absent'
+        self.absent_proof = {k: copy.deepcopy(self.live_proof[k]) for k in
+                             ('producerVersion', 'queryExecutable', 'sessionId', 'cwd', 'paneKey')}
+        self.absent_proof['kind'] = 'absent'
+        def observe_absent(adapter, cwd, pane, *, expected):
+            self.assertEqual(('/work', 'tab:excluded', self.live_proof['sessionId']), (cwd, pane, expected))
+            if self.cold_state != 'absent':
+                raise m.Deferred(self.cold_state)
+            return copy.deepcopy(self.absent_proof)
+        lookup = patch.object(m.live, 'observe_absent', side_effect=observe_absent)
+        lookup.start(); self.addCleanup(lookup.stop)
+        original_recheck = m.live.recheck
+        def recheck(adapter, proof):
+            if proof['kind'] == 'absent':
+                self.assertEqual(self.absent_proof, proof)
+                return
+            return original_recheck(adapter, proof)
+        check = patch.object(m.live, 'recheck', side_effect=recheck)
+        check.start(); self.addCleanup(check.stop)
+        return ident
+
+    def test_cold_both_absent_restores_selected_exactly_once_and_preserves_manual_history(self):
+        ident = self.cold_manual_batch()
+        before = copy.deepcopy(self.load(ident))
+        result = self.execute(ident, 'restore')
+        self.assertEqual('restarted', result['targets'][0]['state'], result)
+        self.assertEqual(1, len(self.client.created))
+        self.assertIn('--resume '+SESSION, self.client.created[0][-1])
+        after = self.load(ident)
+        self.assertEqual(before['targets'][1], after['targets'][1])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual('absent', self.client.exception_proofs['term_excluded']['live']['kind'])
+        self.assertEqual('already-running', self.execute(ident, 'restore')['targets'][0]['state'])
+        self.assertEqual(1, len(self.client.created))
+        self.assertTrue(all(a[a.index('--terminal')+1] == 'term_restored' for a in self.client.sent))
+
+    def test_cold_original_manual_pane_nonagent_unknown_or_reused_identity_never_falls_back_to_absence(self):
+        for provider in (None, 'unknown', 'claude'):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.cold_manual_batch()
+                self.client.add('excluded', '/work', provider)
+                self.live_proof['sessionId'] = str(uuid.uuid4())
+                # A live wrong UUID on the original pane is rejected by the official helper.
+                with patch.object(m.live, 'observe', side_effect=m.Deferred('exception-live-identity-mismatch')), \
+                     patch.object(m.live, 'observe_absent', side_effect=AssertionError('no absence fallback')):
+                    result = self.execute(ident, 'restore')
+                self.assertIn(result['targets'][0]['state'], ('failed', 'deferred'))
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_cold_missing_truncated_ps_only_associated_child_and_workspace_views_refuse(self):
+        for kind in ('truncated-terms', 'truncated-ps', 'missing-scope', 'missing-workspace', 'wrong-path',
+                     'missing-agents', 'manual-agent', 'ps-only', 'parent', 'children', 'subagents'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.cold_manual_batch()
+                inventory = self.client.inventory
+                def broken():
+                    ts, ps = inventory()
+                    workspace = next(w for w in ps['worktrees'] if w['worktreeId'] == 'repo::/work')
+                    if kind == 'truncated-terms': ts['truncated'] = True
+                    elif kind == 'truncated-ps': ps['truncated'] = True
+                    elif kind == 'missing-scope': ts['hostScope']['hostIds'] = []
+                    elif kind == 'missing-workspace': ps['worktrees'].remove(workspace)
+                    elif kind == 'wrong-path': workspace['path'] = '/other'
+                    elif kind == 'missing-agents': workspace.pop('agents')
+                    else:
+                        agent = {'paneKey': 'tab:unknown', 'agentType': 'claude'}
+                        if kind == 'manual-agent': agent['paneKey'] = 'tab:excluded'
+                        elif kind == 'parent': agent['parentPaneKey'] = 'tab:excluded'
+                        elif kind == 'children': agent['children'] = [{'paneKey': 'tab:excluded'}]
+                        elif kind == 'subagents': agent['subagents'] = ['tab:excluded']
+                        workspace['agents'].append(agent)
+                    return ts, ps
+                try:
+                    with patch.object(self.client, 'inventory', side_effect=broken):
+                        result = self.execute(ident, 'restore')
+                except m.Deferred:
+                    pass  # Top-level complete inventory checks stop before row execution.
+                else:
+                    self.assertIn(result['targets'][0]['state'], ('deferred', 'failed'), result)
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_cold_native_alive_elsewhere_unreadable_or_reused_pane_never_proves_absence(self):
+        ident = self.cold_manual_batch()
+        for failure in ('exception-expected-session-still-live', 'exception-process-unverifiable',
+                        'exception-absent-pane-reused', 'exception-native-json-invalid',
+                        'native-cli-unavailable-or-timeout', 'exception-live-identity-ambiguous'):
+            with self.subTest(failure=failure):
+                self.cold_state = failure
+                result = self.execute(ident, 'restore')
+                self.assertEqual(failure, result['targets'][0]['reason'])
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_cold_absence_is_fixed_over_inventory_durable_and_final_official_lookup(self):
+        for boundary in ('inventory', 'durable', 'final-native-query', 'final-orca'):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.cold_manual_batch()
+                changed = []
+                real_inventory = m.rr.plugin_inventory
+                real_record = m.Recorder.record
+                real_absent = m.live.observe_absent
+                sending = []
+                def change():
+                    self.cold_state = 'exception-expected-session-still-live'
+                    changed.append(True)
+                def inventory(*args):
+                    value = real_inventory(*args)
+                    if boundary == 'inventory' and self.client.exception_proofs and not changed: change()
+                    return value
+                def record(recorder, phase, **values):
+                    value = real_record(recorder, phase, **values)
+                    if phase == 'sending' and values.get('step') == 'owned-restore-terminal':
+                        sending.append(True)
+                    if boundary == 'durable' and values.get('step') == 'owned-restore-terminal': change()
+                    return value
+                def native(*args, **kwargs):
+                    value = real_absent(*args, **kwargs)
+                    if sending and boundary == 'final-native-query' and not changed:
+                        # The second official response detects this in the real helper.
+                        change()
+                        raise m.Deferred(self.cold_state)
+                    if sending and boundary == 'final-orca' and not changed:
+                        changed.append(True)
+                        self.client.add('excluded', '/work', None)
+                    return value
+                with patch.object(m.rr, 'plugin_inventory', side_effect=inventory), \
+                     patch.object(m.Recorder, 'record', new=record), patch.object(m.live, 'observe_absent', side_effect=native):
+                    result = self.execute(ident, 'restore')
+                self.assertEqual([True], changed)
+                self.assertIn(result['targets'][0]['reason'],
+                              ('exception-expected-session-still-live', 'exception-pane-mismatch',
+                               'exception-absence-unverified', 'restore-safety-state-changed'))
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_exception_native_lookup_cannot_hide_new_selected_or_ps_candidate_before_create(self):
+        ident = self.cold_manual_batch()
+        real_absent = m.live.observe_absent
+        changed, sending = [], []
+        real_record = m.Recorder.record
+        def record(recorder, phase, **values):
+            value = real_record(recorder, phase, **values)
+            if phase == 'sending' and values.get('step') == 'owned-restore-terminal': sending.append(True)
+            return value
+        def appeared(*args, **kwargs):
+            value = real_absent(*args, **kwargs)
+            if sending and not changed:
+                changed.append(True)
+                self.client.add('unexpected', '/work', 'claude')
+            return value
+        with patch.object(m.live, 'observe_absent', side_effect=appeared), patch.object(m.Recorder, 'record', new=record):
+            result = self.execute(ident, 'restore')
+        self.assertEqual('restore-safety-state-changed', result['targets'][0]['reason'])
+        self.assertEqual([], self.client.sent)
+        self.assertEqual([], self.client.created)
 
 
 if __name__ == '__main__':

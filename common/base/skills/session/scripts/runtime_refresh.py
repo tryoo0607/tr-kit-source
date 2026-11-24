@@ -273,6 +273,10 @@ def management_observation(client, self_pane, terms, ps):
 
 def management_self_check(client, terms=None, ps=None, *, process_only=False, terminal_inventory=None):
     """Compare fixed ephemeral authority; never refresh it into new authority."""
+    exception_check = getattr(client, 'recovery_exception_check', None)
+    if exception_check is not None:
+        exception_check(terms, ps, process_only=process_only, terminal_inventory=terminal_inventory,
+                        native_query=False)
     proof = getattr(client, 'management_self', None)
     if proof is None:
         return
@@ -381,10 +385,24 @@ def inventory_progress(provider, elapsed, timeout):
             os.close(descriptor)
 
 
-def native_command(provider, args, cwd):
+def native_command(provider, args, cwd, *, executable=None):
     """Capture complete output within time/byte bounds and own the child group."""
     if provider not in ('codex', 'claude'):
         raise Deferred('provider-unsupported')
+    command = provider
+    if executable is not None:
+        # Internal producer-bound calls must never resolve a bare command again
+        # under cwd. The caller owns the stronger official executable identity.
+        try:
+            path = Path(executable)
+            info = path.lstat()
+            if (not token(executable) or not path.is_absolute()
+                    or path.resolve(strict=True) != path
+                    or not stat.S_ISREG(info.st_mode) or not info.st_mode & 0o111):
+                raise Deferred('native-cli-executable-unverified')
+        except (OSError, ValueError, TypeError):
+            raise Deferred('native-cli-executable-unverified') from None
+        command = executable
     inventory = args == ['plugin', 'list', '--json']
     timeout = CODEX_INVENTORY_TIMEOUT if inventory and provider == 'codex' else NATIVE_TIMEOUT
     started = time.monotonic()
@@ -393,7 +411,7 @@ def native_command(provider, args, cwd):
     limits = {'stdout': NATIVE_STDOUT_LIMIT, 'stderr': NATIVE_STDERR_LIMIT}
     child = None
     try:
-        child = subprocess.Popen([provider, *args], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        child = subprocess.Popen([command, *args], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, start_new_session=True)
         with selectors.DefaultSelector() as selector:
             for name in captured:
@@ -827,8 +845,16 @@ def guard(client, plan, target, self_pane, modal=False):
     return passive_guard(client, plan, target, self_pane, modal=modal)
 
 
+def recovery_exception_preflight(client):
+    """Finish long exception lookups before the final Orca/target observations."""
+    check = getattr(client, 'recovery_exception_check', None)
+    if check is not None:
+        check(native_query=True)
+
+
 def passive_guard(client, plan, target, self_pane, modal=False):
     """Same runtime/selection/state checks without a new native inventory wait."""
+    recovery_exception_preflight(client)
     ts, ps = client.inventory()
     if target.get('requireCompleteInventory'):
         for inventory in (ts, ps):
@@ -910,6 +936,7 @@ def output_proof(frame):
 
 def shell_guard(client, plan, target, normal_exit):
     installation_guard(target)
+    recovery_exception_preflight(client)
     ts, ps = client.inventory()
     matches = [t for t in array(ts.get('terminals')) if t.get('handle') == target['handle']]
     if client.runtime != plan['runtimeId'] or len(matches) != 1 or fingerprint(matches[0]) != target['identity']:
@@ -1395,7 +1422,7 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
     return finish_response(current, fresh)
 
 
-def claude_plugin_listing(text, inventory):
+def claude_plugin_listing(text, inventory, native_version=None):
     enabled = [p for p in inventory['plugins'] if p['enabled']]
     expected = {p['id']: p for p in enabled}
     if len(expected) != len(enabled):
@@ -1432,6 +1459,8 @@ def claude_plugin_listing(text, inventory):
         prefix = r'^\s*(?:[•*-]\s*)?' + re.escape(ident) + r'\s+'
         match = (re.fullmatch(prefix + rf'\(v({version}),\s*({scope})\)\s*✔\s*enabled\s*', line) or
                  re.fullmatch(prefix + rf'v?({version})\s+({scope})\s+enabled\s*', line))
+        if match is None and native_version == '2.1.331':
+            match = re.fullmatch(prefix + rf'\(v({version}),\s*({scope})\)\s*✔\s+on\s*', line)
         if match is None or match[2] != expected[ident]['scope']:
             raise Deferred('claude-runtime-plugin-list-mismatch')
         found[ident] = match[1]
@@ -1508,9 +1537,9 @@ def refresh_claude(client, plan, target, self_pane, journal):
     if not re.search(r'(?m)^\s*(?:❯\s*)?/reload-plugins(?:\s|$)', help_output):
         raise Deferred('claude-reload-command-unsupported')
     _, listing = native_query(client, plan, target, self_pane, journal, '/plugin list --enabled', 'plugin-preflight',
-                              completion=(lambda text: claude_plugin_listing(text, installation_before),
+                              completion=(lambda text: claude_plugin_listing(text, installation_before, before.get('nativeVersion')),
                                           'claude-runtime-plugin-list-unknown'))
-    listed_before = claude_plugin_listing(listing, installation_before)
+    listed_before = claude_plugin_listing(listing, installation_before, before.get('nativeVersion'))
     listing_matches = listed_before == {p['id'] + ':' + p['scope']: p['version']
                                        for p in installation_before['plugins'] if p['enabled']}
     journal.record('runtime-listing-before', handle=target['handle'],
