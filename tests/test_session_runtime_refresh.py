@@ -346,7 +346,7 @@ class RuntimeRefreshTests(unittest.TestCase):
         session = '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'
         cases = [('codex', 'default', None), ('codex', 'Custom (workspace, Ask for approval)', None),
                  ('codex', 'Full Access --fake-flag', None), ('claude', 'default', '2.1.330'),
-                 ('claude', 'bypass permissions', '2.1.331'), ('claude', 'plan', '2.1.330')]
+                 ('claude', 'bypass permissions', '2.1.332'), ('claude', 'plan', '2.1.330')]
         for provider, permission, version in cases:
             text = 'Session ID: '+session+'\ncwd: /work\nPermissions: '+permission+'\n'
             if version:
@@ -1222,8 +1222,9 @@ class RuntimeRefreshTests(unittest.TestCase):
                           '  Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
                           '  cwd: /work', '  ←/→ to switch · Esc to close'])
         self.assertTrue(m.claude_modal(text, '/status'))
-        for invalid in (text.replace('2.1.330', '2.1.329'),
-                        text.replace('2.1.330', '2.1.331'),
+        for version in ('2.1.329', '2.1.331'):
+            self.assertTrue(m.claude_modal(text.replace('2.1.330', version), '/status'))
+        for invalid in (text.replace('2.1.330', '2.1.332'),
                         text.replace('Version:', 'Unknown version:'),
                         text.replace('Settings  Status   Config   Usage   Stats', 'Unknown header'),
                         text.replace('Esc to close', 'Esc to quit'),
@@ -1800,6 +1801,35 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertNotIn('shell', run.call_args.kwargs)
 
 
+    def test_claude_331_observed_hints_with_omitted_draft_allow_only_status_and_reject_typed_input(self):
+        self.installation.update(nativeVersion='2.1.331')
+        for hint in m.CLAUDE_331_PLACEHOLDERS:
+            with self.subTest(hint=hint):
+                client = ClaudeModalFake()
+                initial = [' ▐▛███▛█   Claude Code v2.1.331', hint,
+                           '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
+                client.read['tail'] = initial
+                self.assertNotIn('draft', client.read)
+                plan = m.make_plan(m.inspect(client, self.self_pane), ['term_target'])
+                original = client.call
+                def new_status(*args):
+                    result = original(*args)
+                    if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/status':
+                        client.read['tail'][1] = ' Version: 2.1.331'
+                        client.read['tail'][-1] = ' ←/→ to switch · Esc to close'
+                    return result
+                with patch.object(client, 'call', side_effect=new_status):
+                    native = m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+                self.assertEqual('2.1.331', native['nativeVersion'])
+                self.assertEqual(['/status', '\x1b'], [a[a.index('--text')+1] for a in client.sent])
+                for visible in ('❯', hint):
+                    client.sent.clear()
+                    client.read.update(tail=[initial[0], visible, initial[-1]], draft=hint[2:])
+                    with self.assertRaisesRegex(m.Deferred, 'draft'):
+                        m.native_status(client, plan, plan['targets'][0], self.self_pane, Mock())
+                    self.assertFalse(client.sent)
+
+
 class NativeInventoryBounds(unittest.TestCase):
     """Real owned native processes, OS pipes and groups; no installed CLI."""
     def setUp(self):
@@ -2285,6 +2315,55 @@ finally:
         self.assertIn('OWNED_BACKGROUND_OK', text)
         self.assertIn('OWNED_GROUP_REJECTED', text)
         self.assertNotIn('UNSAFE_ACCEPTED', text)
+
+
+class ClaudeNativeRecoveryContracts(unittest.TestCase):
+    def test_observed_native_versions_and_distinct_launch_versions_require_explicit_mode(self):
+        session = '11111111-1111-4111-8111-111111111111'
+        for source in ('2.1.319', '2.1.329', '2.1.330', '2.1.331'):
+            native = m.status('claude', '\n'.join(('Session ID: '+session, 'cwd: /work',
+                              'Permission mode: bypass permissions', 'Version: '+source)))
+            self.assertEqual('claude-bypass-permissions', native['resumeMode'])
+            for launch in ('2.1.330', '2.1.331'):
+                self.assertEqual('claude --dangerously-skip-permissions --resume '+session,
+                                 m.resume_command('claude', native, installed_version=launch))
+            for launch in ('2.1.319', '2.1.329', '2.1.332', None):
+                with self.assertRaisesRegex(m.Deferred, 'version-unverified'):
+                    m.resume_command('claude', native, installed_version=launch)
+            native['resumeMode'] = None
+            with self.assertRaisesRegex(m.Deferred, 'permissions-unverified'):
+                m.resume_command('claude', native, installed_version='2.1.331')
+        for source in ('2.1.318', '2.1.320', '2.1.328', '2.1.332'):
+            self.assertIsNone(m.observed_resume_mode('claude', {'nativeVersion': source, 'permissions': 'bypass permissions'}))
+        for permission in ('auto', 'default', 'acceptEdits', 'plan'):
+            self.assertIsNone(m.observed_resume_mode('claude', {'nativeVersion': '2.1.331', 'permissions': permission}))
+
+    def test_exact_331_placeholders_allow_observed_omitted_empty_draft_and_reject_typed_identical(self):
+        for hint in m.CLAUDE_331_PLACEHOLDERS:
+            frame = {'source': 'screen', 'tail': [
+                ' ▐▛███▛█   Claude Code v2.1.331', hint,
+                '  ⏵⏵ bypass permissions on (shift+tab to cycle)']}
+            self.assertNotIn('draft', frame)  # owned331 empty/restored frame contract
+            self.assertEqual('\n'.join(frame['tail']), m.idle_screen('claude', frame))
+            self.assertEqual('bypass permissions', m.claude_permission(m.screen(frame)))
+            self.assertEqual(m.screen(frame), m.current_status_response('claude', m.screen(frame)))
+            for empty in (None, ''):
+                self.assertEqual(m.screen(frame), m.idle_screen('claude', {**frame, 'draft': empty}))
+            for change in ('typed-identical', 'typed-identical-stale-hint', 'typed-other', 'version',
+                           'header', 'text', 'space', 'duplicate-version', 'approval'):
+                with self.subTest(hint=hint, change=change):
+                    invalid = copy.deepcopy(frame)
+                    if change.startswith('typed-identical'):
+                        invalid['draft'] = hint[2:]
+                        if change == 'typed-identical': invalid['tail'][1] = '❯'
+                    elif change == 'typed-other': invalid['draft'] = 'typed'
+                    elif change == 'version': invalid['tail'][0] = invalid['tail'][0].replace('331', '330')
+                    elif change == 'header': invalid['tail'].pop(0)
+                    elif change == 'text': invalid['tail'][1] = '❯\u00a0Try "other text"'
+                    elif change == 'space': invalid['tail'][1] = hint.replace('\u00a0', ' ')
+                    elif change == 'duplicate-version': invalid['tail'].append('Claude Code v2.1.329')
+                    elif change == 'approval': invalid['tail'].append('Allow once')
+                    with self.assertRaises(m.Deferred): m.idle_screen('claude', invalid)
 
 
 if __name__ == '__main__':

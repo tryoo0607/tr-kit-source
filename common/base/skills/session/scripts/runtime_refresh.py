@@ -118,10 +118,20 @@ def screen(read):
     return '\n'.join(tail)
 
 
+CLAUDE_NATIVE_VERSIONS = frozenset(('2.1.319', '2.1.329', '2.1.330', '2.1.331'))
+CLAUDE_LAUNCH_VERSIONS = frozenset(('2.1.330', '2.1.331'))
+CLAUDE_331_PLACEHOLDERS = frozenset(('❯\u00a0Try "create a util logging.py that…"',
+                                     '❯\u00a0Try "how does <filepath> work?"'))
+
+
 def idle_screen(provider, read):
     if read.get('draft') not in (None, ''):
         raise Deferred('draft')
     text = screen(read)
+    # A background prompt cannot make a visible status card safe for input.
+    if provider == 'claude' and re.search(
+            r'(?m)^\s*(?:Settings\s+Status\s+Config\s+Usage\s+Stats|←/→ to switch · Esc to close)\s*$', text):
+        raise Deferred('approval-or-menu')
     if re.search(r'(?i)(conversation is open in another app|close it there and press|r retry.*f fork)', text):
         raise Deferred('native-session-in-use')
     prompt = '›' if provider == 'codex' else '❯'
@@ -136,7 +146,11 @@ def idle_screen(provider, read):
         raise Deferred('draft')
     placeholder = (provider == 'codex' and prompts[-1] == '› Ask Codex to do anything' and
                    (not visible_header or known_header))
-    if prompts[-1] != prompt and not placeholder:
+    claude_placeholder = (provider == 'claude' and read.get('draft') in (None, '')
+                          and prompts[-1] in CLAUDE_331_PLACEHOLDERS
+                          and re.findall(r'Claude Code v([^\s]+)', text) == ['2.1.331']
+                          and re.search(r'(?m)^[ \t]*▐▛███▛█   Claude Code v2\.1\.331[ \t]*$', text))
+    if prompts[-1] != prompt and not placeholder and not claude_placeholder:
         raise Deferred('draft')
     # A prompt may remain on screen behind a dialog. Refuse known menus and approvals.
     dialog_text = '\n'.join(line for line in lines if not re.match(r'^\s*(?:Permissions|Permission mode)\s*:', line))
@@ -678,7 +692,7 @@ def observed_resume_mode(provider, native):
     if (provider == 'codex' and native.get('nativeVersion') in CODEX_RESUME_VERSIONS
             and native.get('permissions') == 'Full Access'):
         return 'codex-full-access'
-    if (provider == 'claude' and native.get('nativeVersion') == '2.1.330'
+    if (provider == 'claude' and native.get('nativeVersion') in CLAUDE_NATIVE_VERSIONS
             and native.get('permissions') == 'bypass permissions'):
         return 'claude-bypass-permissions'
     return None
@@ -691,7 +705,7 @@ def resume_command(provider, native, *, installed_version):
     if mode is None or native.get('resumeMode') != mode:
         raise Deferred('native-resume-permissions-unverified')
     if not ((provider == 'codex' and installed_version in CODEX_RESUME_VERSIONS) or
-            (provider == 'claude' and installed_version == '2.1.330')):
+            (provider == 'claude' and installed_version in CLAUDE_LAUNCH_VERSIONS)):
         raise Deferred('native-resume-version-unverified')
     ident = native.get('sessionId')
     try:
@@ -816,6 +830,11 @@ def guard(client, plan, target, self_pane, modal=False):
 def passive_guard(client, plan, target, self_pane, modal=False):
     """Same runtime/selection/state checks without a new native inventory wait."""
     ts, ps = client.inventory()
+    if target.get('requireCompleteInventory'):
+        for inventory in (ts, ps):
+            if (inventory.get('truncated') is not False
+                    or 'local' not in obj(inventory.get('hostScope')).get('hostIds', [])):
+                raise Deferred('inventory-incomplete')
     if client.runtime != plan['runtimeId']:
         raise Deferred('runtime-changed')
     terms = array(ts.get('terminals'))
@@ -946,7 +965,7 @@ def claude_modal(text, command):
     if re.search(r'(?im)((?<![-\w])approve\b|allow once|trust this|select an option|enter to confirm|yes, proceed)', text):
         return False
     if command == '/status':
-        observed_close = (re.search(r'(?m)^\s*Version:\s*2\.1\.330\s*$', text) and
+        observed_close = (re.search(r'(?m)^\s*Version:\s*2\.1\.(?:329|330|331)\s*$', text) and
                           re.search(r'(?m)^\s*←/→ to switch · Esc to close\s*$', text))
         return bool(re.search(r'(?m)^\s*Settings\s+Status\s+Config\s+Usage\s+Stats\s*$', text) and
                     ('Esc to cancel' in text or observed_close))
@@ -964,6 +983,10 @@ def modal_key(client, plan, target, self_pane, journal, command, key, expected_p
         raise Deferred('claude-modal-boundary-unknown')
     management_self_check(client, process_only=True)
     journal.record('sending', handle=target['handle'], step='modal-navigation')
+    if expected_proof is not None:
+        _, confirmed = passive_guard(client, plan, target, self_pane, modal=True)
+        if output_proof(confirmed) != expected_proof or not claude_modal(screen(confirmed), command):
+            raise Deferred('native-response-proof-changed')
     management_self_check(client, process_only=True)
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', key)
     receipt = obj(result.get('send'))
