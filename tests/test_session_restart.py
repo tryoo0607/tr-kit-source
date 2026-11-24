@@ -587,13 +587,45 @@ class Restart(unittest.TestCase):
     def test_absent_restore_unknown_current_cli_version_never_creates(self):
         ident = self.prepare()
         self.client.remove('term_target')
-        self.client.installed_codex_version = '0.172.0'
+        self.client.installed_codex_version = '0.172.1'
         self.client.sent.clear()
         row = self.execute(ident, 'restore')['targets'][0]
         self.assertEqual('manual-restart-required', row['state'])
         self.assertEqual('native-resume-version-unverified', row['reason'])
         self.assertEqual([], self.client.created)
         self.assertEqual([], self.client.sent)
+
+    def test_codex_01720_upgrade_restart_and_restore_preserve_identity_and_permissions(self):
+        for before in ('0.167.1', '0.167.2', '0.171.0', '0.172.0'):
+            for mode in ('restart', 'restore'):
+                with self.subTest(before=before, mode=mode):
+                    self.root = Path(self.tmp.name)/(before+'-'+mode)
+                    self.client = Fake()
+                    self.client.codex_version = before
+                    ident = self.prepare()
+                    original_native = copy.deepcopy(self.load(ident)['targets'][0]['native'])
+                    self.client.installed_codex_version = '0.172.0'
+                    if mode == 'restore':
+                        self.client.remove('term_target')
+                    original = self.client.call
+                    def upgraded_call(*args):
+                        result = original(*args)
+                        if (args[:2] == ('terminal', 'create') or
+                                args[:2] == ('terminal', 'send') and
+                                args[args.index('--text')+1].startswith(CODEX_RESUME)):
+                            self.client.codex_version = '0.172.0'
+                        return result
+                    with patch.object(self.client, 'call', side_effect=upgraded_call):
+                        row = self.execute(ident, mode)['targets'][0]
+                    self.assertEqual('restarted', row['state'])
+                    observed = row['nativeObserved']
+                    self.assertEqual('0.172.0', observed['nativeVersion'])
+                    for field in ('sessionId', 'cwd', 'permissions', 'resumeMode'):
+                        self.assertEqual(original_native[field], observed[field])
+                    self.assertEqual(original_native, self.load(ident)['targets'][0]['native'])
+                    self.assertEqual(1 if mode == 'restore' else 0, len(self.client.created))
+                    self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+                    self.assertEqual(1 if mode == 'restore' else 0, len(self.client.created))
 
     def test_owned_restore_can_verify_and_repeat_without_duplicate_or_reusing_changed_identity(self):
         for provider in ('codex', 'claude'):

@@ -826,3 +826,19 @@ Root의 최종 전체 CI는 실제 Gitleaks8.30.1과 고정한 실행/시험6파
 운영 설치 전, 동일 hash의 자체 실행3파일만 inno-desktop의 분리된 시험 경로로 전달해 실제 Claude331 소유 canary를 실행했다. prepare→metadata-only manual identify→같은 workspace의 선택 verify는 통과했고 manual historical row/event prefix를 보존했다. 실제 화면의6개 `✔ on` 행은 각 ID/version/scope 형식 검사에서 통과했다. 전체 enabled-ID preflight는 직접 terminal 생성과 공식 Orca agent launch 양쪽 모두에서 거부됐다. caller 설치 조회에 `orca-agent-view@inline:session`이 있지만 native 목록에 없어 기존 전체 집합 검사가 중단한 것이다. 이 차이의 원인은 미확인이며, session 항목을 제외하거나 reload를 보내지 않았다. 행 문법 검사 통과를 전체 native reload 성공으로 보고하지 않는다.
 
 소유 native3개만 닫은 뒤 strict known-absent는 기존 다른 workspace의 미지원 native318/330이 남아 `exception-executable-unsupported`로 create0/예외 입력0을 확인했다. 기존 사용자 process는 종료하지 않았고 지원 버전도 넓히지 않았다. 양쪽 부재의 positive restore는 source/소유 fake transport 시험이며 실제 PC reboot 결과가 아니다. native 시험 보고 코드에서 public report에 없는 choice 필드를 참조한 오류는 signed targetId/기존 결과의 read-only 대조로 확인했으며 restore를 재전송하지 않았다. 이 source canary 당시 활성 common은0.8.5였다. 새 package 설치·원래 production 배치 attestation/선택 verify·실제 소비는 이후 운영 receipt가 소유한다.
+
+## Codex0.172.0과 status 시간·crop 호환 — 2026-11-24
+
+[결정](decisions/20261124-codex172-status-compatibility.md)의 exact0.172.0·15초·첫 요청문 pin을 지정 source worktree에서 작성했다. 외부 원문/설치본은 수정하지 않았다. 기존 JSON/proc/운영 연결과 native runner·Store/Recorder·resume 구성기를 재사용했다. 구성 배치·skill 발동·hook 등록·권한 모드는 바꾸지 않았다.
+
+첫0.172.0 allowlist의 red 시험은 추가 전 실패를 확인했고 관련260개가 통과했다.15초 보완 후139 runtime/123 restart 총262개가 통과했고, 승인 crop 형식 추가 후 runtime141개/47.091초·실패·오류·skip0을 통과했다. 정상/3.1s·14.9s 응답,15.1s 거부, unique 첫 요청문·Session suffix를 확인하고 draft/상태/proof drift·다른/중복/나중/slash pin·old Session 누락·이력 변형·새 경계·동일 반복을 거부한다. 합성 transport는 native 성공 근거가 아니다.
+
+공식 npm 격리 설치2패키지의 registry signature와 provenance attestation을 확인했고 version/help/진단 없는 plugin JSON을 검증했다. 추가 gh-attestation 시도는 사용 중 gh에 해당 명령이 없어 미실행이었다. CLI help·서명·release note는 실제 TUI 재개나 플러그인 소비의 증명이 아니다.
+
+NAS 기존 소유 배치의 시간 초과와 후속 freshness 실패는 signed key/선택/이력 prefix를 보존했다. crop 변경 후 현재 화면과 cursor가 완전히 같은 반복은 계속 `native-response-freshness-unknown`으로 중단했다. 이력 포인터는 로컬 증거 `tr-kit-runtime-followup-20261124/`에 있고 원문 출력·계정·대화·서명 키를 tracked 자료로 넣지 않았다. 원래 사용자 NAS 세션의 programStatus 미확인과 실제 idle 실패는 별도 미결이며 이 변경으로 해소했다고 주장하지 않는다.
+
+전체 공통 CI는 실제 Gitleaks8.30.1로748개/328.271초·실패·오류·skip0을 통과했다. context-free quick 검수의 요구 행 표 배치1건을 확인·교정했고 code 발견 사항은 없었다. 이후 변경은 문서 표/링크·실제 검증 결과의 갱신이며 실행/시험 bytes는 유지됐다.
+
+다른 native actor가 없는 새 소유 Git fixture의 실제 Codex0.172.0은 prepare→소유 창 종료→exact UUID restore→repeat verify를 통과했다. 복원 창은1회 생성됐고 UUID/cwd/Full Access/resume mode가 유지되며 최종 already-running과 독립 화면 응답 proof를 확인했다. 이전 실패 Stores의 bytes도 보존했다. 같은 general의 별도 baseline restore는 다른 수동 Codex actor 때문에 create 전에 unmatched-agent-identity로 거부됐고, 동일 화면 반복의 earlier batch도 보류 상태 그대로다. 정상 같은-terminal P10k restart, 기존 사용자 배치 복구와 실제 PC reboot 성공으로 확대하지 않는다.
+
+같은 재개 세션에서 지정한 harmless printf를 한 번 실행해 출력 marker와 완료 응답을 확인했고 Hook failed는 관측되지 않았다. 시험 시설은 후속 배포 검증까지 유지하며 정리와 package/private pin·운영 배포는 별도 진행한다. 실제 플러그인 소비는 계속 unverified/null이며 실제 PC reboot와 inno postboot restore도 별도 사용자 요청 전 미실행이다.
