@@ -762,3 +762,21 @@ R-52의 [승인 결정](decisions/20261124-session-prepare-continuation.md)과 `
 실제 기존 배치는 비에이전트 관리 shell이라 과거 self 행이 없다는 root 관측을 따른다. 원본에 없는 과거 fingerprint를 추정하지 않고 현재 unique self와 tail self 거부를 유지하며 과거/현재 관리 terminal 동일성은 미확인이다. 실제 receiver-local native continuation·정확한 native 필드·수동 예외·CLI/Orca restart/소비, 독립 검수·전체 CI/실제 Gitleaks·fresh common/private package/pin·원격 publication은 root 후속 범위다. 구현자는 원격/native 입력·배포·버전 변경·패키징·commit/push를 하지 않았다. auto mode 지원은 확대하지 않았으며 마지막 관측과 입력 사이의 기존 비원자 경합은 남는다.
 
 Root 후속 전체 CI는 실제 고정 Gitleaks8.30.1로 **693개/315.299초·실패/오류/skip0**를 통과했다(session227개 포함). CI 입력의 두 실행 파일·두 시험 파일 SHA256이 최종 source와 같음을 대조했다. 문서·실행 흐름과 계획 matrix를 원 요구에 대조했으며, 별도 context-free quick 정적 검수에서는 발견 사항이 없었다. 현재 코드·문서에는 새 skill/hook/provider나 권한 모드 지원을 추가하지 않았다. 최종 여덟 조립물·네 private pin·전송 검사와 실제 운영 준비 결과는 로컬 후속 receipt에 별도로 남긴다. 이 숫자·검수 문장은 실행 코드/시험을 바꾸지 않는 사후 검증 기록이다.
+
+## Claude 접수 준비의 명시 복구·legacy mode attestation — 2026-11-24
+
+R-52/R-54의 [승인 결정](decisions/20261124-claude-native-batch-recovery.md)과 `plan-claude-native-batch-recovery.md`를 baseline `d7128e3b095dd341e4ca57c45e3e0d9b2fc5f090`의 지정 worktree에서 구현했다. 기존 runtime/native status·ModalFake·signed Store·Recorder·guard·fixed resume 구성기를 재사용했다. 별도 외부 공급자·설치·권한·파일 배치는 추가하지 않았다. 원 native/event prefix/key 보존, status-only verify의 기존 거부, queried 선택 Claude 행만 처리하는 명시 복구·응답 proof에 묶인 단일 Esc·새 status와 fresh attestation을 대조했다.
+
+두 session suite **235개/skip0**가 통과했다. 새 실제 Fake transport/임시 signed Store 사례는 ready319 null mode와 열린329 card의 같은 배치 복구, 원 기록/예외/미조회 tail 보존, 뒤의 승인된331 cold restore 고정 argv와 UUID/cwd/권한, 기존 verify 거부, receipt/attempt/권한/metadata/proof/설치/상태/storage/transport 실패와 재호출 금지·첫 중단, attestation identity/proof/event 변조와 launch 버전 분리, exact331 두 placeholder의 draft 키 생략/빈 값과 typed-identical/다른 text/version/header 부재 거부를 포함한다. `git diff --check`도 통과했다. 숫자는 구현자가 수행한 source 회귀이며 독립 검수 결과가 아니다.
+
+실제319/329/331 owned native canary·동일 UUID331 migration·typed-identical negative·원 호스트 receiver-local 복구·full CI의 pinned Gitleaks·private129·조립/8묶음/pin/전송 검사는 이 구현자의 실행 범위에서 **미실행**이다. 별도 root 검증으로 판정한다. 사용자 세션 종료/재개·재부팅·원격 작업·설치 파일 직접 수정·버전 변경·조립·Git publication은 수행하지 않았다. 공유 workspace의 UUID 불명 예외와 unknown/duplicate/absence guard는 그대로 남으며, 이 source 통과로 미래의 모든 cold restore 또는 운영 완료를 보장하지 않는다. 실제 압축/재개 모델 행동 시험도 실행하지 않았다.
+
+후속 root 관측의 `inno-331-placeholder-{empty,restored,typed-observed,create-typed-observed}.json` 네 로컬 evidence를 읽어 draft 계약을 정정했다. empty/restored의 frameKeys에는 draft가 없고, how-does/create-util 문구를 각각 직접 입력한 두 경우에는 해당 문자열의 nonempty draft가 있다. 원 raw 입력/삭제는 root의 소유 canary 실행이며 구현자는 evidence를 정적으로 대조했다. 초기 명시 draft 키 요구를 제거하고 관측된 두 hint·정확한331 header·기존 nonempty draft 거부에 한정했다. 또한 cleanup card의 UUID/cwd는 fresh 신원으로 승격하지 않고 fresh status와의 연속성만 추가 확인한다.
+
+이 후속 source에서 두 session suite **237개/skip0**(74.941초)와 `git diff --check`를 다시 통과했다. 추가 회귀는 두 hint의 omitted-draft 실제 transport status 및 typed-identical 0입력, cleanup UUID/cwd 불일치의 native/attestation 미채택을 확인한다. 원 카드와 같은 UUID/cwd의 기존 mixed recovery 성공 회귀도 함께 통과했다. 전체 CI·native migration/실제 batch 복구 완료 판정은 root 기록으로 별도 유지한다.
+
+Root의 후속 native 시험에서는 소유 fixture의 Claude2.1.319·2.1.329 각각에서 harmless marker 응답을 만든 후, 이미 설치된2.1.331의 exact UUID resume로 같은 대화를 재개했다. 전후 status의 UUID·cwd·기존 bypass 권한과 이전 marker 응답 표시가 일치했으며 시험 창만 정상 종료·정리했다. 기본 CLI 선택·권한 설정은 바꾸지 않았다. 이는 실제 CLI 통합 시험이며 원 사용자 배치의 복구 완료나 PC 재부팅 성공은 아니다. fresh331의 관측 hint 두 종류와 동일 문자열을 실제 입력한 negative에서는 빈 draft 필드 생략과 명시 nonempty typed draft를 구분했고, 입력은 Enter 없이 시험한 뒤 소유 fixture에서 지웠다.
+
+Context-free quick 정적 검수에서 미지원 status card 뒤 빈 prompt가 남으면 normal idle로 오인하는 경로1건을 확인했다. 기존 공통 idle guard에 관측 status header/close footer가 남은 화면 거부를 추가했고 초기 fallback과 native query 직전 drift에서0입력으로 중단하는 transport 회귀를 보완했다. 구현자의 관련43개 통과 후 독립 재검수는 추가 발견 사항이 없었다. 최종 전체 CI는 이 수정 뒤의 네 실행·시험 파일 hash를 별도 고정해 다시 수행한다. 이전 CI·묶음은 별도 보존하며 최종 결과와 혼합하지 않는다.
+
+최종 root 전체 CI는 고정한 실행·시험 bytes와 실제 Gitleaks8.30.1로 **705개/321.703초·실패·오류·skip0**를 통과했다. session239개를 포함하며 네 파일 hash를 최종 source와 대조했다. private의 최종 common pin 회귀129개는 별도로 통과했다. 초기 검수 발견1건의 수정·재검수, 두 native 이관 및 typed-draft 시험은 위 범위를 따르며 실제 원 배치 복구·설치·소비는 후속 운영 receipt로 판정한다.

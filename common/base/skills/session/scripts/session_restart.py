@@ -635,7 +635,7 @@ def owned_launch(client, batch, row, self_pane, log, installation):
             raise Deferred('session-appeared-before-launch')
         current_installation = rr.installation_guard({'provider': row['provider'], 'identity': old,
                                                     'installation': installation})
-        command = rr.resume_command(row['provider'], row['native'],
+        command = rr.resume_command(row['provider'], resume_basis(batch, row),
                                     installed_version=current_installation.get('nativeVersion'))
         # No native inventory/status/idle wait after this passive validation. In particular
         # retain the native response's proof across every intervening long lookup.
@@ -704,6 +704,240 @@ def owned_launch(client, batch, row, self_pane, log, installation):
             if str(error) not in ('agent-identity-unknown', 'child-state-unknown') or time.monotonic() >= deadline:
                 raise
             time.sleep(0.2)
+
+
+def resume_basis(batch, row):
+    """Choose historical identity or its signed, response-bound mode attestation."""
+    native = validate_native(row['native'])
+    attestation = row.get('resumeAttestation')
+    if attestation is None:
+        return native
+    attestation = rr.obj(attestation)
+    fresh = validate_native(attestation.get('native'))
+    equal_identity(native, fresh)
+    proof = rr.obj(attestation.get('nativeProof'))
+    if (set(attestation) != {'native', 'nativeProof', 'operationId'}
+            or set(proof) != {'cursor', 'screenSha256'}
+            or not re.fullmatch(r'\d+', str(proof.get('cursor')))
+            or not re.fullmatch(r'[a-f0-9]{64}', str(proof.get('screenSha256')))
+            or rr.observed_resume_mode(row['provider'], fresh) is None
+            or fresh.get('resumeMode') != rr.observed_resume_mode(row['provider'], fresh)
+            or sum(e.get('phase') == 'preparation-mode-attested'
+                   and e.get('targetId') == row['targetId']
+                   and e.get('operationId') == attestation['operationId']
+                   and e.get('native') == fresh and e.get('nativeProof') == proof
+                   for e in batch['events']) != 1):
+        raise Deferred('native-resume-attestation-invalid')
+    return fresh
+
+
+def recovery_rows(batch):
+    """Recognize original paired status receipts and completed ready modal pairs.
+
+    A historical one-byte receipt is never evidence that an uncertain key was Esc.
+    It is admitted only as the completed close of an already saved native row.
+    Recovery is deliberately one-shot, including after a storage or transport loss.
+    """
+    if batch.get('prepareState') != 'uncertain' or batch.get('preparationRecovery') is not None:
+        raise Deferred('preparation-recovery-not-admissible')
+    if any(r.get('attempt') is not None or r.get('resumeAttestation') is not None for r in batch['targets']):
+        raise Deferred('preparation-recovery-not-admissible')
+    by_id = {r['targetId']: r for r in batch['targets']}
+    pending = last_status = None
+    queried, requests, closed = [], set(), set()
+    initial_failure = decision = False
+    for event in batch['events']:
+        phase = event.get('phase')
+        if phase in ('sending', 'accepted'):
+            row = by_id.get(event.get('targetId'))
+            step = event.get('step')
+            if (row is None or row['choice'] != 'restart' or row['provider'] != 'claude'
+                    or event.get('operationId') != 'prepare'
+                    or event.get('handle') != row['terminal']['handle']
+                    or step not in ('status', 'modal-navigation')):
+                raise Deferred('preparation-recovery-receipt-invalid')
+            key = (row['targetId'], step)
+            if phase == 'sending':
+                if (pending is not None or set(event) != {'phase', 'targetId', 'operationId', 'at', 'handle', 'step'}
+                        or (step == 'status' and row['targetId'] in queried)
+                        or (step == 'modal-navigation' and
+                            (last_status != row['targetId'] or row['targetId'] in closed
+                             or row['state'] != 'ready' or row.get('native') is None))):
+                    raise Deferred('preparation-recovery-receipt-unmatched')
+                pending = key
+            else:
+                if pending != key:
+                    raise Deferred('preparation-recovery-receipt-unmatched')
+                if step == 'status':
+                    if (set(event) != {'phase', 'targetId', 'operationId', 'at', 'handle', 'step', 'requestId'}
+                            or not rr.token(event.get('requestId')) or event['requestId'] in requests):
+                        raise Deferred('preparation-recovery-receipt-unmatched')
+                    requests.add(event['requestId'])
+                    queried.append(row['targetId'])
+                    last_status = row['targetId']
+                else:
+                    required = {'phase', 'targetId', 'operationId', 'at', 'handle', 'step',
+                                'receiptKind', 'accepted', 'bytesWritten'}
+                    if (not required <= set(event) or set(event) - required - {'requestId', 'processIncarnation'}
+                            or event.get('receiptKind') != 'raw-key' or event.get('accepted') is not True
+                            or type(event.get('bytesWritten')) is not int or event['bytesWritten'] != 1
+                            or ('processIncarnation' in event and event['processIncarnation'] != row['terminal']['incarnationId'])
+                            or ('requestId' in event and (not rr.token(event['requestId']) or event['requestId'] in requests))):
+                        raise Deferred('preparation-recovery-receipt-invalid')
+                    if 'requestId' in event:
+                        requests.add(event['requestId'])
+                    closed.add(row['targetId'])
+                    last_status = None
+                pending = None
+        elif phase == 'preparation-manual-exclusion':
+            if pending is not None or not continuation_decision(batch, event):
+                raise Deferred('preparation-recovery-not-admissible')
+            decision = True
+            last_status = None
+        elif phase in ('prepared', 'preparation-failed', 'awaiting-native-response'):
+            if pending is not None:
+                raise Deferred('preparation-recovery-receipt-unmatched')
+            if phase == 'prepared':
+                if set(event) != {'phase', 'at'}:
+                    raise Deferred('preparation-recovery-not-admissible')
+            elif phase == 'preparation-failed':
+                row = by_id.get(event.get('targetId'))
+                if row is not None and initial_zero_input_failure(batch, row) and event == batch['events'][0]:
+                    initial_failure = True
+                if (set(event) != {'phase', 'targetId', 'operationId', 'at', 'reason'}
+                        or row is None or event.get('operationId') != 'prepare' or not rr.token(event.get('reason'))
+                        or not (initial_zero_input_failure(batch, row) and event == batch['events'][0]
+                                or row['targetId'] == last_status and row.get('native') is None
+                                and row['state'] == 'deferred' and event['reason'] == row.get('reason'))):
+                    raise Deferred('preparation-recovery-not-admissible')
+            elif (last_status is None or event.get('targetId') != last_status or event.get('operationId') != 'prepare'
+                  or event.get('handle') != by_id[last_status]['terminal']['handle']
+                  or event.get('step') != 'status'
+                  or not {'phase', 'targetId', 'operationId', 'at', 'handle', 'step'} <= set(event)
+                  or set(event) - {'phase', 'targetId', 'operationId', 'at', 'handle', 'step',
+                                   'expectedEchoAdded', 'streamComplete'}):
+                raise Deferred('preparation-recovery-not-admissible')
+            last_status = None if phase != 'awaiting-native-response' else last_status
+        else:
+            raise Deferred('preparation-recovery-not-admissible')
+    if pending is not None or not queried or (initial_failure and not decision):
+        raise Deferred('preparation-recovery-receipt-unmatched')
+    rows = [r for r in batch['targets'] if r['targetId'] in queried]
+    if ([r['targetId'] for r in rows] != queried
+            or any(not r.get('installationPrepared') or r['targetId'] != r['terminal']['handle']
+                   or (r.get('native') is None and r['state'] != 'deferred')
+                   or (r.get('native') is not None and (r['state'] != 'ready' or r['targetId'] not in closed))
+                   for r in rows)):
+        raise Deferred('preparation-recovery-not-admissible')
+    return rows
+
+
+def recovery_card(frame, row, batch):
+    """Validate the currently visible card for cleanup, never as fresh identity."""
+    text = rr.screen(frame)
+    if not rr.claude_modal(text, '/status'):
+        raise Deferred('claude-modal-boundary-unknown')
+    for label in ('Version', 'Session(?: ID)?', 'cwd|Directory|Working directory'):
+        if len(re.findall(r'(?im)^\s*(?:' + label + r'):\s*(.+)$', text)) != 1:
+            raise Deferred('claude-modal-metadata-ambiguous')
+    native = validate_native(rr.status('claude', text + '\nPermission mode: cleanup-only'))
+    if native['nativeVersion'] not in rr.CLAUDE_NATIVE_VERSIONS or native['cwd'] != row['terminal']['worktreePath']:
+        raise Deferred('claude-modal-metadata-unknown')
+    if row.get('native') and any(row['native'][k] != native[k] for k in ('sessionId', 'cwd')):
+        raise Deferred('native-identity-or-permissions-mismatch')
+    if any(other is not row and other['provider'] == row['provider']
+           and (other.get('native') or {}).get('sessionId') == native['sessionId'] for other in batch['targets']):
+        raise Deferred('duplicate-native-session')
+    return {k: native[k] for k in ('sessionId', 'cwd')}
+
+
+def recover_prepare(client, store, batch_id, self_pane):
+    """Explicit same-batch cleanup and fresh status; never discover, exit or launch."""
+    client.management_self = None
+    batch = store.load(batch_id)
+    if batch['binding'] != binding():
+        raise Deferred('machine-or-profile-mismatch')
+    check_other_attempts(store, batch_id)
+    rows = recovery_rows(batch)
+    terms, ps = snapshot(client, self_pane)
+    if client.runtime != batch['preparedRuntime']:
+        raise Deferred('runtime-changed')
+    for row in batch['targets']:
+        matches = [t for t in terms if t.get('handle') == row['terminal']['handle']]
+        if len(matches) != 1 or rr.fingerprint(matches[0]) != row['terminal']:
+            raise Deferred('target-changed')
+        if row.get('reason') == 'requesting-session' and rr.pane(matches[0]) != self_pane:
+            raise Deferred('self-changed')
+        if row in rows and rr.pane(matches[0]) == self_pane:
+            raise Deferred('self')
+    operation = str(uuid.uuid4())
+    batch['preparationRecovery'] = {'operationId': operation, 'state': 'started'}
+    batch['events'].append({'phase': 'preparation-recovery-started', 'operationId': operation, 'at': time.time()})
+    store.save(batch)
+    plan = {'runtimeId': batch['preparedRuntime'], 'selfPane': self_pane}
+    for row in rows:
+        log = Recorder(store, batch, row, operation)
+        try:
+            # Complete fresh inventories and original identity before every target.
+            current, current_ps = snapshot(client, self_pane)
+            matches = [t for t in current if t.get('handle') == row['terminal']['handle']]
+            if len(matches) != 1 or rr.fingerprint(matches[0]) != row['terminal']:
+                raise Deferred('target-changed')
+            t, frame = client.observe(row['targetId'])
+            if rr.fingerprint(t) != row['terminal'] or client.runtime != batch['preparedRuntime']:
+                raise Deferred('target-or-runtime-changed')
+            provider = rr.eligible(t, frame, current_ps, self_pane, True, tui_idle=True, modal=True)
+            if provider != row['provider']:
+                raise Deferred('provider-changed')
+            target = {'handle': row['targetId'], 'identity': row['terminal'], 'provider': provider,
+                      'installation': rr.plugin_inventory(provider, row['terminal']['worktreePath']), 'state': 'idle',
+                      'requireCompleteInventory': True}
+            rr.installation_guard(target)
+            cleanup_identity = None
+            if rr.claude_modal(rr.screen(frame), '/status'):
+                cleanup_identity = recovery_card(frame, row, batch)
+                proof = rr.output_proof(frame)
+                _, confirmed = rr.passive_guard(client, plan, target, self_pane, modal=True)
+                if rr.output_proof(confirmed) != proof:
+                    raise Deferred('native-response-proof-changed')
+                log.record('preparation-cleanup-planned', nativeProof=proof)
+                closed = rr.modal_key(client, plan, target, self_pane, log, '/status', '\x1b', expected_proof=proof)
+                rr.idle_screen(provider, closed)
+                if rr.claude_modal(rr.screen(closed), '/status'):
+                    raise Deferred('claude-modal-close-unconfirmed')
+                log.record('preparation-cleanup-closed', nativeProof=rr.output_proof(closed))
+            else:
+                rr.idle_screen(provider, frame)
+            native = validate_native(rr.native_status(client, plan, target, self_pane, log))
+            if cleanup_identity is not None and any(native[k] != cleanup_identity[k] for k in ('sessionId', 'cwd')):
+                raise Deferred('claude-cleanup-identity-changed')
+            if row.get('native') is not None:
+                equal_identity(row['native'], native)
+            if any(other is not row and other['provider'] == provider
+                   and (other.get('native') or {}).get('sessionId') == native['sessionId'] for other in batch['targets']):
+                raise Deferred('duplicate-native-session')
+            if rr.observed_resume_mode(provider, native) is None or native.get('resumeMode') is None:
+                raise Deferred('native-resume-permissions-unverified')
+            proof = target['nativeProof']
+            if row.get('native') is None:
+                row['native'] = native
+            row['resumeAttestation'] = {'native': native, 'nativeProof': proof, 'operationId': operation}
+            row.update(state='ready', reason=None, nativeObserved=native, currentTerminal=target['identity'],
+                       installationObserved=target['installation'], consumption='unverified', consumedVersion=None)
+            log.record('preparation-mode-attested', native=native, nativeProof=proof)
+        except (Deferred, OSError) as error:
+            row.update(state='deferred', reason=reason(error))
+            batch['preparationRecovery']['state'] = 'stopped'
+            try:
+                log.record('preparation-recovery-stopped', reason=row['reason'])
+            except (Deferred, OSError):
+                row['reason'] = 'storage-failed-inspect-existing-record'
+            return report(batch)
+    batch['preparationRecovery']['state'] = 'complete'
+    batch['prepareState'] = 'complete'
+    batch['events'].append({'phase': 'prepared', 'at': time.time(), 'outcome': 'acknowledged-preparation-recovered'})
+    store.save(batch)
+    return report(batch)
 
 
 def verify_preparation(client, store, batch, self_pane):
@@ -835,7 +1069,7 @@ def execute(client, store, batch_id, self_pane, mode):
             needs_resume = ((found is None and mode == 'restore') or
                             (found is not None and mode == 'restart' and not (prior and prior.get('state') == 'complete')))
             if needs_resume:
-                native = row['native'] if found is None else found[1]
+                native = resume_basis(batch, row) if found is None else found[1]
                 try:
                     installation = (rr.plugin_inventory(row['provider'], native['cwd']) if found is None
                                     else found[0]['installation'])
@@ -853,7 +1087,7 @@ def execute(client, store, batch_id, self_pane, mode):
                     raise Deferred('session-absent-use-explicit-restore')
                 target = owned_launch(client, batch, row, self_pane, log, installation)
                 after = rr.native_status(client, current_plan(client, self_pane), target, self_pane, log)
-                equal_identity(row['native'], after, resumed=True)
+                equal_identity(resume_basis(batch, row), after, resumed=True)
                 state = 'restarted'
             else:
                 target, before = found
@@ -872,7 +1106,7 @@ def execute(client, store, batch_id, self_pane, mode):
                         defer_later(batch, index)
                         log.record('verified-running-only')
                         break
-                    equal_identity(row['native'], before, resumed=True)
+                    equal_identity(resume_basis(batch, row), before, resumed=True)
                 if mode != 'restart' or (prior and prior.get('state') == 'complete'):
                     after, state = before, 'already-running'
                 else:
@@ -949,7 +1183,7 @@ def report(batch):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('prepare', 'continue-prepare', 'list', 'restart', 'restore', 'verify'))
+    parser.add_argument('mode', choices=('prepare', 'continue-prepare', 'recover-prepare', 'list', 'restart', 'restore', 'verify'))
     parser.add_argument('--target', action='append', default=[])
     parser.add_argument('--exclude', action='append', default=[])
     parser.add_argument('--batch')
@@ -967,12 +1201,15 @@ def main(argv=None):
                 raise Deferred('batch-not-found')
             print('{"batches": []}')
             return 0
-        if args.mode == 'continue-prepare' and not args.batch:
+        if args.mode in ('continue-prepare', 'recover-prepare') and not args.batch:
             raise Deferred('batch-id-required')
-        with Store(args.state, read_only=args.mode == 'list', existing_only=args.mode == 'continue-prepare') as store:
+        with Store(args.state, read_only=args.mode == 'list', existing_only=args.mode in ('continue-prepare', 'recover-prepare')) as store:
             if args.mode == 'list':
                 # Durable inventory needs no runtime, conversation or host CLI.
                 result = report(store.load(args.batch)) if args.batch else {'batches': [report(b) for b in store.batches()]}
+            elif args.mode == 'recover-prepare':
+                store.load(args.batch)
+                result = recover_prepare(rr.Orca(), store, args.batch, os.environ.get('ORCA_PANE_KEY'))
             elif args.mode == 'continue-prepare':
                 # Missing/invalid records fail before constructing a runtime client.
                 store.load(args.batch)

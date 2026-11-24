@@ -2076,6 +2076,293 @@ class Restart(unittest.TestCase):
         self.assertEqual({'batches': []}, json.loads(result.stdout))
         self.assertEqual(before, {str(p): p.read_bytes() for p in SCRIPT.parent.rglob('*') if p.is_file()})
 
+    def mixed_recovery_batch(self):
+        class Mixed(ModalFake):
+            def __init__(self):
+                super().__init__()
+                self.versions = {'term_target': '2.1.319', 'term_other': '2.1.329'}
+                self.installed_claude_version = '2.1.331'
+            def call(inner, *args):
+                result = super(Mixed, inner).call(*args)
+                if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/status':
+                    handle = args[args.index('--terminal')+1]
+                    version = inner.versions.get(handle, '2.1.331')
+                    inner.frames[handle]['tail'][1] = ' Version: '+version
+                    if version == '2.1.319':
+                        inner.frames[handle]['tail'][-1] = ' Esc to cancel'
+                return result
+        self.client = Mixed()
+        self.client.add('other', '/other', 'claude')
+        self.client.add('tail', '/tail', 'claude')
+        self.client.add('manual', '/manual', 'claude')
+        original = m.rr.native_status
+        def interrupted(client, plan, target, self_pane, log, **kwargs):
+            if target['handle'] == 'term_other':
+                original(client, plan, target, self_pane, log, keep_modal=True)
+                raise m.Deferred('idle-prompt-unknown')
+            native = original(client, plan, target, self_pane, log, **kwargs)
+            if target['handle'] == 'term_target':
+                native['resumeMode'] = None  # historical pre-fix observation
+            return native
+        with patch.object(m.rr, 'native_status', side_effect=interrupted):
+            ident = self.prepare(['term_target', 'term_other', 'term_tail'], ['term_manual'])
+        self.client.sent.clear()
+        return ident
+
+    def recover_preparation(self, ident):
+        with m.Store(self.root, existing_only=True) as store:
+            return m.recover_prepare(self.client, store, ident, self.self_pane)
+
+    def test_recover_mixed_native_legacy_ready_and_pending_card_preserves_signed_history(self):
+        ident = self.mixed_recovery_batch()
+        before = self.load(ident)
+        key = (self.root/'integrity.key').read_bytes()
+        with self.assertRaisesRegex(m.Deferred, 'status-only-required'):
+            self.execute(ident, 'verify')
+        result = self.recover_preparation(ident)
+        after = self.load(ident)
+        self.assertEqual('complete', result['prepareState'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(key, (self.root/'integrity.key').read_bytes())
+        for key in ('batchId', 'binding', 'createdAt', 'preparedRuntime'):
+            self.assertEqual(before[key], after[key])
+        self.assertEqual(before['targets'][0]['native'], after['targets'][0]['native'])
+        self.assertIsNone(after['targets'][0]['native']['resumeMode'])
+        self.assertEqual(before['targets'][2:], after['targets'][2:])
+        self.assertEqual(['/status', '\x1b', '\x1b', '/status', '\x1b'], self.texts())
+        self.assertFalse(self.client.created)
+        self.assertFalse(self.client.modals)
+        for row in after['targets'][:2]:
+            self.assertEqual('claude-bypass-permissions', m.resume_basis(after, row)['resumeMode'])
+            self.assertIsNone(row['attempt'])
+        # Later explicit restore uses fresh mode while keeping native319 null history.
+        self.client.remove('term_target')
+        self.client.sent.clear()
+        restored = self.execute(ident, 'restore')
+        self.assertEqual('restarted', restored['targets'][0]['state'])
+        self.assertEqual(CLAUDE_RESUME+SESSION, self.client.created[0][-1])
+        self.assertEqual(before['targets'][0]['native'], self.load(ident)['targets'][0]['native'])
+
+    def test_recover_cleanup_card_identity_must_continue_into_fresh_status_before_adoption(self):
+        for field in ('sessionId', 'cwd'):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.mixed_recovery_batch()
+                before = self.load(ident)
+                cleanup_session = self.client.identities['term_other']['sessionId']
+                original = self.client.call
+                def switched_status(*args):
+                    if (args[:2] == ('terminal', 'send')
+                            and args[args.index('--terminal')+1] == 'term_other'
+                            and args[args.index('--text')+1] == '/status'):
+                        self.client.identities['term_other'][field] = str(uuid.uuid4()) if field == 'sessionId' else '/different'
+                    return original(*args)
+                with patch.object(self.client, 'call', side_effect=switched_status):
+                    result = self.recover_preparation(ident)
+                after = self.load(ident)
+                self.assertEqual('uncertain', result['prepareState'])
+                row = after['targets'][1]
+                self.assertIsNone(row['native'])
+                self.assertNotIn('resumeAttestation', row)
+                self.assertEqual('claude-cleanup-identity-changed' if field == 'sessionId' else 'cwd-mismatch', row['reason'])
+                self.assertEqual(before['events'], after['events'][:len(before['events'])])
+                self.assertEqual(['/status', '\x1b', '\x1b', '/status', '\x1b'], self.texts())
+                self.assertFalse(self.client.created)
+                if field == 'sessionId':
+                    self.assertNotEqual(cleanup_session, self.client.identities['term_other']['sessionId'])
+
+    def test_recover_unknown_status_card_with_background_prompt_never_receives_input(self):
+        for change in ('version', 'footer', 'orphan-footer'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.mixed_recovery_batch()
+                frame = self.client.frames['term_target']
+                frame['tail'] = ['Settings  Status  Config  Usage  Stats',
+                                 'Version: 2.1.329', 'Session ID: '+SESSION, 'cwd: /work',
+                                 '←/→ to switch · Esc to close', '❯',
+                                 '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
+                if change == 'version': frame['tail'][1] = 'Version: 2.1.332'
+                elif change == 'footer': frame['tail'][4] = '←/→ to switch · Esc to quit'
+                else:
+                    frame['tail'].pop(0)
+                    frame['tail'][0] = 'Version: 2.1.332'
+                self.assertFalse(m.rr.claude_modal(m.rr.screen(frame), '/status'))
+                result = self.recover_preparation(ident)
+                self.assertEqual('uncertain', result['prepareState'])
+                self.assertEqual('approval-or-menu', result['targets'][0]['reason'])
+                self.assertFalse(self.texts())
+                self.assertFalse(self.client.created)
+
+    def test_recover_unknown_status_card_drift_before_native_status_never_receives_input(self):
+        ident = self.mixed_recovery_batch()
+        original = self.client.observe
+        count = [0]
+        def drift(handle):
+            if handle == 'term_target':
+                count[0] += 1
+                if count[0] == 2:  # native_status full guard after initial recovery observation
+                    self.client.frames[handle]['tail'] = [
+                        'Settings  Status  Config  Usage  Stats', 'Version: 2.1.332',
+                        'Session ID: '+SESSION, 'cwd: /work', '←/→ to switch · Esc to close',
+                        '❯', '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
+            return original(handle)
+        with patch.object(self.client, 'observe', side_effect=drift):
+            result = self.recover_preparation(ident)
+        self.assertEqual(2, count[0])
+        self.assertEqual('uncertain', result['prepareState'])
+        self.assertEqual('approval-or-menu', result['targets'][0]['reason'])
+        self.assertFalse(self.texts())
+        self.assertFalse(self.client.created)
+
+    def test_recover_rejects_unknown_receipts_attempts_and_unqueried_authority_without_input(self):
+        mutations = ('unmatched', 'lost', 'extra', 'manual', 'self', 'unqueried', 'attempt',
+                     'raw-size', 'raw-accepted', 'raw-incarnation', 'raw-unresolved')
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.mixed_recovery_batch()
+                with m.Store(self.root) as store:
+                    batch = store.load(ident)
+                    status = next(e for e in batch['events'] if e['phase'] == 'accepted' and e.get('step') == 'status')
+                    raw = next(e for e in batch['events'] if e['phase'] == 'accepted' and e.get('step') == 'modal-navigation')
+                    if mutation == 'unmatched': status['operationId'] = 'other'
+                    elif mutation == 'lost': batch['events'].remove(status)
+                    elif mutation == 'extra': batch['events'].append({'phase': 'exit'})
+                    elif mutation == 'manual': batch['targets'][0]['choice'] = 'manual'
+                    elif mutation == 'self':
+                        batch['targets'][0]['terminal'] = copy.deepcopy(batch['targets'][-1]['terminal'])
+                    elif mutation == 'unqueried':
+                        for e in batch['events']:
+                            if e.get('targetId') == 'term_other': e.update(targetId='term_tail', handle='term_tail')
+                    elif mutation == 'attempt': batch['targets'][0]['attempt'] = {'state': 'started'}
+                    elif mutation == 'raw-size': raw['bytesWritten'] = 3
+                    elif mutation == 'raw-accepted': raw['accepted'] = False
+                    elif mutation == 'raw-incarnation': raw['processIncarnation'] = 'other'
+                    elif mutation == 'raw-unresolved': batch['targets'][0].update(native=None, state='deferred')
+                    store.save(batch)
+                with self.assertRaises(m.Deferred): self.recover_preparation(ident)
+                self.assertFalse(self.texts())
+                self.assertFalse(self.client.created)
+
+    def test_recover_pending_card_metadata_and_all_current_guards_stop_without_cleanup(self):
+        changes = ('uuid-missing', 'uuid-duplicate', 'cwd', 'version', 'approval', 'draft', 'working',
+                   'child', 'wait', 'runtime', 'fingerprint', 'installation')
+        for change in changes:
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.mixed_recovery_batch()
+                # First row remains valid; stop second without sending its cleanup/status.
+                frame = self.client.frames['term_other']
+                if change == 'uuid-missing': frame['tail'] = [x for x in frame['tail'] if 'Session ID:' not in x]
+                elif change == 'uuid-duplicate': frame['tail'].append('Session ID: '+str(uuid.uuid4()))
+                elif change == 'cwd': frame['tail'][3] = 'cwd: /wrong'
+                elif change == 'version': frame['tail'][1] = 'Version: 2.1.332'
+                elif change == 'approval': frame['tail'].append('Allow once')
+                elif change == 'draft': frame['draft'] = 'typed'
+                elif change == 'working': self.client.agents['term_other']['state'] = 'working'
+                elif change == 'child': self.client.agents['term_other']['children'] = ['child']
+                elif change == 'wait': self.client.terms['term_other']['agentWait'] = 'approval'
+                elif change == 'runtime': self.client.runtime = 'changed'
+                elif change == 'fingerprint': self.client.terms['term_other']['incarnationId'] = 'changed'
+                elif change == 'installation': self.client.installed_claude_version = '2.1.332'
+                if change in ('runtime', 'fingerprint'):
+                    with self.assertRaises(m.Deferred): self.recover_preparation(ident)
+                    self.assertFalse(self.texts())
+                elif change == 'installation':
+                    # Installed-version support gates launch separately; drift gates actions.
+                    original = m.rr.plugin_inventory
+                    calls = [0]
+                    def drift(*args):
+                        calls[0] += 1
+                        value = original(*args)
+                        if calls[0] > 1: value['nativeVersion'] = 'changed'
+                        return value
+                    with patch.object(m.rr, 'plugin_inventory', side_effect=drift):
+                        result = self.recover_preparation(ident)
+                    self.assertEqual('uncertain', result['prepareState'])
+                else:
+                    result = self.recover_preparation(ident)
+                    self.assertEqual('uncertain', result['prepareState'])
+                    self.assertEqual(['/status', '\x1b'], self.texts())
+                self.assertFalse(self.client.created)
+
+    def test_recover_storage_transport_identity_proof_failures_are_one_shot_and_first_stop(self):
+        for failure in ('start-storage', 'cleanup-lost', 'status-lost', 'proof', 'identity', 'attest-storage'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.mixed_recovery_batch()
+                before = self.load(ident)
+                original_call = self.client.call
+                original_save = m.Store.save
+                original_observe = self.client.observe
+                def call(*args):
+                    if args[:2] == ('terminal', 'send'):
+                        h = args[args.index('--terminal')+1]
+                        text = args[args.index('--text')+1]
+                        if failure == 'cleanup-lost' and h == 'term_other' and text == '\x1b':
+                            original_call(*args)
+                            raise m.Deferred('lost-cleanup-receipt')
+                        if failure == 'status-lost' and text == '/status':
+                            original_call(*args)
+                            raise m.Deferred('lost-status-receipt')
+                    return original_call(*args)
+                def save(store, batch, *args, **kwargs):
+                    if ((failure == 'start-storage' and batch.get('preparationRecovery')) or
+                        (failure == 'attest-storage' and batch['events'][-1]['phase'] == 'preparation-mode-attested')):
+                        raise OSError('owned storage failure')
+                    return original_save(store, batch, *args, **kwargs)
+                counts = [0]
+                def observe(handle):
+                    t, frame = original_observe(handle)
+                    if failure == 'proof' and handle == 'term_other':
+                        counts[0] += 1
+                        if counts[0] >= 2: frame['tail'].append('drift')
+                    return t, frame
+                if failure == 'identity': self.client.identities['term_target']['sessionId'] = str(uuid.uuid4())
+                with patch.object(self.client, 'call', side_effect=call), patch.object(m.Store, 'save', save), patch.object(self.client, 'observe', side_effect=observe):
+                    if failure == 'start-storage':
+                        with self.assertRaises(OSError): self.recover_preparation(ident)
+                    else:
+                        result = self.recover_preparation(ident)
+                        self.assertEqual('uncertain', result['prepareState'])
+                after = self.load(ident)
+                self.assertEqual(before['events'], after['events'][:len(before['events'])])
+                if failure == 'start-storage': self.assertFalse(self.texts())
+                else:
+                    count = len(self.texts())
+                    with self.assertRaisesRegex(m.Deferred, 'not-admissible'): self.recover_preparation(ident)
+                    self.assertEqual(count, len(self.texts()))
+                self.assertFalse(self.client.created)
+
+    def test_legacy_resume_basis_requires_exact_signed_attestation_and_supported_fresh_mode(self):
+        ident = self.mixed_recovery_batch()
+        before = self.load(ident)
+        legacy = before['targets'][0]
+        with self.assertRaisesRegex(m.Deferred, 'permissions-unverified'):
+            m.rr.resume_command('claude', m.resume_basis(before, legacy), installed_version='2.1.331')
+        self.recover_preparation(ident)
+        batch = self.load(ident)
+        for change in ('uuid', 'cwd', 'permission', 'mode', 'proof', 'event', 'duplicate-event'):
+            with self.subTest(change=change):
+                bad = copy.deepcopy(batch)
+                row = bad['targets'][0]
+                attestation = row['resumeAttestation']
+                if change == 'uuid': attestation['native']['sessionId'] = str(uuid.uuid4())
+                elif change == 'cwd': attestation['native']['cwd'] = '/wrong'
+                elif change == 'permission': attestation['native']['permissions'] = 'default'
+                elif change == 'mode': attestation['native']['resumeMode'] = None
+                elif change == 'proof': attestation['nativeProof']['screenSha256'] = 'invalid'
+                elif change == 'event': bad['events'] = [e for e in bad['events'] if e['phase'] != 'preparation-mode-attested']
+                elif change == 'duplicate-event': bad['events'].append(copy.deepcopy(next(e for e in bad['events'] if e['phase'] == 'preparation-mode-attested')))
+                with self.assertRaises(m.Deferred): m.resume_basis(bad, row)
+
+    def test_recover_cli_requires_existing_state_batch_and_no_new_choices(self):
+        missing = Path(self.tmp.name)/'missing'
+        with patch.object(m.rr, 'Orca', side_effect=AssertionError('runtime must not open')), redirect_stdout(io.StringIO()):
+            for args in ([], ['--batch', str(uuid.uuid4())], ['--batch', str(uuid.uuid4()), '--target', 'term_x'], ['--batch', str(uuid.uuid4()), '--exclude', 'term_x']):
+                self.assertEqual(2, m.main(['recover-prepare', '--state', str(missing), *args]))
+        self.assertFalse(missing.exists())
+
 
 if __name__ == '__main__':
     unittest.main()
