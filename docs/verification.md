@@ -741,3 +741,24 @@ CI 뒤 공통 reference 한 곳에 위 거부 조건을 명확히 적었다. 모
 R-52의 [승인 결정](decisions/20261124-session-management-shell.md)을 baseline `9f9c990d3447680f09b38fedc178a1e6f00622ab`의 별도 worktree에서 구현했다. 동일 배치·실패 이력/키 보존, self 무입력, 명시 예외 우선, process/runtime/fingerprint/draft/agent/child/wait drift와 최종 입력·create 경계를 검사한다. runtime/배치 schema·원문 보호·권한·외부 provider는 유지한다. 별도 context-free quick 정적 검수의 발견 사항은 없었다.
 
 최종 root 전체 CI **680개/314.098초, skip0**가 실제 고정 Gitleaks8.30.1로 통과했다(session 계열214개 포함). 마지막 runtime 고정·테스트 -B 보완을 포함한 실행 코드·시험 bytes가 CI 입력과 같음을 SHA256으로 대조했다. 이 결과 문장의 사후 갱신은 검증 기록만의 변경이다. 실제 소유 PTY는 stdin heredoc helper와 같은 TTY의 별도 background group을 허용하고 추가 foreground group member를 거부했다. source/PTY 증거를 사용자 native 재시작·소비 완료로 확대하지 않는다. 이번 수정본의 native 적용·재부팅은 아직 미실행이다.
+
+### 명시 수동 예외 후 미조회 준비 계속 — 2026-11-24
+
+R-52의 [승인 결정](decisions/20261124-session-prepare-continuation.md)과 `plan-session-prepare-continuation.md`에 따라 baseline `1e53a5100012089f5075e671bca758886deec23d`의 지정 worktree에서 구현했다. 동일 batch/key·원 binding/runtime·fingerprint·기존 manual/self와 failure/event prefix를 보존하고, 정확한 첫 zero-input 실패에 대한 단일 명시 수동 결정부터 durable 저장한 뒤 기존 guarded 준비기를 재사용한다. 파일 배치·skill routing·외부 공급자·native 권한/옵션·restore/restart 가드는 유지한다. 같은 작성자의 요구 대조이며 독립 검수로 표시하지 않는다.
+
+`python3 -B -m unittest discover -s tests -p 'test_session*.py' -v` 최종 **227개/70.701초 통과, 실패·오류·skip0**다. 기존214개와 신규13개 continuation 시험을 포함한다. 원본은 `/tmp/session-continuation-all.txt`이며 임시 로컬 로그다. 새 시험13개 단독은 2.268초 통과했다(`/tmp/session-continuation-new3.txt`). 최초97개 실행에서 신규 사례는 두 mock 설정 오기와 기존 row 준비기의 targetId 없는 prepared event 접근 오류로 실패했다. 실제 실패 분기를 고쳐 모든 session 회귀를 다시 실행했고 초기 실패 로그 `/tmp/session-continuation-tests.txt`도 보존했다. 최종 CLI matrix는 정상 인자+없는 경로, 없는 lock/key/batch가 대체 파일/디렉터리나 runtime client를 만들지 않는 경우까지 포함한다.
+
+| 계획 matrix | 실제 source/fake 증거 |
+| --- | --- |
+| Approved continuation | `test_continue_preparation_preserves_signed_batch_and_queries_only_original_tail_in_order`: native self 있음/관리 shell로 원 self 행 없음 두 경우, 실제 tempfile Store 재로딩·원 key/파일 집합·batch fields·terminal identity·기존 event prefix/예외 보존, original tail 순서의 정확한 UUID/cwd/권한·status-only 입력·attempt 없음·소비 미확인/null 확인 |
+| Wrong scope / uncertain history | 단일·정확한 exclusion, binding/runtime·모든 원 fingerprint·저장 self·서명 변조·다른 unresolved batch, sending/accepted/modal/exit/create/resume·attempt/native·다른 failure/event·미완료/비미조회 tail·중복 selection 거부. 결정·입력 없이 원본 보존 |
+| Unsafe tail | working/draft/approval/child/unknown/설치/provider/current self, 입장 뒤 runtime/설치/fingerprint drift를 기존 full guard로 거부. manual 결정은 보존하고 첫 실패 뒤 나머지 tail 입력 없음 |
+| Durable decision / crash | 결정 저장 실패는 무입력·원본 보존. 결정 뒤 crash는 started/manual로 남고 반복 continuation 및 접수 없는 verify는 무입력 거부. 접수 유실·identity 저장 실패는 receipt/state를 유지하며 재전송하지 않음 |
+| Acknowledged tail verify | 접수된 첫 tail status 뒤 incomplete failure만 기존 status-only verify로 복구. 원 manual/실패·event prefix·미조회 last tail 보존, 원 queried tail만 새 status. 변조/중복 manual 결정 event는 거부 |
+| Existing behavior | 기존214개 session 회귀 전부 통과. 원 prepare의 첫 실패 중단, runtime/설치/권한·조회 경계, manual/self·부재 restore·uncertain receipt·소유 modal/PTY subprocess 가드 유지 |
+
+`git diff --check`와 변경 운영 reference/결정의 로컬 링크 대상5개 존재 대조도 통과했다. 운영 계약의 읽기 경로는 기존 session SKILL → session-restart reference → 동일 session_restart/runtime_refresh이며 새 SKILL·provider 진입이나 상시 hook을 추가하지 않았다. 신규 안내의 의미는 source/fake 실행으로 검사했으며 별도 모델 새 세션·실제 압축/재개 시험을 수행한 것은 아니다.
+
+실제 기존 배치는 비에이전트 관리 shell이라 과거 self 행이 없다는 root 관측을 따른다. 원본에 없는 과거 fingerprint를 추정하지 않고 현재 unique self와 tail self 거부를 유지하며 과거/현재 관리 terminal 동일성은 미확인이다. 실제 receiver-local native continuation·정확한 native 필드·수동 예외·CLI/Orca restart/소비, 독립 검수·전체 CI/실제 Gitleaks·fresh common/private package/pin·원격 publication은 root 후속 범위다. 구현자는 원격/native 입력·배포·버전 변경·패키징·commit/push를 하지 않았다. auto mode 지원은 확대하지 않았으며 마지막 관측과 입력 사이의 기존 비원자 경합은 남는다.
+
+Root 후속 전체 CI는 실제 고정 Gitleaks8.30.1로 **693개/315.299초·실패/오류/skip0**를 통과했다(session227개 포함). CI 입력의 두 실행 파일·두 시험 파일 SHA256이 최종 source와 같음을 대조했다. 문서·실행 흐름과 계획 matrix를 원 요구에 대조했으며, 별도 context-free quick 정적 검수에서는 발견 사항이 없었다. 현재 코드·문서에는 새 skill/hook/provider나 권한 모드 지원을 추가하지 않았다. 최종 여덟 조립물·네 private pin·전송 검사와 실제 운영 준비 결과는 로컬 후속 receipt에 별도로 남긴다. 이 숫자·검수 문장은 실행 코드/시험을 바꾸지 않는 사후 검증 기록이다.

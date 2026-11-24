@@ -879,6 +879,351 @@ class Restart(unittest.TestCase):
         ident = self.prepare()
         self.assertEqual(['term_target'], [r['targetId'] for r in m.report(self.load(ident))['targets']])
 
+    def zero_input_batch(self, management=False):
+        self.client = Fake('claude')
+        self.client.frames['term_target']['tail'] = ['❯', '  auto mode']
+        self.client.add('tail', '/tail')
+        self.client.add('last', '/last', 'claude')
+        self.client.add('manual', '/manual')
+        if management:
+            self.client.agents.pop('term_self')
+            self.client.terms['term_self']['agentIdentity'] = None
+        ident = self.screen_execute(lambda: self.prepare(
+            ['term_target', 'term_tail', 'term_last'], ['term_manual']))
+        self.assertEqual([], self.client.sent)
+        self.assertEqual(['preparation-failed', 'prepared'], [e['phase'] for e in self.load(ident)['events']])
+        self.assertEqual('claude-permissions-unknown', self.load(ident)['targets'][0]['reason'])
+        return ident
+
+    def continue_preparation(self, ident, excluded=None, self_pane=None):
+        with m.Store(self.root, existing_only=True) as store:
+            return m.continue_prepare(self.client, store, ident,
+                                      ['term_target'] if excluded is None else excluded,
+                                      self.self_pane if self_pane is None else self_pane)
+
+    def test_continue_preparation_preserves_signed_batch_and_queries_only_original_tail_in_order(self):
+        for management in (False, True):
+            with self.subTest(management=management), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch(management)
+                before = self.load(ident)
+                key = (self.root/'integrity.key').read_bytes()
+                files = {p.name for p in self.root.iterdir()}
+                observe = self.client.observe
+                def tail_only(handle):
+                    self.assertIn(handle, ('term_tail', 'term_last'))
+                    return observe(handle)
+                with patch.object(self.client, 'observe', side_effect=tail_only):
+                    result = self.continue_preparation(ident)
+                after = self.load(ident)
+                for field in ('batchId', 'createdAt', 'binding', 'preparedRuntime', 'hostLabel'):
+                    self.assertEqual(before[field], after[field])
+                self.assertEqual(before['events'], after['events'][:2])
+                self.assertEqual(before['targets'][3:], after['targets'][3:])
+                for old, new in zip(before['targets'], after['targets']):
+                    self.assertEqual(old['terminal'], new['terminal'])
+                    self.assertEqual(old['targetId'], new['targetId'])
+                    self.assertIsNone(new['attempt'])
+                self.assertEqual('manual', after['targets'][0]['choice'])
+                self.assertEqual('manual-restart-required', after['targets'][0]['state'])
+                self.assertIsNone(after['targets'][0]['native'])
+                self.assertEqual('preparation-manual-exclusion', after['events'][2]['phase'])
+                for row in after['targets'][1:3]:
+                    self.assertEqual(self.client.identities[row['targetId']]['sessionId'], row['native']['sessionId'])
+                    self.assertEqual(self.client.identities[row['targetId']]['cwd'], row['native']['cwd'])
+                    self.assertEqual(self.client.identities[row['targetId']]['permissions'], row['native']['permissions'])
+                    self.assertEqual('ready', row['state'])
+                self.assertEqual(['term_tail', 'term_last'], [a[a.index('--terminal')+1] for a in self.client.sent])
+                self.assertEqual(['/status', '/status'], self.texts())
+                self.assertEqual([], self.client.created)
+                self.assertEqual('complete', result['prepareState'])
+                self.assertTrue(all(r['consumption'] == 'unverified' and r['consumedVersion'] is None for r in result['targets']))
+                self.assertEqual(key, (self.root/'integrity.key').read_bytes())
+                self.assertEqual(files, {p.name for p in self.root.iterdir()})
+                before_repeat = copy.deepcopy(after)
+                with self.assertRaisesRegex(m.Deferred, 'continuation-not-admissible'):
+                    self.continue_preparation(ident)
+                self.assertEqual(before_repeat, self.load(ident))
+                self.assertEqual(2, len(self.client.sent))
+
+    def test_continue_preparation_rejects_wrong_exclusions_without_changes_or_input(self):
+        ident = self.zero_input_batch()
+        before = self.load(ident)
+        for excluded in ([], ['term_tail'], ['term_new'], ['term_target', 'term_tail'], ['term_target']*2):
+            with self.subTest(excluded=excluded), self.assertRaisesRegex(m.Deferred, 'continuation-not-admissible'):
+                self.continue_preparation(ident, excluded)
+            self.assertEqual(before, self.load(ident))
+        self.assertEqual([], self.client.sent)
+
+    def test_continue_preparation_rejects_receipts_attempts_states_and_nonexact_history(self):
+        changes = ('sending', 'accepted', 'modal', 'exit', 'create', 'resume', 'attempt', 'native',
+                   'incomplete', 'failed-reason', 'failure-target', 'failure-handle', 'failure-operation',
+                   'extra-event', 'missing-event', 'tail-ready', 'tail-installation', 'duplicate-target')
+        for change in changes:
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch()
+                with m.Store(self.root) as store:
+                    body = store.load(ident)
+                    if change in ('sending', 'accepted', 'modal', 'exit', 'create', 'resume'):
+                        body['events'].insert(0, {'phase': change})
+                    elif change == 'attempt':
+                        body['targets'][1]['attempt'] = {'state': 'not-submitted'}
+                    elif change == 'native':
+                        body['targets'][1]['native'] = copy.deepcopy(self.client.identities['term_tail'])
+                    elif change == 'incomplete':
+                        body['prepareState'] = 'uncertain'
+                    elif change == 'failed-reason':
+                        body['targets'][0]['reason'] = 'unknown'
+                    elif change == 'failure-target':
+                        body['events'][0]['targetId'] = 'term_tail'
+                    elif change == 'failure-handle':
+                        body['targets'][0]['targetId'] = 'term_other'
+                        body['events'][0]['targetId'] = 'term_other'
+                    elif change == 'failure-operation':
+                        body['events'][0]['operationId'] = 'other'
+                    elif change == 'extra-event':
+                        body['events'].append({'phase': 'prepared'})
+                    elif change == 'missing-event':
+                        body['events'].pop()
+                    elif change == 'tail-ready':
+                        body['targets'][1]['state'] = 'pending'
+                    elif change == 'tail-installation':
+                        body['targets'][1]['installationPrepared'] = INSTALL
+                    else:
+                        # Duplicate selection must be rejected by signed record validation.
+                        body['targets'].append(copy.deepcopy(body['targets'][1]))
+                    if change == 'duplicate-target':
+                        with self.assertRaisesRegex(m.Deferred, 'duplicate-or-empty-targets'):
+                            store.save(body)
+                        continue
+                    store.save(body)
+                before = self.load(ident)
+                with self.assertRaisesRegex(m.Deferred, 'continuation-not-admissible'):
+                    self.continue_preparation(ident)
+                self.assertEqual(before, self.load(ident))
+                self.assertEqual([], self.client.sent)
+
+    def test_continue_preparation_rejects_binding_runtime_all_fingerprints_and_stored_self_changes(self):
+        for drift in ('binding', 'runtime', 'failed', 'tail', 'last', 'manual', 'self', 'caller'):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch()
+                before = self.load(ident)
+                if drift == 'binding':
+                    m.binding.return_value = {'machine': 'different', 'profile': 'owned-profile'}
+                elif drift == 'runtime':
+                    self.client.runtime = 'changed'
+                elif drift != 'caller':
+                    self.client.terms['term_'+drift if drift != 'failed' else 'term_target']['incarnationId'] = 'changed'
+                try:
+                    with self.assertRaises(m.Deferred):
+                        self.continue_preparation(ident, self_pane='tab:tail' if drift == 'caller' else None)
+                    self.assertEqual(before, self.load(ident))
+                    self.assertEqual([], self.client.sent)
+                finally:
+                    m.binding.return_value = {'machine': 'owned-machine', 'profile': 'owned-profile'}
+
+    def test_continue_preparation_tamper_and_other_unresolved_batch_never_query(self):
+        ident = self.zero_input_batch()
+        path = self.root/(ident+'.json')
+        original = path.read_bytes()
+        path.write_bytes(original.replace(b'claude-permissions-unknown', b'claude-permissions-tamper'))
+        with self.assertRaisesRegex(m.Deferred, 'batch-integrity-mismatch'):
+            self.continue_preparation(ident)
+        path.write_bytes(original)
+        with m.Store(self.root) as store:
+            other = copy.deepcopy(store.load(ident))
+            other.update(batchId=str(uuid.uuid4()), prepareState='started')
+            store.save(other, new=True)
+        with self.assertRaisesRegex(m.Deferred, 'unresolved-batch'):
+            self.continue_preparation(ident)
+        self.assertEqual([], self.client.sent)
+
+    def test_continue_preparation_unsafe_tail_keeps_first_stop_and_durable_manual_decision(self):
+        for unsafe in ('working', 'draft', 'approval', 'child', 'unknown', 'installation', 'provider', 'self'):
+            with self.subTest(unsafe=unsafe), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch(management=unsafe == 'self')
+                if unsafe == 'working':
+                    self.client.agents['term_tail']['state'] = 'working'
+                elif unsafe == 'draft':
+                    self.client.frames['term_tail']['draft'] = 'owned draft'
+                elif unsafe == 'approval':
+                    self.client.terms['term_tail']['agentWait'] = {'kind': 'approval'}
+                elif unsafe == 'child':
+                    self.client.agents['term_tail']['children'] = [{'state': 'working'}]
+                elif unsafe == 'unknown':
+                    self.client.terms['term_tail']['agentIdentity'] = None
+                elif unsafe == 'installation':
+                    m.rr.plugin_inventory.side_effect = m.Deferred('installed-versions-unverified')
+                elif unsafe == 'provider':
+                    self.client.terms['term_tail']['agentIdentity'] = 'claude'
+                    self.client.agents['term_tail']['agentType'] = 'claude'
+                    self.client.frames['term_tail']['tail'] = ['❯', 'Permission mode: bypass permissions']
+                result = self.continue_preparation(ident, self_pane='tab:tail' if unsafe == 'self' else None)
+                after = self.load(ident)
+                self.assertEqual('manual', after['targets'][0]['choice'])
+                self.assertEqual('deferred', result['targets'][1]['state'])
+                self.assertEqual('previous-target-failed', result['targets'][2]['reason'])
+                self.assertEqual('preparation-manual-exclusion', after['events'][2]['phase'])
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+                m.rr.plugin_inventory.side_effect = lambda provider, cwd: {**copy.deepcopy(INSTALL), 'nativeVersion': (
+                    self.client.installed_codex_version if provider == 'codex' else self.client.installed_claude_version)}
+
+    def test_continue_preparation_rechecks_runtime_installation_and_fingerprint_after_admission(self):
+        for drift in ('runtime', 'installation', 'fingerprint'):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch()
+                inventory = m.rr.plugin_inventory.side_effect
+                changed = []
+                def interleave(provider, cwd):
+                    result = inventory(provider, cwd)
+                    if cwd == '/tail' and not changed:
+                        changed.append(True)
+                        if drift == 'runtime':
+                            self.client.runtime = 'changed'
+                        elif drift == 'installation':
+                            self.client.installed_codex_version = 'changed'
+                        else:
+                            self.client.terms['term_tail']['incarnationId'] = 'changed'
+                    return result
+                with patch.object(m.rr, 'plugin_inventory', side_effect=interleave):
+                    result = self.continue_preparation(ident)
+                self.assertEqual([True], changed)
+                self.assertEqual('deferred', result['targets'][1]['state'])
+                self.assertEqual('previous-target-failed', result['targets'][2]['reason'])
+                self.assertEqual([], self.client.sent)
+                self.assertEqual([], self.client.created)
+
+    def test_continue_preparation_decision_storage_failure_has_no_native_input(self):
+        ident = self.zero_input_batch()
+        before = self.load(ident)
+        with patch.object(m.Store, 'save', side_effect=OSError('owned write failure')), self.assertRaises(OSError):
+            self.continue_preparation(ident)
+        self.assertEqual(before, self.load(ident))
+        self.assertEqual([], self.client.sent)
+
+    def test_continue_preparation_crash_after_decision_stays_started_and_cannot_repeat_or_discover(self):
+        ident = self.zero_input_batch()
+        with patch.object(m, 'prepare_rows', side_effect=OSError('owned crash')), self.assertRaises(OSError):
+            self.continue_preparation(ident)
+        after = self.load(ident)
+        self.assertEqual('started', after['prepareState'])
+        self.assertEqual('manual', after['targets'][0]['choice'])
+        with self.assertRaisesRegex(m.Deferred, 'continuation-not-admissible'):
+            self.continue_preparation(ident)
+        with self.assertRaisesRegex(m.Deferred, 'receipt-unmatched'):
+            self.execute(ident, 'verify')
+        self.assertEqual(after, self.load(ident))
+        self.assertEqual([], self.client.sent)
+
+    def test_continue_preparation_acknowledged_failure_verify_only_queries_acknowledged_tail(self):
+        ident = self.zero_input_batch()
+        status = m.rr.native_status
+        def incomplete(*args, **kwargs):
+            status(*args, **kwargs)
+            raise m.Deferred('native-identity-unknown')
+        with patch.object(m.rr, 'native_status', side_effect=incomplete):
+            result = self.continue_preparation(ident)
+        before = self.load(ident)
+        self.assertEqual('uncertain', result['prepareState'])
+        self.assertEqual(['term_tail'], [a[a.index('--terminal')+1] for a in self.client.sent])
+        self.client.sent.clear()
+        result = self.execute(ident, 'verify')
+        after = self.load(ident)
+        self.assertEqual('complete', result['prepareState'])
+        self.assertEqual(before['events'], after['events'][:len(before['events'])])
+        self.assertEqual(before['targets'][0], after['targets'][0])
+        self.assertEqual(before['targets'][2:], after['targets'][2:])
+        self.assertEqual('ready', after['targets'][1]['state'])
+        self.assertEqual(['term_tail'], [a[a.index('--terminal')+1] for a in self.client.sent])
+        self.assertEqual([], self.client.created)
+
+    def test_continue_preparation_verify_rejects_forged_or_duplicate_manual_decision(self):
+        for mutation in ('handle', 'reason', 'duplicate'):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch()
+                status = m.rr.native_status
+                def incomplete(*args, **kwargs):
+                    status(*args, **kwargs)
+                    raise m.Deferred('native-identity-unknown')
+                with patch.object(m.rr, 'native_status', side_effect=incomplete):
+                    self.continue_preparation(ident)
+                with m.Store(self.root) as store:
+                    body = store.load(ident)
+                    if mutation == 'duplicate':
+                        body['events'].append(copy.deepcopy(body['events'][2]))
+                    else:
+                        body['events'][2][mutation] = 'changed'
+                    store.save(body)
+                self.client.sent.clear()
+                with self.assertRaisesRegex(m.Deferred, 'status-only-required'):
+                    self.execute(ident, 'verify')
+                self.assertEqual([], self.client.sent)
+
+    def test_continue_preparation_unacknowledged_send_and_storage_failure_never_replay(self):
+        for failure in ('send', 'identity-save'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                self.root = Path(folder)/'state'
+                ident = self.zero_input_batch()
+                save = m.Store.save
+                def fail_identity(store, body, *args, **kwargs):
+                    if body['targets'][1].get('native') is not None:
+                        raise OSError('owned durable identity failure')
+                    return save(store, body, *args, **kwargs)
+                if failure == 'send':
+                    self.client.fail = 'lost-status-receipt'
+                    self.continue_preparation(ident)
+                else:
+                    with patch.object(m.Store, 'save', new=fail_identity), self.assertRaises(OSError):
+                        self.continue_preparation(ident)
+                before = self.load(ident)
+                self.assertEqual(1, len(self.client.sent))
+                self.assertEqual('manual', before['targets'][0]['choice'])
+                self.client.fail = None
+                with self.assertRaisesRegex(m.Deferred, 'continuation-not-admissible'):
+                    self.continue_preparation(ident)
+                if failure == 'send':
+                    with self.assertRaisesRegex(m.Deferred, 'receipt-unmatched'):
+                        self.execute(ident, 'verify')
+                else:
+                    self.execute(ident, 'verify')
+                    self.assertEqual('ready', self.load(ident)['targets'][1]['state'])
+                    self.assertEqual('previous-target-failed', self.load(ident)['targets'][2]['reason'])
+                self.assertEqual([], self.client.created)
+
+    def test_continue_preparation_cli_requires_existing_state_key_batch_and_exact_arguments(self):
+        missing = self.root/'missing'
+        for args in ([], ['--batch', str(uuid.uuid4())],
+                     ['--batch', str(uuid.uuid4()), '--exclude', 'term_target'],
+                     ['--batch', str(uuid.uuid4()), '--exclude', 'term_target', '--target', 'term_tail']):
+            with redirect_stdout(io.StringIO()), patch.object(m.rr, 'Orca', side_effect=AssertionError('runtime')):
+                self.assertEqual(2, m.main(['continue-prepare', '--state', str(missing), *args]))
+            self.assertFalse(self.root.exists())
+        ident = self.zero_input_batch()
+        key = self.root/'integrity.key'
+        saved_key = key.read_bytes()
+        key.unlink()
+        with redirect_stdout(io.StringIO()), patch.object(m.rr, 'Orca', side_effect=AssertionError('runtime')):
+            self.assertEqual(2, m.main(['continue-prepare', '--state', str(self.root), '--batch', ident, '--exclude', 'term_target']))
+        self.assertFalse(key.exists())
+        key.write_bytes(saved_key)
+        key.chmod(0o600)
+        with redirect_stdout(io.StringIO()), patch.object(m.rr, 'Orca', side_effect=AssertionError('runtime')):
+            self.assertEqual(2, m.main(['continue-prepare', '--state', str(self.root), '--batch', str(uuid.uuid4()), '--exclude', 'term_target']))
+        with redirect_stdout(io.StringIO()) as output, patch.object(m.rr, 'Orca', return_value=self.client), \
+             patch.dict(os.environ, {'ORCA_PANE_KEY': self.self_pane}):
+            self.assertEqual(0, m.main(['continue-prepare', '--state', str(self.root), '--batch', ident, '--exclude', 'term_target']))
+        self.assertEqual(ident, json.loads(output.getvalue())['batchId'])
+        (self.root/'batch.lock').unlink()
+        with redirect_stdout(io.StringIO()), patch.object(m.rr, 'Orca', side_effect=AssertionError('runtime')):
+            self.assertEqual(2, m.main(['continue-prepare', '--state', str(self.root), '--batch', ident, '--exclude', 'term_target']))
+        self.assertFalse((self.root/'batch.lock').exists())
+
     def test_prepare_timeout_is_durable_and_prevents_new_status_submission(self):
         self.client.fail = 'timeout'
         ident = self.prepare()
