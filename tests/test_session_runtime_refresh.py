@@ -1108,6 +1108,32 @@ class RuntimeRefreshTests(unittest.TestCase):
         with self.assertRaisesRegex(m.Deferred,'ambiguous'):
             m.claude_plugin_listing(good,ambiguous)
 
+    def test_claude_331_on_listing_requires_actual_observed_actor_version(self):
+        good = '• example@market (v1.0.0, user) ✔ on'
+        expected = {'example@market:user': '1.0.0'}
+        self.assertEqual(expected, m.claude_plugin_listing(good, self.installation, '2.1.331'))
+        for version in (None, '', '2.1.329', '2.1.330', '2.1.332'):
+            with self.subTest(version=version), self.assertRaises(m.Deferred):
+                m.claude_plugin_listing(good, {**self.installation, 'nativeVersion': '2.1.331'}, version)
+        for bad in (good.replace('on', 'off'), good.replace('on', 'unknown'), good+'\n'+good,
+                    good.replace('user', 'project'), good.replace('1.0.0', 'unknown'),
+                    good.replace('✔ on', 'on'), good.replace('✔ on', '✔on'), ''):
+            with self.subTest(bad=bad), self.assertRaises(m.Deferred):
+                m.claude_plugin_listing(bad, self.installation, '2.1.331')
+        self.assertEqual([], self.client.sent)
+
+    def test_claude_331_real_caller_passes_fresh_actor_version_and_keeps_stale_diagnostic(self):
+        client, plan = self.claude_plan()
+        self.installation.update(nativeVersion='2.1.331')
+        client.responses['/status'] = ['Session ID: 11111111-1111-4111-8111-111111111111',
+                                       'cwd: /work', 'Permissions: default', 'Version: 2.1.331']
+        client.responses['/plugin list --enabled'] = ['example@market (v0.9.0, user) ✔ on']
+        with tempfile.TemporaryDirectory() as directory:
+            result = m.apply(client, plan, self.self_pane, directory)
+        self.assertEqual([], result['remaining'], result)
+        self.assertFalse(result['results'][0]['runtimeListingMatchesInstalledBefore'])
+        self.assertEqual({'example@market:user': '0.9.0'}, result['results'][0]['runtimeListedVersionsBefore'])
+
     def test_claude_partial_listing_reads_until_complete_without_sending(self):
         client,plan=self.claude_plan();target=plan['targets'][0]
         heading=['❯ /plugin list --enabled','  ⎿  Installed plugins:','────','❯']
@@ -1865,10 +1891,17 @@ class NativeInventoryBounds(unittest.TestCase):
             try:
                 if (Path('/proc') / str(pid) / 'stat').read_text().split()[2] == 'Z':
                     return
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 return
             time.sleep(0.02)
         self.fail('owned child still running')
+
+    def test_assert_dead_accepts_process_disappearing_during_proc_read(self):
+        with patch.object(Path, 'read_text', side_effect=ProcessLookupError(3, 'No such process')) as read, \
+             patch.object(time, 'sleep') as pause:
+            self.assert_dead(123)
+        read.assert_called_once_with()
+        pause.assert_not_called()
 
     def test_cold_beyond_fifteen_seconds_matches_warm_with_safe_progress(self):
         self.executable(self.output())
@@ -1976,6 +2009,42 @@ class NativeInventoryBounds(unittest.TestCase):
             self.executable("time.sleep(0.3)\nprint('[]')", provider='claude')
             with self.assertRaisesRegex(m.Deferred, 'timeout'):
                 m.native_command('claude', ['plugin', 'list', '--json'], str(self.root))
+
+    def test_exact_executable_retains_stdin_isolation_and_bounded_transport(self):
+        exact = self.root / 'codex'
+        args = ['owned-proof-query']
+        self.executable('assert sys.stdin.buffer.read() == b""\n' + self.output())
+        self.assertEqual(self.payload, json.loads(m.native_command(
+            'codex', args, str(self.root), executable=str(exact))))
+        cases = [("sys.stderr.write('SECRET diagnostic')", 'native-cli-diagnostics-unverified'),
+                 ('sys.exit(3)', 'native-cli-failed'),
+                 ('os.write(1, b"x" * ' + str(m.NATIVE_STDOUT_LIMIT + 1) + ')', 'native-cli-output-limit'),
+                 ('time.sleep(30)', 'native-cli-unavailable-or-timeout')]
+        for body, reason in cases:
+            with self.subTest(reason=reason):
+                child = ("child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], "
+                         'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n'
+                         "Path('child.pid').write_text(str(child.pid))\n")
+                self.executable(child + body)
+                timeout = 0.2 if reason == 'native-cli-unavailable-or-timeout' else 2
+                with patch.object(m, 'NATIVE_TIMEOUT', timeout), self.assertRaisesRegex(m.Deferred, reason) as failure:
+                    m.native_command('codex', args, str(self.root), executable=str(exact))
+                self.assertNotIn('SECRET', str(failure.exception))
+                self.assert_dead(int((self.root/'child.pid').read_text()))
+
+    def test_exact_executable_rejects_invalid_file_without_any_launch(self):
+        self.executable(self.output())
+        link = self.root / 'linked'
+        link.symlink_to(self.root / 'codex')
+        noexec = self.root / 'noexec'
+        noexec.write_text('fixture')
+        noexec.chmod(0o600)
+        for exact in ('codex', str(self.root), str(self.root/'missing'), str(link), str(noexec),
+                      str(self.root/'codex') + '\n', 123):
+            with self.subTest(exact=exact), patch.object(subprocess, 'Popen') as launch, self.assertRaisesRegex(
+                    m.Deferred, 'native-cli-executable-unverified'):
+                m.native_command('codex', ['--version'], str(self.root), executable=exact)
+            launch.assert_not_called()
 
     def test_full_non_drained_stderr_does_not_block_deadline_cleanup_or_repeat(self):
         self.executable(self.child() + 'time.sleep(30)')

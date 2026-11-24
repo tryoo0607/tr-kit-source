@@ -21,6 +21,9 @@ _spec = importlib.util.spec_from_file_location('session_restart_refresh', Path(_
 rr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rr)
 Deferred = rr.Deferred
+_live_spec = importlib.util.spec_from_file_location('session_restart_live_claude', Path(__file__).with_name('claude_live_sessions.py'))
+live = importlib.util.module_from_spec(_live_spec)
+_live_spec.loader.exec_module(live)
 
 
 def encoded(value):
@@ -231,6 +234,16 @@ def validate_batch(batch):
     if len(native_ids) != len(set(native_ids)):
         raise Deferred('duplicate-native-session')
     rr.array(batch.get('events'))
+    excluded_ids = []
+    for row in rows:
+        attestation = exception_attestation(batch, row)
+        if attestation is not None and row.get('native') is None:
+            excluded_ids.append(('claude', attestation['identity']['sessionId']))
+    if sum(e.get('phase') == 'exception-identity-attested' for e in batch['events']) != len(
+            [r for r in rows if r.get('exceptionAttestation') is not None]):
+        raise Deferred('exception-attestation-invalid')
+    if len(native_ids + excluded_ids) != len(set(native_ids + excluded_ids)):
+        raise Deferred('duplicate-native-session')
 
 
 class Recorder:
@@ -290,6 +303,8 @@ def current_plan(client, self_pane):
 
 def prepare(client, store, selected, excluded, self_pane):
     client.management_self = None
+    client.recovery_exception_check = None
+    client.exception_proofs = {}
     if not selected or len(selected) != len(set(selected)) or len(excluded) != len(set(excluded)):
         raise Deferred('explicit-unique-targets-required')
     check_other_attempts(store)
@@ -399,6 +414,8 @@ def continuation_decision(batch, event):
 def continue_prepare(client, store, batch_id, excluded, self_pane):
     """Explicitly exclude the zero-input first failure, then prepare its old tail."""
     client.management_self = None
+    client.recovery_exception_check = None
+    client.exception_proofs = {}
     batch = store.load(batch_id)
     if batch['binding'] != binding():
         raise Deferred('machine-or-profile-mismatch')
@@ -454,6 +471,210 @@ def check_other_attempts(store, current=None):
             raise Deferred('unresolved-batch-inspect-before-new-operation')
 
 
+def exception_attestation(batch, row):
+    """Validate separate historical authority without touching row.native/history."""
+    value = row.get('exceptionAttestation')
+    events = [e for e in batch['events'] if e.get('phase') == 'exception-identity-attested'
+              and e.get('targetId') == row['targetId']]
+    if value is None:
+        if events:
+            raise Deferred('exception-attestation-invalid')
+        return None
+    value = rr.obj(value)
+    identity = rr.obj(value.get('identity'))
+    if (set(value) != {'batchId', 'targetId', 'binding', 'terminal', 'identity', 'operationId'}
+            or value['batchId'] != batch['batchId'] or value['targetId'] != row['targetId']
+            or value['binding'] != batch['binding'] or value['terminal'] != row['terminal']
+            or row['choice'] != 'manual' or row['provider'] != 'claude'
+            or row.get('reason') != 'explicit-exception' or row.get('attempt') is not None
+            or row['terminal']['executionHostId'] != 'local'
+            or row['state'] != 'manual-restart-required'
+            or identity.get('cwd') != row['terminal']['worktreePath']
+            or identity.get('paneKey') != rr.pane(row['terminal'])
+            or len(events) != 1
+            or set(events[0]) != {'phase', 'targetId', 'operationId', 'at', 'attestation'}
+            or events[0]['operationId'] != value['operationId'] or events[0]['attestation'] != value):
+        raise Deferred('exception-attestation-invalid')
+    uuid_value(value['operationId'])
+    live.validate(rr, identity)
+    if row.get('native') is not None and row['native']['sessionId'] != identity['sessionId']:
+        raise Deferred('exception-attestation-invalid')
+    return value
+
+
+def exception_target(batch, target_id):
+    matches = [r for r in batch['targets'] if r['targetId'] == target_id]
+    if len(matches) != 1:
+        raise Deferred('exception-target-invalid')
+    row = matches[0]
+    if (row['choice'] != 'manual' or row['provider'] != 'claude'
+            or row.get('reason') != 'explicit-exception' or row.get('attempt') is not None
+            or row['state'] != 'manual-restart-required'
+            or row['targetId'] != row['terminal']['handle']
+            or row['terminal']['executionHostId'] != 'local'):
+        raise Deferred('exception-target-invalid')
+    return row
+
+
+def exception_item(row, terms, ps, self_pane):
+    old = row['terminal']
+    matches = [t for t in terms if rr.pane(t) == rr.pane(old)]
+    if len(matches) != 1 or rr.pane(old) == self_pane:
+        raise Deferred('exception-pane-mismatch')
+    item = matches[0]
+    rr.fingerprint(item)
+    if (any(item.get(k) != old[k] for k in ('executionHostId', 'worktreeId', 'worktreePath'))
+            or item.get('agentIdentity') != 'claude'
+            or rr.agent_for(ps, item).get('agentType') != 'claude'):
+        raise Deferred('exception-pane-mismatch')
+    # A duplicate ps association (including another workspace) is ambiguous.
+    agents = [a for w in rr.array(ps.get('worktrees')) for a in rr.array(w.get('agents', []))
+              if a.get('paneKey') == rr.pane(old)]
+    if len(agents) != 1:
+        raise Deferred('exception-live-identity-ambiguous')
+    return item
+
+
+def identify_exception(client, store, batch_id, target_id, self_pane):
+    client.management_self = None
+    client.recovery_exception_check = None
+    client.exception_proofs = {}
+    batch = store.load(batch_id)
+    if batch['binding'] != binding():
+        raise Deferred('machine-or-profile-mismatch')
+    row = exception_target(batch, target_id)
+    if row.get('exceptionAttestation') is not None:
+        raise Deferred('exception-already-identified')
+    check_other_attempts(store, batch_id)
+    if batch.get('prepareState') != 'complete':
+        raise Deferred('preparation-incomplete-inspect-record')
+    terms, ps = snapshot(client, self_pane)
+    item = exception_item(row, terms, ps, self_pane)
+    # Original pane/workspace coordinates remain authoritative across runtime changes.
+    runtime = client.runtime
+    proof = live.observe(rr, item['worktreePath'], rr.pane(item))
+    if row.get('native') is not None and proof['sessionId'] != row['native']['sessionId']:
+        raise Deferred('exception-live-identity-mismatch')
+    fresh_terms, fresh_ps = snapshot(client, self_pane)
+    if (rr.fingerprint(exception_item(row, fresh_terms, fresh_ps, self_pane)) != rr.fingerprint(item)
+            or client.runtime != runtime):
+        raise Deferred('exception-live-proof-changed')
+    live.recheck(rr, proof)
+    operation = str(uuid.uuid4())
+    attestation = {'batchId': batch_id, 'targetId': target_id, 'binding': batch['binding'],
+                   'terminal': row['terminal'], 'identity': proof, 'operationId': operation}
+    row['exceptionAttestation'] = attestation
+    # Store.save validates collisions/event correspondence before any durable replacement.
+    Recorder(store, batch, row, operation).record('exception-identity-attested', attestation=attestation)
+    return report(batch)
+
+
+def exception_absence_view(row, terms, ps, self_pane):
+    """No original pane or associated/ps-only identity in complete local views."""
+    old = row['terminal']
+    excluded_pane = rr.pane(old)
+    if excluded_pane == self_pane or any(rr.pane(t) == excluded_pane for t in terms):
+        raise Deferred('exception-absence-unverified')
+    workspaces = rr.array(ps.get('worktrees'))
+    related = [w for w in workspaces if w.get('worktreeId') == old['worktreeId']]
+    if (len(related) != 1 or related[0].get('path') != old['worktreePath']
+            or related[0].get('hostId') != 'local'):
+        raise Deferred('exception-absence-unverified')
+    def references_pane(value):
+        pending, count = [value], 0
+        while pending:
+            item = pending.pop()
+            count += 1
+            if count > 4096:
+                raise Deferred('exception-absence-unverified')
+            if isinstance(item, dict):
+                pending.extend(item.values())
+            elif isinstance(item, list):
+                pending.extend(item)
+            elif item == excluded_pane:
+                return True
+        return False
+    for workspace in workspaces:
+        for agent in rr.array(workspace.get('agents')):
+            if (agent.get('paneKey') == excluded_pane or agent.get('parentPaneKey') == excluded_pane
+                    or references_pane(agent.get('children')) or references_pane(agent.get('subagents'))):
+                raise Deferred('exception-absence-unverified')
+            if workspace.get('worktreeId') != old['worktreeId']:
+                continue
+            matches = [t for t in terms if rr.pane(t) == agent.get('paneKey')
+                       and t.get('worktreeId') == old['worktreeId']
+                       and t.get('executionHostId') == 'local'
+                       and t.get('worktreePath') == old['worktreePath']]
+            if len(matches) != 1 or agent.get('agentType') not in ('codex', 'claude'):
+                raise Deferred('exception-absence-unverified')
+
+
+def current_exception(client, row, terms, ps, self_pane, *, native_query=True, previous=None):
+    identity = row['exceptionAttestation']['identity']
+    if any(rr.pane(t) == identity['paneKey'] for t in terms):
+        item = exception_item(row, terms, ps, self_pane)
+        if not native_query:
+            if previous['live']['kind'] == 'absent' or rr.fingerprint(item) != previous['terminal']:
+                raise Deferred('exception-live-proof-changed')
+            return previous
+        return {'runtimeId': client.runtime, 'terminal': rr.fingerprint(item),
+                'live': live.observe(rr, identity['cwd'], identity['paneKey'], expected=identity['sessionId'])}
+    exception_absence_view(row, terms, ps, self_pane)
+    if not native_query:
+        if previous['live']['kind'] != 'absent':
+            raise Deferred('exception-live-proof-changed')
+        return previous
+    return {'runtimeId': client.runtime, 'terminal': row['terminal'],
+            'live': live.observe_absent(rr, identity['cwd'], identity['paneKey'], expected=identity['sessionId'])}
+
+
+def establish_exceptions(client, batch, workspace, terms, ps, self_pane):
+    """Revalidate same UUID on a new runtime/PID; freeze once per operation."""
+    proofs = getattr(client, 'exception_proofs', {})
+    for row in batch['targets']:
+        if row['choice'] != 'manual' or row['terminal']['worktreeId'] != workspace:
+            continue
+        attestation = exception_attestation(batch, row)
+        if attestation is None:
+            continue
+        current = current_exception(client, row, terms, ps, self_pane)
+        if row['targetId'] in proofs and current != proofs[row['targetId']]:
+            raise Deferred('exception-live-proof-changed')
+        proofs.setdefault(row['targetId'], current)
+    client.exception_proofs = proofs
+
+
+def check_exception_proofs(client, batch, self_pane, terms=None, ps=None, *, process_only=False,
+                           terminal_inventory=None, native_query=True):
+    proofs = getattr(client, 'exception_proofs', {})
+    if not proofs:
+        return
+    if not process_only:
+        if terms is None or ps is None:
+            terms, ps = snapshot(client, self_pane)
+        else:
+            for inventory in ((ps,) if terminal_inventory is None else (terminal_inventory, ps)):
+                if (inventory.get('truncated') is not False
+                        or 'local' not in rr.obj(inventory.get('hostScope')).get('hostIds', [])):
+                    raise Deferred('inventory-incomplete')
+        if len({t.get('handle') for t in terms}) != len(terms):
+            raise Deferred('duplicate-target')
+        for target_id, proof in proofs.items():
+            row = next(r for r in batch['targets'] if r['targetId'] == target_id)
+            if (client.runtime != proof['runtimeId']
+                    or current_exception(client, row, terms, ps, self_pane, native_query=native_query,
+                                         previous=proof) != proof):
+                raise Deferred('exception-live-proof-changed')
+        if native_query:
+            # The slow official queries precede this fresh metadata observation.
+            fresh_terms, fresh_ps = snapshot(client, self_pane)
+            check_exception_proofs(client, batch, self_pane, fresh_terms, fresh_ps, native_query=False)
+    for proof in proofs.values():
+        if client.runtime != proof['runtimeId']:
+            raise Deferred('exception-live-proof-changed')
+        live.recheck(rr, proof['live'])
+
+
 def blocked_by_exception(batch, item, runtime):
     for excluded in batch['targets']:
         if excluded['choice'] != 'manual':
@@ -462,7 +683,8 @@ def blocked_by_exception(batch, item, runtime):
         if rr.pane(item) == rr.pane(old) and item.get('worktreeId') == old['worktreeId']:
             return True
         # After runtime replacement no unknown exception identity may be guessed.
-        if runtime != batch['preparedRuntime'] and item.get('worktreeId') == old['worktreeId'] and excluded.get('native') is None:
+        if (runtime != batch['preparedRuntime'] and item.get('worktreeId') == old['worktreeId']
+                and excluded.get('native') is None and excluded.get('exceptionAttestation') is None):
             return True
     return False
 
@@ -476,8 +698,13 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
     changed_runtime = client.runtime != batch['preparedRuntime']
     # Native/manual exceptions win before any management classification or
     # candidate query, including unknown exception UUIDs after replacement.
-    if changed_runtime and any(blocked_by_exception(batch, item, client.runtime) for item in related):
+    if changed_runtime and any(
+            excluded['choice'] == 'manual' and excluded['terminal']['worktreeId'] == old['worktreeId']
+            and excluded.get('native') is None and excluded.get('exceptionAttestation') is None
+            for excluded in batch['targets']):
         raise Deferred('excluded-identity-unknown-after-runtime-change')
+    establish_exceptions(client, batch, old['worktreeId'], terms, ps, self_pane)
+    check_exception_proofs(client, batch, self_pane, terms, ps)
     own = next(t for t in terms if rr.pane(t) == self_pane)
     if (changed_runtime and own in related
             and getattr(client, 'management_self', None) is None):
@@ -518,6 +745,9 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
                 proofs.append({'handle': t['handle'], 'identity': rr.fingerprint(t),
                                'provider': None, 'nativeProof': rr.output_proof(frame)})
     def absent(verified_panes=()):
+        verified_panes = set(verified_panes) | {rr.pane(p['terminal'])
+            for p in getattr(client, 'exception_proofs', {}).values()
+            if p['terminal']['worktreeId'] == old['worktreeId'] and p['live']['kind'] != 'absent'}
         # A ps-only agent or an orphan can be the old native session. Never launch
         # a second conversation when inventory cannot prove absence, even if
         # other selected native sessions were verified in this workspace.
@@ -637,8 +867,13 @@ def owned_launch(client, batch, row, self_pane, log, installation):
                                                     'installation': installation})
         command = rr.resume_command(row['provider'], resume_basis(batch, row),
                                     installed_version=current_installation.get('nativeVersion'))
-        # No native inventory/status/idle wait after this passive validation. In particular
-        # retain the native response's proof across every intervening long lookup.
+        sending_early = bool(getattr(client, 'exception_proofs', {}))
+        if sending_early:
+            # Requery UUID/absence after durable storage and before fresh inventory.
+            rr.management_self_check(client, process_only=True)
+            log.record('sending', step='owned-restore-terminal')
+            rr.recovery_exception_preflight(client)
+        # Retain response proofs across every long lookup, then refresh metadata.
         terms, ps = snapshot(client, self_pane)
         if client.runtime != runtime:
             raise Deferred('runtime-changed')
@@ -662,8 +897,9 @@ def owned_launch(client, batch, row, self_pane, log, installation):
             if not target.get('nativeProof') or rr.output_proof(frame) != target['nativeProof']:
                 raise Deferred('native-response-proof-changed')
         rr.management_self_check(client, process_only=True)
-        log.record('sending', step='owned-restore-terminal')
-        rr.management_self_check(client, process_only=True)
+        if not sending_early:
+            log.record('sending', step='owned-restore-terminal')
+            rr.management_self_check(client, process_only=True)
         result = client.call('terminal', 'create', '--worktree', 'id:' + old['worktreeId'],
                              '--title', 'Session restore', '--command', command)
         # Contract is intentionally strict: a changed/unknown receipt is a partial
@@ -854,6 +1090,8 @@ def recovery_card(frame, row, batch):
 def recover_prepare(client, store, batch_id, self_pane):
     """Explicit same-batch cleanup and fresh status; never discover, exit or launch."""
     client.management_self = None
+    client.recovery_exception_check = None
+    client.exception_proofs = {}
     batch = store.load(batch_id)
     if batch['binding'] != binding():
         raise Deferred('machine-or-profile-mismatch')
@@ -1031,6 +1269,8 @@ def verify_preparation(client, store, batch, self_pane):
 def execute(client, store, batch_id, self_pane, mode):
     # A reused client never inherits a previous invocation's exception authority.
     client.management_self = None
+    client.recovery_exception_check = None
+    client.exception_proofs = {}
     if mode not in ('restart', 'restore', 'verify'):
         raise Deferred('invalid-operation')
     batch = store.load(batch_id)
@@ -1042,6 +1282,8 @@ def execute(client, store, batch_id, self_pane, mode):
         check_other_attempts(store, batch_id)
         return verify_preparation(client, store, batch, self_pane)
     check_other_attempts(store, batch_id)
+    client.recovery_exception_check = lambda *args, **kwargs: check_exception_proofs(
+        client, batch, self_pane, *args, **kwargs)
     snapshot(client, self_pane)
     for index, row in enumerate(batch['targets']):
         if row['choice'] == 'manual':
@@ -1173,6 +1415,7 @@ def report(batch):
                                   'workspace': row['terminal']['worktreePath'], 'provider': row['provider'],
                                   'sessionId': (row.get('native') or {}).get('sessionId'),
                                   'state': row['state'], 'reason': row['reason'],
+                                  'exceptionIdentity': (row.get('exceptionAttestation') or {}).get('identity'),
                                   'nativePrepared': row.get('native'), 'nativeObserved': row.get('nativeObserved'),
                                   'installationPrepared': row.get('installationPrepared'),
                                   'installationObserved': row.get('installationObserved'),
@@ -1183,7 +1426,7 @@ def report(batch):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('prepare', 'continue-prepare', 'recover-prepare', 'list', 'restart', 'restore', 'verify'))
+    parser.add_argument('mode', choices=('prepare', 'continue-prepare', 'recover-prepare', 'identify-exception', 'list', 'restart', 'restore', 'verify'))
     parser.add_argument('--target', action='append', default=[])
     parser.add_argument('--exclude', action='append', default=[])
     parser.add_argument('--batch')
@@ -1192,7 +1435,9 @@ def main(argv=None):
     try:
         if args.mode == 'continue-prepare' and (args.target or len(args.exclude) != 1):
             raise Deferred('continuation-not-admissible')
-        if args.mode not in ('prepare', 'continue-prepare') and (args.target or args.exclude):
+        if args.mode == 'identify-exception' and (len(args.target) != 1 or args.exclude):
+            raise Deferred('exception-target-invalid')
+        if args.mode not in ('prepare', 'continue-prepare', 'identify-exception') and (args.target or args.exclude):
             raise Deferred('choices-are-prepare-only')
         if args.mode == 'prepare' and args.batch:
             raise Deferred('prepare-creates-new-batch')
@@ -1201,12 +1446,16 @@ def main(argv=None):
                 raise Deferred('batch-not-found')
             print('{"batches": []}')
             return 0
-        if args.mode in ('continue-prepare', 'recover-prepare') and not args.batch:
+        if args.mode in ('continue-prepare', 'recover-prepare', 'identify-exception') and not args.batch:
             raise Deferred('batch-id-required')
-        with Store(args.state, read_only=args.mode == 'list', existing_only=args.mode in ('continue-prepare', 'recover-prepare')) as store:
+        with Store(args.state, read_only=args.mode == 'list', existing_only=args.mode in ('continue-prepare', 'recover-prepare', 'identify-exception')) as store:
             if args.mode == 'list':
                 # Durable inventory needs no runtime, conversation or host CLI.
                 result = report(store.load(args.batch)) if args.batch else {'batches': [report(b) for b in store.batches()]}
+            elif args.mode == 'identify-exception':
+                candidate = store.load(args.batch)
+                exception_target(candidate, args.target[0])
+                result = identify_exception(rr.Orca(), store, args.batch, args.target[0], os.environ.get('ORCA_PANE_KEY'))
             elif args.mode == 'recover-prepare':
                 store.load(args.batch)
                 result = recover_prepare(rr.Orca(), store, args.batch, os.environ.get('ORCA_PANE_KEY'))

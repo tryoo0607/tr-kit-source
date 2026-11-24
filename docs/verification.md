@@ -780,3 +780,49 @@ Root의 후속 native 시험에서는 소유 fixture의 Claude2.1.319·2.1.329 �
 Context-free quick 정적 검수에서 미지원 status card 뒤 빈 prompt가 남으면 normal idle로 오인하는 경로1건을 확인했다. 기존 공통 idle guard에 관측 status header/close footer가 남은 화면 거부를 추가했고 초기 fallback과 native query 직전 drift에서0입력으로 중단하는 transport 회귀를 보완했다. 구현자의 관련43개 통과 후 독립 재검수는 추가 발견 사항이 없었다. 최종 전체 CI는 이 수정 뒤의 네 실행·시험 파일 hash를 별도 고정해 다시 수행한다. 이전 CI·묶음은 별도 보존하며 최종 결과와 혼합하지 않는다.
 
 최종 root 전체 CI는 고정한 실행·시험 bytes와 실제 Gitleaks8.30.1로 **705개/321.703초·실패·오류·skip0**를 통과했다. session239개를 포함하며 네 파일 hash를 최종 source와 대조했다. private의 최종 common pin 회귀129개는 별도로 통과했다. 초기 검수 발견1건의 수정·재검수, 두 native 이관 및 typed-draft 시험은 위 범위를 따르며 실제 원 배치 복구·설치·소비는 후속 운영 receipt로 판정한다.
+
+## 수동 예외 신원과 Claude331 활성 목록 — 2026-11-24
+
+승인 계획 `plan-session-exception-identity-and-listing.md`의 baseline `0b85f9a75d2d4d2752c4647fd831a439c883c04c`에서 지정 worktree의 source만 변경했다. [결정](decisions/20261124-session-exception-identity-and-listing.md)과 [단일 운영 계약](../common/base/skills/session/references/session-restart.md#명시-수동-예외의-신원-확인과-재검증)을 실제 코드/시험에 대조했다. 기존 bounded native transport·Store/Recorder·status/frame/modal·management guard를 재사용했고 새 runtime 파일은 `claude_live_sessions.py` 하나다. 관련 외부 기능은 계획에서 관측한 공식 Claude331 `agents --json`이며 새 registry 구현·skill/provider 설치는 하지 않았다.
+
+Producer binding 교정 전 superseded candidate의 cold-start 보완 전 `python3 -B -m unittest discover -s tests -p 'test*session*.py' -q`는 **258개 통과, skip0**(77.457초)였다. 구성은 helper9개, restart116개, runtime133개다. 이 수치는 subTest의 각 변형을 별도 개수로 세지 않는다. `git diff --check`, CLI `--help`의 새 mode, 변경된 운영 reference/결정 문서의 로컬 링크 경로12개 존재 대조도 통과했다.
+
+| 승인 matrix/추가 실패 경계 | 실제 source/fixture 관측 |
+| --- | --- |
+| 명시 원 manual의 별도 신원 확인 | signed attestation/event만 추가, 원 choice/state/reason/native/null/이력 prefix 보존. missing Store/잘못된 record/target/self/중복 확인은 native/runtime 구성 전 또는 native 조회 전에 거부 |
+| runtime/PID 교체 뒤 같은 workspace의 살아 있는 선택 | 원 UUID/원 pane/workspace를 새 proof로 검증하고 선택 pane에만 status. manual screen 조회를 금지한 double로 무입력/무조회 확인, 과거 attestation 불변 |
+| 선택 부재와 알려진 예외 | exact 선택 UUID를 한 번 create하고 반복 restore는 already-running. freshly proved pane만 ps 허용하며 ps-only agent는 create 없이 거부 |
+| 새 boot/PID/start/namespace | helper fixture의 새 namespace/start와 새 PID에서 같은 UUID를 재증명. 원 proof를 operation 중 재사용하면 거부. 실제 PC reboot 결과가 아님 |
+| wait/최종 create의 drift | 설치 조회·선택 wait의 process 변화, durable sending 뒤 process 변화와 같은 PID의 UUID 전환을 다음 입력/create 전에 거부. sending receipt 보존, 재기준화/재시도 없음 |
+| JSON/proc/producer/transport 실패 | malformed/부분/중복 JSON·PID/UUID·unknown kind, UID/start/stat/실행체/cwd/pane/namespace·nested PID·환경 크기/부분·관련 unreadable process·background same-pane·관측하지 않은330 executable·미지원 query producer를 거부. 기존 bounded runner의 고정 timeout/진단/output/cleanup 오류 전달, raw name/status/environment는 proof에 없음 |
+| 저장/서명/결합/충돌 | 기존 저장소 integrity suite 유지. event·operation·terminal·binding·producer/process shape·선택 UUID 충돌과 원자 저장 전 실패를 거부하고 원 durable record 보존 |
+| native331 활성 목록 | `✔ on`의 ID/version/scope를 direct parser와 real refresh caller의 소유 double로 확인. before.nativeVersion331일 때만 허용, stale version 진단 유지. 설치331만 있거나 actor 부재/다른 버전·off/unknown/중복/누락/다른 scope는 거부 |
+| 기존 선택 보호 | 기존 첫 실패 중단·self/draft/child/identity/권한·unresolved receipt·modal/frame proof·management helper 및 예외 없는 create의 not-submitted 회귀 통과 |
+
+위 결과는 source 직접 실행과 synthetic native JSON/fake proc/소유 transport 시험이다. 실제 사용자 UUID/path는 tracked fixture에 넣지 않았다. native terminal/reload·원 original batch attestation·운영 설치·패키징/전송·full CI·실제 플러그인 소비·독립 quick review·새 모델 세션/실제 압축 재개는 이 implementer 검증에서 수행하지 않았다. root의 별도 결과가 나오기 전 그 층위를 완료로 보고하지 않는다. helper는 원 cwd의 관련 process만 증명하고 JSON 전체의 PID/UUID 중복은 거부한다. 최종 공식 신원 관측과 선택 frame·create 사이의 비원자 경합은 남는다.
+
+Cold-start 요구 대조에서 root가 선택/manual 모두 부재인 실행을 재현했고, 수정 계획의 Clarified Cold-Start Verification을 적용했다. `exception_absence_view`가 complete terminal/ps에서 원 pane/연관 main·parent·child·subagent 및 ps-only/unknown agent·누락 agents 정보를 거부하며, 새 `observe_absent`는 같은 bounded 공식331 조회 두 번의 expected UUID 전역 부재와 다른 cwd를 포함한 active proc 전체의 bounded 전후 대조·원 pane 비재사용을 요구한다. historical live attestation/row/event prefix는 그대로 유지한다. absent/live 판정은 invocation 동안 전환하지 않는다. full exception 조회를 마지막 Orca inventory보다 앞으로 옮겨 그 긴 조회 중 생긴 선택 후보도 기존 launch_state로 거부한다.
+
+추가 fixture는 같은 원 batch에서 양쪽 부재→선택 exact UUID create1회→반복 already-running과 manual/history 불변을 확인했다. 원 manual pane의 nonagent/unknown/잘못된 UUID, expected UUID가 다른 cwd/pane 또는 background로 생존, missing/truncated/incomplete/누락 agents/ps-only/연관 child, 관련 unreadable proc와 pane 재사용을 부재로 취급하지 않는다. 설치 inventory·durable sending·마지막 공식 JSON·공식 조회 뒤 Orca inventory에서 부재가 바뀌거나 새 선택 후보가 생기면 send/create0으로 중단한다. cold에서 active process 전체(다른 cwd 포함)를 관측하되 이 목록은 manual 부재 identity로 보존하지 않으며 각 공식 조회 쌍 안에서 검증한다. 따라서 정상 선택 create 후에도 고정된 expected manual UUID/pane의 부재를 다시 확인한다. 이는 소유 synthetic native/proc/transport 결과이며 실제 PC reboot 결과가 아니다.
+
+Cold의 전역 pane 비재사용 대조는 다른 cwd의 지원 process를 정상 통과시키고, 그 process의 다른 UUID가 원 manual pane를 쓰거나 읽히지 않으면 거부하는 별도 helper 회귀로 확인했다. live의 unrelated-cwd unreadable 무조회 회귀도 유지한다.
+
+Cold의 전역 pane 대조까지 반영한 superseded candidate의 affected run은 **268개 통과, skip0**(79.245초)였다: helper13개, restart122개, runtime133개다. 이 수치는 producer binding 교정 전 과거 결과이며 최종 인증이 아니다. non-frozen Producer Binding Correction을 적용한 현재 source 검증은 아래에 별도로 기록한다. 독립 quick review 및 root full CI/native/운영 검증 결과도 별도다.
+
+### Producer binding 교정 뒤 source 검증
+
+검증한 queryExecutable의 절대 path를 기존 bounded runner의 내부 optional `executable`에 전달하도록 고쳤다. runner는 canonical absolute regular executable을 검증해 그 path를 실행하며, 기본 호출은 기존 provider 선택을 유지한다. helper는 version/두 agents 호출 각각의 전후와 최종 proof 경계에서 같은 producer 파일 identity를 확인한다. JSON의 과도한 중첩도 안전한 `exception-native-json-invalid` 거부로 처리한다. 위 matrix의 attestation/history 보존·live/strict cold-absent·선택/frame/권한·unknown 거부와331 parser는 재사용했고, self 관측에 관한 안내는 기존 management guard와 대조해 manual 화면 무조회와 manual/self 무입력을 구분했다.
+
+새 소유 subprocess fixture는 caller cwd의 상대 PATH에서 공식 위치의 producer로 연결하고, target cwd에는 다른 `claude` 실행 파일을 놓았다. version과 두 agents 조회가 모두 검증한 절대 producer로 실행되어 `kind=absent`를 증명하며 target의 alternate 실행 파일은 한 번도 호출되지 않았다. 실제 실행 도중 producer 파일 교체와 nonzero failure는 첫 query 뒤 중단했다. synthetic proc fixture는 각 세 bounded 호출 전후의 producer 변경·다음 호출 전 변경·최종 proof 경계 변경을 거부했다. exact runner의 invalid/relative/missing/directory/symlink/nonexec 입력은 launch0이며, stdin 격리·stdout 크기·진단·nonzero·timeout과 소유 child group cleanup도 실제 OS subprocess로 통과했다. 기본 runner 호출의 기존 inventory·timeout·diagnostic·cleanup 시험도 같은 전체 suite에서 유지했다.
+
+첫 교정 뒤 affected run은275개 중 새 runner 시험의 두 subTest에서 실패했다. 시험 child가 부모 stdout/stderr pipe를 잡아 진단/nonzero 대신 timeout을 만든 fixture 문제였으며, 그 child의 출력만 DEVNULL로 분리한 두 시험은 통과했다. 이 superseded 실패는 로컬 scratch evidence로 보존했으며 최종 인증으로 쓰지 않는다.
+
+수정 후 최종 `python3 -B -m unittest discover -s tests -p 'test*session*.py' -q`는 **275개 통과, 실패·오류·skip0**(80.076초)였다: helper18개, restart122개, runtime135개다. 기존268개와 새 producer/runner7개를 포함한다. 공식 skill-creator의 `quick_validate.py common/base/skills/session`, CLI `--help`의 새 mode, 변경한 운영 reference/구조/요구/검증/결정 문서의 로컬 링크99개 경로 대조와 `git diff --check`도 통과했다. source는 이 affected 결과 뒤 변경하지 않았으며 문서와 검증 receipt만 마무리했다.
+
+이는 소유 fake proc/JSON/transport 및 OS subprocess source 시험이다. 실제 공식 native canary·원 배치 신원 확인·full CI의 pinned Gitleaks·private pin/패키지·원격 전송/운영 배포와 독립 quick 검수는 root 후속 범위이며 구현자가 수행하지 않았다. 실제 PC reboot와 모델 새 세션/압축·재개 시험은 미실행이다. 최종 공식 관측과 선택 frame/input/create 사이의 비원자 경합은 남는다.
+
+Root의 최종 전체 CI는 실제 Gitleaks8.30.1과 고정한 실행/시험6파일 bytes로 **742개/325.421초·실패·오류·skip0**를 통과했다. 초기741개 실행의 시험 helper `/proc` ESRCH 경쟁1건은 별도 보존하고, 이미 종료된 process의 ProcessLookupError 처리와 정확한 회귀를 추가해 관련12개 후 전체를 재실행했다. 최종 로그에서 승인 matrix와 추가 경계13행의 실제 통과 test ID를 대조했다. private129개/40.714초와 새8묶음의 현재 source bytes·네 pin·실제 Gitleaks·전송 검사를 별도 통과했다. 로컬 상세 근거는 /data/projects/_scratch/tr-kit-session-exceptions-listing-20261124/이며 package operational_ready=false와 설치/소비 구분을 유지한다.
+
+운영 설치 전, 동일 hash의 자체 실행3파일만 inno-desktop의 분리된 시험 경로로 전달해 실제 Claude331 소유 canary를 실행했다. prepare→metadata-only manual identify→같은 workspace의 선택 verify는 통과했고 manual historical row/event prefix를 보존했다. 실제 화면의6개 `✔ on` 행은 각 ID/version/scope 형식 검사에서 통과했다. 전체 enabled-ID preflight는 직접 terminal 생성과 공식 Orca agent launch 양쪽 모두에서 거부됐다. caller 설치 조회에 `orca-agent-view@inline:session`이 있지만 native 목록에 없어 기존 전체 집합 검사가 중단한 것이다. 이 차이의 원인은 미확인이며, session 항목을 제외하거나 reload를 보내지 않았다. 행 문법 검사 통과를 전체 native reload 성공으로 보고하지 않는다.
+
+소유 native3개만 닫은 뒤 strict known-absent는 기존 다른 workspace의 미지원 native318/330이 남아 `exception-executable-unsupported`로 create0/예외 입력0을 확인했다. 기존 사용자 process는 종료하지 않았고 지원 버전도 넓히지 않았다. 양쪽 부재의 positive restore는 source/소유 fake transport 시험이며 실제 PC reboot 결과가 아니다. native 시험 보고 코드에서 public report에 없는 choice 필드를 참조한 오류는 signed targetId/기존 결과의 read-only 대조로 확인했으며 restore를 재전송하지 않았다. 이 source canary 당시 활성 common은0.8.5였다. 새 package 설치·원래 production 배치 attestation/선택 verify·실제 소비는 이후 운영 receipt가 소유한다.
