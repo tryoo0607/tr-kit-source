@@ -21,7 +21,8 @@ class Deferred(Exception):
     pass
 
 
-CODEX_RESUME_VERSIONS = ('0.167.1', '0.167.2', '0.171.0')
+CODEX_RESUME_VERSIONS = ('0.167.1', '0.167.2', '0.171.0', '0.172.0')
+CODEX_STATUS_RESPONSE_TIMEOUT = 15
 
 
 def codex_versions(text):
@@ -1122,11 +1123,16 @@ def codex_screen_status(previous, current):
             old_identity = codex_screen_identity(old)
         except Deferred:
             return None
-        pinned = (1 if history and history[0].lstrip().startswith('› ')
-                  and history[0].strip() not in idle else 0)
+        # Startup UI may precede the first request before Codex pins that
+        # request above a cropped card. It must be the exact unique first
+        # ordinary request, never a later request or a slash-command echo.
+        prompt_lines = [line for line in history if line.lstrip().startswith('› ')
+                        and line.strip() not in idle and not line.lstrip().startswith('› /')]
+        pinned_line = prompt_lines[0] if prompt_lines else None
+        pinned = int(pinned_line is not None and history.count(pinned_line) == 1)
         overlaps = []
         for keep in set((0, pinned)):
-            if retained[:keep] != history[:keep]:
+            if retained[:keep] != ([pinned_line] if keep else []):
                 continue
             suffix = retained[keep:]
             if len(suffix) < 2 or not any(re.fullmatch(
@@ -1345,7 +1351,8 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
     else:
         # Acknowledgement/idle can precede rendering. Keep the original cursor
         # and poll only passive observations; never repeat input or inventory.
-        deadline = time.monotonic() + 3
+        # Include the full passive guard and coherent stream read in the budget.
+        deadline = time.monotonic() + CODEX_STATUS_RESPONSE_TIMEOUT
         pending = Deferred('native-response-freshness-unknown')
         for attempt in range(60):
             if time.monotonic() >= deadline:

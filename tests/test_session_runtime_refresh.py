@@ -465,6 +465,41 @@ class RuntimeRefreshTests(unittest.TestCase):
                 self.assertEqual(1, self.inventory.call_count)
                 self.assertEqual(1, len(client.sent))
 
+    def test_codex_cropped_repeat_pins_unique_first_request_after_startup_ui(self):
+        before, after = codex_screen_pair()
+        startup = ['  >_ OpenAI Codex (v0.172.0)', '  /work', '  permissions: YOLO mode']
+        before = startup + before
+        client = self.screen_only_codex(before, after)
+        native = self.run_screen_status(client)
+        self.assertEqual('11111111-1111-4111-8111-111111111111', native['sessionId'])
+        self.assertEqual(m.output_proof(client.read), self.plan['targets'][0]['nativeProof'])
+        self.assertEqual(1, len(client.sent))
+
+    def test_codex_pinned_first_request_needs_unique_request_and_session_suffix(self):
+        before, after = codex_screen_pair()
+        startup = ['  >_ OpenAI Codex (v0.172.0)', '  /work', '  permissions: YOLO mode']
+        original = startup + before
+        cases = {
+            'different-pin': (original, ['› different request', *after[1:]]),
+            'duplicate-old-request': (startup + [before[0], *before], after),
+            'later-request-as-pin': (startup + ['› first request', *before], after),
+            'slash-command-as-pin': (startup + ['› /help', *before[1:]], ['› /help', *after[1:]]),
+            'missing-previous-session': (original, [x for i, x in enumerate(after)
+                                                   if not (i < 7 and 'Session:' in x)]),
+            'changed-retained-suffix': (original, [x+' changed' if i == 2 else x
+                                                  for i, x in enumerate(after)]),
+            'intervening-command': (original, [*after[:8], '/help', *after[8:]]),
+            'same-frame': (after, after),
+            'footer-only': (after, [*after[:-1], 'clock changed']),
+        }
+        for name, (previous, current) in cases.items():
+            with self.subTest(name=name):
+                client = self.screen_only_codex(previous, current)
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
     def test_codex_screen_append_returns_only_new_card_metadata(self):
         before, after = codex_screen_pair()
         after = [line.replace('11111111-1111-4111-8111-111111111111',
@@ -747,12 +782,53 @@ class RuntimeRefreshTests(unittest.TestCase):
                 m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
         self.assertEqual(1, len(client.sent))
 
+    def test_codex_slow_observation_within_fifteen_seconds_preserves_single_send_and_proof(self):
+        for elapsed in (3.1, 14.9):
+            with self.subTest(elapsed=elapsed):
+                self.client = Fake()
+                client, clock = self.delayed_codex()
+                original = client.observe
+                def observe(handle):
+                    if client.sent:
+                        clock[0] = elapsed
+                    return original(handle)
+                client.observe = observe
+                with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    native = m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+                self.assertEqual('/work', native['cwd'])
+                self.assertEqual(1, len(client.sent))
+                self.assertEqual(m.output_proof(client.read), self.plan['targets'][0]['nativeProof'])
+
+    def test_codex_slow_observation_still_rejects_state_drift_before_fifteen_seconds(self):
+        for change in ('draft', 'runtime', 'proof'):
+            with self.subTest(change=change):
+                self.client = Fake()
+                client, clock = self.delayed_codex()
+                original, observations = client.observe, [0]
+                def observe(handle):
+                    if client.sent:
+                        clock[0] = 3.1
+                        observations[0] += 1
+                        if change == 'draft':
+                            client.read['draft'] = 'typed'
+                        elif change == 'runtime':
+                            client.runtime = 'other'
+                    item, frame = original(handle)
+                    if change == 'proof' and observations[0] > 1:
+                        frame['tail'].append('changed footer')
+                    return item, frame
+                client.observe = observe
+                with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    with self.assertRaises(m.Deferred):
+                        m.native_status(client, self.plan, self.plan['targets'][0], self.self_pane, Mock())
+                self.assertEqual(1, len(client.sent))
+
     def test_codex_response_after_observation_deadline_is_not_accepted(self):
         client, clock = self.delayed_codex()
         original = client.observe
         def observe(handle):
             if client.sent:
-                clock[0] = 3.1
+                clock[0] = 15.1
             return original(handle)
         client.observe = observe
         with patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
@@ -943,7 +1019,7 @@ class RuntimeRefreshTests(unittest.TestCase):
             with self.assertRaisesRegex(m.Deferred, '^draft$'):
                 m.idle_screen('codex', typed)
         m.idle_screen('codex', empty)
-        for header in ('OpenAI Codex (v0.172.0)', 'OpenAI Codex (vunknown)', 'OpenAI Codex (v'):
+        for header in ('OpenAI Codex (v0.172.1)', 'OpenAI Codex (v0.173.0)', 'OpenAI Codex (vunknown)', 'OpenAI Codex (v'):
             for prompt in ('›', '› Ask Codex to do anything'):
                 with self.subTest(header=header, prompt=prompt):
                     with self.assertRaisesRegex(m.Deferred, '^draft$'):
@@ -951,11 +1027,11 @@ class RuntimeRefreshTests(unittest.TestCase):
 
     def test_codex_fresh_status_version_gates_resume_independently_of_placeholder(self):
         fields = 'Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\ncwd: /work\nPermissions: Full Access\n'
-        for version in ('0.167.1', '0.167.2', '0.171.0', '0.172.0', None):
+        for version in ('0.167.1', '0.167.2', '0.171.0', '0.172.0', '0.172.1', '0.173.0', None):
             text = ('>_ OpenAI Codex (v'+version+')\n' if version else '') + fields
             native = m.status('codex', text)
             self.assertEqual(version, native['nativeVersion'])
-            if version in ('0.167.1', '0.167.2', '0.171.0'):
+            if version in ('0.167.1', '0.167.2', '0.171.0', '0.172.0'):
                 self.assertEqual('codex-full-access', native['resumeMode'])
             else:
                 self.assertIsNone(native['resumeMode'])
@@ -963,7 +1039,25 @@ class RuntimeRefreshTests(unittest.TestCase):
                     m.resume_command('codex', native, installed_version='0.171.0')
         known = m.status('codex', 'OpenAI Codex (v0.171.0)\n'+fields)
         with self.assertRaisesRegex(m.Deferred, 'native-resume-version-unverified'):
-            m.resume_command('codex', known, installed_version='0.172.0')
+            m.resume_command('codex', known, installed_version='0.173.0')
+
+    def test_codex_01720_placeholder_draft_and_permission_boundaries(self):
+        header = '>_ OpenAI Codex (v0.172.0)'
+        frame = {'source': 'screen', 'tail': [header, '› Ask Codex to do anything'], 'draft': None}
+        self.assertIn(header, m.idle_screen('codex', frame))
+        with self.assertRaisesRegex(m.Deferred, '^draft$'):
+            m.idle_screen('codex', dict(frame, draft='Ask Codex to do anything'))
+        fields = 'Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\ncwd: /work\nPermissions: '
+        for permission in ('Full Access', 'default', 'Custom'):
+            with self.subTest(permission=permission):
+                native = m.status('codex', header+'\n'+fields+permission)
+                if permission == 'Full Access':
+                    self.assertEqual('codex resume '+native['sessionId']+
+                                     ' --dangerously-bypass-approvals-and-sandbox',
+                                     m.resume_command('codex', native, installed_version='0.172.0'))
+                else:
+                    with self.assertRaisesRegex(m.Deferred, 'native-resume-permissions-unverified'):
+                        m.resume_command('codex', native, installed_version='0.172.0')
 
     def test_real_codex_omitted_roster_and_placeholder(self):
         self.client.agents[1].pop('children')
