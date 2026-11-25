@@ -125,6 +125,39 @@ CLAUDE_331_PLACEHOLDERS = frozenset(('❯\u00a0Try "create a util logging.py tha
                                      '❯\u00a0Try "how does <filepath> work?"'))
 
 
+def codex_historical_hook_error(text, lines):
+    """Identify one observed completed error line for dialog classification only.
+
+    Called after the ordinary empty-composer check. Neither the source frame
+    nor returned text/proof is filtered, and this is never hook trust evidence.
+    Unknown, repeated or reordered presentations retain the approval refusal.
+    """
+    if any(ord(char) < 32 and char != '\n' or 127 <= ord(char) <= 159 for char in text):
+        return None
+    headers = [i for i, line in enumerate(lines) if 'OpenAI Codex (v' in line]
+    for i in headers:
+        match = re.fullmatch(r' *>_ OpenAI Codex \(v([0-9][A-Za-z0-9.+_-]{0,63})\)', lines[i])
+        if match is None or match[1] not in CODEX_RESUME_VERSIONS:
+            return None
+    errors = [i for i, line in enumerate(lines) if 'Hook failed' in line]
+    messages = [i for i, line in enumerate(lines) if 'hook approval required' in line]
+    completions = [i for i, line in enumerate(lines) if 'Worked for' in line]
+    if len(errors) != 1 or len(messages) != 1 or len(completions) != 1:
+        return None
+    error, message, completed = errors[0], messages[0], completions[0]
+    prompts = [i for i, line in enumerate(lines) if line.lstrip().startswith('›')]
+    if (lines[error] != '• Hook failed'
+            or lines[message] != '  └ plugin contents changed; hook approval required'
+            or (message, completed) != (error + 1, error + 2)
+            or not headers or headers[0] >= error
+            or not prompts or completed >= prompts[-1]
+            or lines[prompts[-1]].strip() not in ('›', '› Ask Codex to do anything')
+            or not re.fullmatch(r'  Worked for (?:0|[1-9][0-9]*)s • '
+                                r'(?:[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)', lines[completed])):
+        return None
+    return message
+
+
 def idle_screen(provider, read):
     if read.get('draft') not in (None, ''):
         raise Deferred('draft')
@@ -154,7 +187,9 @@ def idle_screen(provider, read):
     if prompts[-1] != prompt and not placeholder and not claude_placeholder:
         raise Deferred('draft')
     # A prompt may remain on screen behind a dialog. Refuse known menus and approvals.
-    dialog_text = '\n'.join(line for line in lines if not re.match(r'^\s*(?:Permissions|Permission mode)\s*:', line))
+    historical_error = codex_historical_hook_error(text, lines) if provider == 'codex' else None
+    dialog_text = '\n'.join(line for i, line in enumerate(lines) if i != historical_error
+                            and not re.match(r'^\s*(?:Permissions|Permission mode)\s*:', line))
     if re.search(r'(?im)((?<![-\w])approve\b|(?<![-\w])approvals?\b|allow once|trust this|select an option|esc to cancel|enter to confirm|yes, proceed)', dialog_text):
         raise Deferred('approval-or-menu')
     return text

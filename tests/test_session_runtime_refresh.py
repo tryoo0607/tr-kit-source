@@ -53,6 +53,15 @@ def codex_screen_pair(cwd='/work'):
     return before, after
 
 
+def completed_hook_error_screen(version='0.167.2', composer='› Ask Codex to do anything'):
+    """Synthetic history only: never copy personal native frames into fixtures."""
+    return ['  >_ OpenAI Codex (v'+version+')', '› fixture completed request',
+            '• fixture response', '• Hook failed',
+            '  └ plugin contents changed; hook approval required',
+            '  Worked for 3s • 1:02 PM', '  ↳ fixture completion recap', composer,
+            '  fixture-model default · /work · fixture', '  ← for agents · ? for shortcuts']
+
+
 class Fake:
     environment = None
     runtime = 'runtime'
@@ -2161,6 +2170,138 @@ class RuntimeRefreshTests(unittest.TestCase):
         read['tail'].insert(1, 'Approval required to continue')
         with self.assertRaisesRegex(m.Deferred, 'approval-or-menu'):
             m.idle_screen('codex', read)
+
+    def test_completed_historical_hook_error_keeps_original_text_frame_and_proof(self):
+        for version in m.CODEX_RESUME_VERSIONS:
+            for composer in ('›', '› Ask Codex to do anything'):
+                with self.subTest(version=version, composer=composer):
+                    read = dict(source='screen', tail=completed_hook_error_screen(version, composer),
+                                draft=None, latestCursor='10')
+                    original = copy.deepcopy(read)
+                    proof = m.output_proof(read)
+                    text = m.idle_screen('codex', read)
+                    self.assertEqual('\n'.join(original['tail']), text)
+                    self.assertIn('hook approval required', text)
+                    self.assertEqual(original, read)
+                    self.assertEqual(proof, m.output_proof(read))
+
+    def test_completed_historical_hook_error_does_not_hide_dialogs_or_approval_prose(self):
+        for dialog in ('Yes, proceed', 'Trust this workspace?', 'Select an option',
+                       'Enter to confirm', 'Esc to cancel', 'Allow once',
+                       'Approval required to continue', 'Please approve this request'):
+            for position in (0, 6, 8, 10):
+                with self.subTest(dialog=dialog, position=position):
+                    lines = completed_hook_error_screen()
+                    lines.insert(position, dialog)
+                    with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
+                        m.idle_screen('codex', {'source': 'screen', 'tail': lines})
+
+    def test_historical_hook_error_requires_exact_pair_order_and_completion(self):
+        good = completed_hook_error_screen()
+        cases = {
+            'missing-heading': good[:3]+good[4:],
+            'changed-heading': [*good[:3], '• Tool failed', *good[4:]],
+            'changed-message': [*good[:4], '  └ other hook approval required', *good[5:]],
+            'extra-message': [*good[:4], good[4]+'; continue', *good[5:]],
+            'changed-indent': [*good[:4], good[4].lstrip(), *good[5:]],
+            'missing-completion': good[:5]+good[6:],
+            'changed-completion': [*good[:5], '  Worked for 3s • unknown time', *good[6:]],
+            'invalid-clock': [*good[:5], '  Worked for 3s • 13:02 PM', *good[6:]],
+            'changed-duration-format': [*good[:5], '  Worked for 1m 3s • 1:02 PM', *good[6:]],
+            'interleaved-error': [*good[:4], '  fixture output', *good[4:]],
+            'interleaved-completion': [*good[:5], '  fixture output', *good[5:]],
+            'reordered-pair': [*good[:3], good[4], good[3], *good[5:]],
+            'old-completion-current-error': [*good[:3], good[5], *good[3:5], *good[6:]],
+            'error-after-final-composer': [*good[:3], *good[6:], *good[3:6]],
+            'ordinary-approval-prose': [*good[:3], 'Hook approval required for this request', *good[6:]],
+        }
+        for label, lines in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
+                    m.idle_screen('codex', {'source': 'screen', 'tail': lines})
+
+    def test_historical_hook_error_rejects_multiple_pairs_and_ambiguous_boundaries(self):
+        good = completed_hook_error_screen()
+        for label, lines in {
+            'two-completed-pairs': [*good[:6], *good[3:6], *good[6:]],
+            'duplicate-heading': [*good[:3], good[3], *good[3:]],
+            'duplicate-message': [*good[:4], good[4], *good[4:]],
+            'duplicate-completion': [*good[:6], good[5], *good[6:]],
+            'later-normal-turn-completion': [*good[:7], '› fixture later request',
+                                            '• fixture later response',
+                                            '  Worked for 4s • 1:03 PM', *good[7:]],
+            'changed-second-boundary': [*good[:6], '  Worked for unknown', *good[6:]],
+        }.items():
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
+                    m.idle_screen('codex', {'source': 'screen', 'tail': lines})
+
+    def test_historical_hook_error_keeps_draft_prompt_version_and_control_refusals(self):
+        good = completed_hook_error_screen()
+        cases = [
+            ('draft', dict(tail=good, draft='fixture draft')),
+            ('draft', dict(tail=completed_hook_error_screen(composer='› fixture draft'))),
+            ('draft', dict(tail=good[:7]+good[8:])),
+            ('idle-prompt-unknown', dict(tail=[line for line in good if not line.startswith('›')])),
+            ('approval-or-menu', dict(tail=good[1:])),
+            ('draft', dict(tail=completed_hook_error_screen(version='9.9.9'))),
+            ('draft', dict(tail=completed_hook_error_screen(version='broken version'))),
+            ('approval-or-menu', dict(tail=['>_ OpenAI Codex (vbroken version)', *good])),
+            ('approval-or-menu', dict(tail=[*good[:3], '\x07fixture bell', *good[3:]])),
+            ('approval-or-menu', dict(tail=[*good[:3], '\rfixture carriage return', *good[3:]])),
+            ('approval-or-menu', dict(tail=[*good[:3], '\x9bfixture control', *good[3:]])),
+            ('screen-controls', dict(tail=[*good[:3], '\x1b[2J', *good[3:]])),
+        ]
+        for reason, fields in cases:
+            with self.subTest(reason=reason, fields=fields):
+                with self.assertRaisesRegex(m.Deferred, '^'+reason+'$'):
+                    m.idle_screen('codex', dict(source='screen', **fields))
+        claude = [line.replace('›', '❯') for line in good]
+        claude[7] = '❯'
+        with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
+            m.idle_screen('claude', {'source': 'screen', 'tail': claude, 'draft': ''})
+
+    def test_historical_hook_error_preserves_state_identity_child_and_wait_guards(self):
+        cases = [
+            ('busy-or-state-unknown', lambda c: c.agents[1].update(state='working')),
+            ('busy-or-state-unknown', lambda c: c.agents[1].update(mainAgent={'state': 'working'})),
+            ('busy-or-state-unknown', lambda c: c.agents[1].update(programStatus={'state': 'unknown'})),
+            ('invalid-json-shape', lambda c: c.agents[1].pop('programStatus')),
+            ('child-work', lambda c: c.agents[1].update(children=[{'state': 'working'}])),
+            ('child-state-unknown', lambda c: c.agents[1].pop('subagentObservation')),
+            ('approval-or-wait', lambda c: c.target.update(agentWait={'state': 'waiting'})),
+            ('identity-unknown', lambda c: c.target.pop('incarnationId')),
+        ]
+        for reason, change in cases:
+            with self.subTest(reason=reason):
+                client = Fake()
+                client.read['tail'] = completed_hook_error_screen()
+                change(client)
+                report = m.inspect(client, self.self_pane)
+                self.assertEqual(reason, report['targets'][1]['reason'])
+                self.assertEqual([], client.sent)
+
+    def test_historical_hook_error_status_keeps_full_history_and_original_proof(self):
+        before, cropped = codex_screen_pair()
+        history = completed_hook_error_screen()[:7]
+        before = history+before
+        after = before[:-3]+cropped[7:]
+        client = self.screen_only_codex(before, after)
+        native = self.run_screen_status(client)
+        self.assertEqual('11111111-1111-4111-8111-111111111111', native['sessionId'])
+        self.assertEqual('Full Access', native['permissions'])
+        self.assertEqual('codex-full-access', native['resumeMode'])
+        self.assertEqual(after, client.read['tail'])
+        self.assertEqual(m.output_proof(client.read), self.plan['targets'][0]['nativeProof'])
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_historical_hook_error_never_substitutes_for_native_freshness(self):
+        before = completed_hook_error_screen()
+        client = self.screen_only_codex(before, before)
+        with self.assertRaisesRegex(m.Deferred, '^native-response-freshness-unknown$'):
+            self.run_screen_status(client)
+        self.assertEqual(1, len(client.sent))
+        self.assertNotIn('nativeProof', self.plan['targets'][0])
 
     def test_native_launch_flags_are_not_an_approval_dialog(self):
         m.idle_screen('codex', {'source': 'screen', 'tail': [
