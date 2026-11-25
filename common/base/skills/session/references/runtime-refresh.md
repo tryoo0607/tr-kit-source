@@ -21,7 +21,9 @@
 
 ### 완료된 과거 Hook 오류와 현재 승인창
 
-Codex의 기존 empty draft·빈 composer 확인 뒤에만 `idle_screen`은 관측된 과거 오류 한 줄을 승인 단어 분류에서 제외한다. 화면의 모든 native header가 정확한 지원 버전 형식이고 하나 이상이 오류보다 앞서야 한다. 정확한 `• Hook failed`, 바로 다음 `  └ plugin contents changed; hook approval required`, 그 바로 다음 `  Worked for <정수>s • <1~12>:<두 자리 분> AM|PM`의 단일 연속 묶음과 그 뒤의 최종 지원 빈 composer가 필요하다. 다른 duration/시간 형식, 누락·변형·순서 변경·중복 묶음/완료 경계와 제어 문자는 이 예외로 허용하지 않는다. 다른 위치의 approval·trust·선택·확인 문구는 계속 차단한다.
+Codex의 기존 empty draft·빈 composer 확인 뒤에만 `idle_screen`은 관측된 과거 오류 한 줄을 승인 단어 분류에서 제외한다. 화면에 native header가 하나 이상 보이고 모두 정확한 지원 버전 형식이어야 한다. header는 오류보다 아래에 있어도 된다. 정확히 하나인 `• Hook failed`, 바로 다음의 정확히 하나인 `  └ plugin contents changed; hook approval required`, 그 바로 다음의 완료 표시와 그 뒤의 최종 지원 빈 composer가 필요하다. 완료 표시는 `  Worked for <0 또는 선행 0 없는 양의 정수>s • <1~12>:<두 자리 분> AM|PM` 또는 같은 초 단위 duration 뒤의 0을 포함한 두 자리24시간 시각 `00:00`~`23:59`만 지원한다.
+
+완료 소유 관계는 오류 쌍에 바로 붙은 표시로만 판단한다. 별도 정상 요청·응답의 앞선/뒤선 완료 표시는 경쟁 경계가 아니며 status repaint/crop 뒤 header 순서도 완료 여부를 바꾸지 않는다. 다만 해당 완료 바로 다음 줄에 `Worked for`가 또 있으면 중복·미확인 경계로 계속 보류한다. 오류 자체의 다른 duration/시간 형식, 누락·변형·순서 변경·중복 묶음, 미지원·잘못된·누락 header, draft·제어 문자·최종 지원 빈 composer 부재도 허용하지 않는다. 다른 위치의 approval·trust·선택·확인 문구는 계속 차단하며 마지막 prompt 앞 전체나 일반 tool 실패를 면제하지 않는다.
 
 이 예외는 dialog 단어 검사만 바꾸며 원본 frame, 반환 text와 status proof에는 오류를 그대로 남긴다. 과거 Hook 실패는 해결·신뢰 승인·plugin 소비 증거가 아니다. 기존 identity·상태·child·권한·freshness·receipt·단일 입력과 Claude 경로는 유지한다. [승인 결정](../../../../../docs/decisions/20261125-session-historical-hook-approval.md)과 [검증 범위](../../../../../docs/verification.md#완료된-과거-hook-오류-분류--2026-11-25)를 따른다.
 

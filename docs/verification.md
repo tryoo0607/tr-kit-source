@@ -878,6 +878,10 @@ NAS 기존 소유 배치의 시간 초과와 후속 freshness 실패는 signed k
 
 ## 완료된 과거 Hook 오류 분류 — 2026-11-25
 
+### source06의 초기 분류 구현과 검증
+
+다음 기록은 source06 당시의 결과와 한계다. header 위치·추가 정상 턴·12시간 시각 제한은 아래 후속 구현에서 교정하며, 이전 native/CI 결과를 새 source의 결과로 재사용하지 않는다.
+
 [승인 결정](decisions/20261125-session-historical-hook-approval.md)에 따라 baseline `c381e42f6b8fca440227e6c827181dc1fe04629c`의 지정 소스 worktree에서 공통 `idle_screen`의 dialog 단어 분류와 합성 시험8개, 운영 reference·요구·결정·검증 기록만 변경했다. plugin-authoring의 kit/skill·행동 시험 기준과 공식 skill-creator를 적용하고 기존 runtime·상태/입력 guard·unittest를 재사용했다. 구성 배치·호출/읽기 경로·skill 발동·외부 원문은 변경하지 않았다. baseline 대비 정적 AST 대조에서 변경된 기존 callable은 `idle_screen` 하나이고 추가 callable은 `codex_historical_hook_error` 하나였다. 이는 정적 보존 근거이며 native 실행 성공을 뜻하지 않는다.
 
 집중 명령 `python3 -B -m unittest discover -s tests -p test_session_runtime_refresh.py -k historical_hook -v`는 **8개/0.064초·실패·오류·skip0**를 통과했다. 최초 집중 실행8개는 fixture 기대2건에서 실패했다. 마지막 composer만 제거한 화면에 과거 요청 prompt가 남아 기존 `draft`가 먼저 나왔으며, Claude fixture에 Codex 기본 placeholder 문구를 그대로 옮겨 역시 `draft`가 먼저 나왔다. 기대와 Claude의 최종 빈 composer를 교정했고 런타임을 완화하지 않았다.
@@ -887,3 +891,19 @@ NAS 기존 소유 배치의 시간 초과와 후속 freshness 실패는 signed k
 `git diff --check`와 공식 `quick_validate.py common/base/skills/session`은 통과했다. 변경 문서의 로컬 링크 경로를 별도로 확인하며 anchor/모델 행동이나 native 실행을 증명하지 않는다. 전체 공통 CI·독립 quick 검수와 실제 NAS 소유/반복/원래 배치, package/private pin·배포는 parent 후속 범위다. 구현자는 원격/native 입력·Git mutation·설치 변경을 수행하지 않았다. 표시된 Hook 실패의 현재 해결·trust·plugin 소비와 모델 새 세션/압축·재개 시험은 미확인·미실행이다. 다른 duration/시간 formatter와 중복 완료 경계는 계속 미지원이며, 이후 정상 턴의 추가 완료 표시가 함께 보이는 화면도 현재 보수적으로 거부한다. 전체 suite 뒤 서로 다른 exact 완료 표시를 가진 별도 정상 턴도 보류하는 합성 subcase를 추가했고 최종 집중8개/0.067초·실패·오류·skip0을 통과했다. 런타임은 전체 suite 이후 변경하지 않았다. 이 엄격한 제한을 유지하도록 parent가 확인했으며 실제 반복 verify의 후속 화면은 parent가 별도 확인한다.
 
 부모의 최종 전체 `scripts/ci-check.py`는 trusted Gitleaks8.30.1 identity 검증과 **783개/328.602초·실패·오류·skip0**를 통과했다. 실행 전후6파일 hash가 같았고 context-free Quick 검수는 발견 사항0건이었다. 실제 저장 NAS 화면의 최종 runtime 로컬 replay는 오인 거부 해소와 원문 반환 일치를 확인했다. 이는 새 원격 입력/재시작 성공이 아니다. 이 결과 문단은 CI 뒤 문서 갱신이며 실행/시험 bytes는 그대로다. 생성물8개와 private129개 검증은 별도 로컬 receipt에 보존하고 실제 호스트 재배포/원래 NAS 재시작은 다음 단계로 남겼다.
+
+### 완료 오류 블록의 인접 경계 보완
+
+후속 구현 계획 `plan-session-completed-hook-block.md`의 baseline `c363d5eb99fcdc0aec71dac3eb60471f1e0529e8`을 대상으로 기존 `codex_historical_hook_error`만 교정했다. 기존 plugin-authoring의 kit·행동 시험 기준과 공통 runtime/guard·unittest를 재사용했다. parent의 공식 BMAD build 흐름을 유지했고 새 workflow·skill·config·private 복사본·외부 원문은 추가하지 않았다. source06이 첫 NAS 화면에서 통과했더라도 실제 접수된 status 뒤 crop에서 header가 오류 아래로 이동하면 다시 거부됐고, dev01 네 실제 화면의24시간 own clock 및 별도 이전 완료 표시도 거부됐다는 계획의 직접 관측 기록을 반영했다. 이 구현자는 그 개인 화면 원문이나 native 사용자 로그를 읽거나 저장소에 복사하지 않았다.
+
+오류 쌍에 바로 붙은 완료만 소유 근거로 사용한다. header가 아래인 화면과 다른 정상 요청·응답·완료를 함께 표시한 화면도 단일 메시지 제외 대상으로 분류하며, 자체 완료의12시간 AM/PM 또는 두 자리24시간 시각·초 단위 duration만 지원한다. 이전 `later-normal-turn-completion` negative 기대는 이번 구현 계획 matrix의 명시된 정상 턴 구분에 따라 positive로 옮겼다. 해당 블록 바로 뒤의 중복·다른·unknown 완료 표시는 계속 거부한다. 정확한 한 heading/메시지, 지원 header·최종 빈 composer·모든 실제 dialog와 draft/control 검사는 그대로다. 정적 source/AST 대조에서 변경된 runtime callable은 `codex_historical_hook_error` 하나이며, `idle_screen`을 포함한 다른 callable과 원본 frame/text/proof 경로는 바이트가 같다. 이는 실행 보존의 정적 근거이며 실제 native 성공을 뜻하지 않는다.
+
+변경 전 확장 집중 시험 `python3 -B -m unittest discover -s tests -p test_session_runtime_refresh.py -k historical_hook -v`는11개에서76 errors/1 failure로 기존 전역 가정의 거부를 재현했다. 같은 시험은 수정 후 **11개/0.122초·실패·오류·skip0**로 통과했다. 합성 사례는 지원4버전/2개 빈 composer,12/24시간 정상·경계 및 잘못된 시간/duration, header 전후·앞선/뒤선 별도 정상 턴, status crop 전후의 fresh UUID/cwd/권한/mode·단일 send·원본 proof, 실제 승인창 모양의 합성 popup 전후 거부와 기존 guard/freshness 거부를 포함한다. 이 popup 시험은 실제 저장 frame replay가 아니다. 변경 전후 집중 로그와 관련 suite 로그·source 대조 근거는 로컬 `/data/projects/_scratch/tr-kit-runtime-followup-20261124/completed-hook-block-source/`에 둔다.
+
+parent가 계획의 추가 note로 제공한 개인정보 제거 dev01 구조 fixture4개도 최종 source의 분류 허용과 원문/frame 보존을 확인했다. 해당 fixture는 `latestCursor`를 생략해 최초 proof 대조가 기존 `native-response-proof-unknown`으로 거부됐다. runtime을 바꾸거나 cursor를 만들어 넣지 않고 그 proof 검사는 미확인으로 남겼다. 원본 proof 보존은 위 합성 시험의 별도 근거이며 실제 캡처 원본 replay는 parent 범위다. 구조 fixture는 저장소에 복사하거나 시험의 scratch 절대 경로 의존으로 추가하지 않았다. 이 결과는 로컬 `sanitized-dev-replay.json`에 기록했다.
+
+전체 관련 명령 `python3 -B -m unittest discover -s tests -p 'test_session_*.py' -v`는 **302개/84.037초·실패·오류·skip0**로 통과했다(runtime172/restart126/inline4). 기존 source77 inline/readiness/zsh와 Claude·상태·신원·권한·receipt 회귀를 포함하며, full 공통 CI나 실제 native 실행을 대신하지 않는다. 변경6파일의 공백·마지막 newline과 문서의 로컬 링크 경로82개를 확인했다. anchor/모델 행동은 이 링크 검사 범위가 아니다. runtime은 helper 하나 외의 모든 바이트가 같음을 별도로 대조했다.
+
+전체 공통 CI·context-free Quick, 최종 source의 실제 NAS 전후/dev01 네 화면/실제 승인창 replay, package/private pin과 승인 delivery는 parent 후속 범위다. source06의 NAS attempt1500c8e5는 접수된 status 뒤 uncertain·exit0/resume0이며 실패 Store·이벤트·키를 유지한다. parent는 검증된 배포 뒤 명시 verify로 원래 identity/restart-pending을 확인한 뒤 새 restart operation을 진행해야 하며 이전 status를 재전송하지 않는다. root dev01 수동·inno common-only·실제 reboot 제외, Claude332 자동 복원 미지원, plugin 소비 미확인과 실제 모델 새 세션/압축·재개 미실행 한계는 유지한다. 이 구현자는 원격/native 입력·Git·package 작업을 수행하지 않았다.
+
+부모의 최종 전체 `scripts/ci-check.py`는 trusted Gitleaks8.30.1 identity 검증과 **786개/329.658초·실패·오류·skip0**를 통과했고, 입력6파일 hash가 실행 전후 같았다. context-free Quick 검수는 발견 사항0건이었다. 최종 runtime8bcd의 실제 저장 NAS 조회 전후2개/dev01 네 화면은 모두 분류 허용과 원문/frame 보존, 실제 도구 승인창/Hook 검토창2개는 거부를 확인했다. 이 실제 캡처 replay는 원격 입력이나 새 재시작 성공이 아니다. 이후 이 문서와 결정 문서에 결과·승인 출처 표현만 명료화했으며 코드·시험·운영 계약 bytes는 그대로다. 세부 matrix는 기존 사용자 승인 목적을 구현한 설계이며 각 세부 조건을 사용자의 새 발언·추가 합의로 기록하지 않는다. source06의 accepted status/uncertain 이력은 보존하고 새 배포 및 명시 verify/원래 재시작은 다음 단계로 남겼다.

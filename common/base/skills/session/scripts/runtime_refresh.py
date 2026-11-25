@@ -141,19 +141,23 @@ def codex_historical_hook_error(text, lines):
             return None
     errors = [i for i, line in enumerate(lines) if 'Hook failed' in line]
     messages = [i for i, line in enumerate(lines) if 'hook approval required' in line]
-    completions = [i for i, line in enumerate(lines) if 'Worked for' in line]
-    if len(errors) != 1 or len(messages) != 1 or len(completions) != 1:
+    if len(errors) != 1 or len(messages) != 1:
         return None
-    error, message, completed = errors[0], messages[0], completions[0]
+    error, message = errors[0], messages[0]
+    # Completion belongs to this exact adjacent pair, regardless of other
+    # completed turns or a supported header moving below history after crop.
+    completed = message + 1
     prompts = [i for i, line in enumerate(lines) if line.lstrip().startswith('›')]
     if (lines[error] != '• Hook failed'
             or lines[message] != '  └ plugin contents changed; hook approval required'
-            or (message, completed) != (error + 1, error + 2)
-            or not headers or headers[0] >= error
+            or message != error + 1 or completed >= len(lines)
+            or not headers
             or not prompts or completed >= prompts[-1]
             or lines[prompts[-1]].strip() not in ('›', '› Ask Codex to do anything')
             or not re.fullmatch(r'  Worked for (?:0|[1-9][0-9]*)s • '
-                                r'(?:[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)', lines[completed])):
+                                r'(?:(?:[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)|'
+                                r'(?:[01][0-9]|2[0-3]):[0-5][0-9])', lines[completed])
+            or completed + 1 < len(lines) and 'Worked for' in lines[completed + 1]):
         return None
     return message
 
