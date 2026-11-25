@@ -364,3 +364,51 @@ Claude reload → fresh /status.nativeVersion → 기존 listing parser의 선�
 Cold-start 보완은 원 manual pane/연관 agent와 expected UUID가 모두 증명 가능하게 부재인 경우에만 메모리의 absent proof를 만든다. stored attestation/native/history는 유지하고, 정상 선택 create 뒤에도 같은 manual 부재를 검증한다. 긴 공식 조회는 passive/shell guard 및 owned-create의 최종 inventory보다 앞에서 수행하고, management callback은 그 fresh metadata와 고정 로컬 proof만 대조한다. 따라서 exception 조회 도중 생긴 선택/ps 후보도 최종 launch_state가 거부한다. 상세 조건과 제한은 위 단일 session 계약이 소유한다.
 
 Producer binding은 기존 runner의 내부 optional `executable` 인자로 연결한다. helper가 공식331 canonical absolute file의 identity를 검증하고 version/두 agents 호출에 같은 path를 넘기므로, caller cwd와 target cwd에서 상대 PATH가 달라도 target의 다른 `claude`를 선택하지 않는다. runner는 전달 파일을 검증한 뒤 그 절대 경로를 실행하며 stdin/timeout/output/진단/group cleanup 경계는 그대로 소유한다. helper의 각 호출 전후 및 최종 proof 경계가 교체된 실행 파일을 거부한다. 다른 기존 caller는 기본 bare provider 동작을 보존한다.
+
+## NAS zsh 빈 shell 증명 — 2026-11-25
+
+기존 파일 배치·skill/hook/configuration 연결은 유지한다. session의 두 helper가 기존 transport·native UUID와 durable receipt를 공유하고, 공통 stat/executable parser를 호출자 helper와 target-shell 증명이 각각 사용한다. target proof는 signed Store/Journal의 schema에 추가하지 않는다.
+
+```text
+common/base/skills/session/
+├── references/
+│   ├── runtime-refresh.md
+│   └── session-restart.md
+└── scripts/
+    ├── runtime_refresh.py
+    └── session_restart.py
+```
+
+실제 호출 흐름은 다음과 같다. 읽기 담당은 기존 session 분기에서 필요한 reference를 선택한다.
+
+```text
+수행자 → session 운영 reference 읽기 → 기존 apply 또는 execute 호출
+  → /exit 단일 접수 → shell_guard가 fresh same-UUID stream 확인
+    → absolute cwd $/#: 기존 판정
+    → literal ❯: 별도 target_shell_process_proof(/proc) 고정
+  → send(exact-resume)
+    → 고정 target shell/설치/자기 가드 재검증
+    → 기존 durable sending 기록
+    → 동일 고정 증명 재검증 → 단일 transport → 기존 receipt
+  → 재개 native status의 UUID/cwd/권한/mode 대조
+```
+
+관리 helper의 의미와 기존 absolute prompt 경로는 변경하지 않았다. 상세 지원·거부·기록 경계는 [단일 공통 계약](../common/base/skills/session/references/runtime-refresh.md#정상-종료-뒤-nas-zsh-빈-shell-증명), 승인 범위와 실제 검증은 [결정](decisions/20261125-session-zsh-shell-proof.md)과 [검증 기록](verification.md#nas-zsh-빈-shell-증명--2026-11-25)을 따른다.
+
+
+## Codex0.172.0 scrollback과 단일 준비 턴 — 2026-11-25
+
+기존 session skill·공통 helper·reference의 배치를 유지하며 새 hook·config·adapter·private 실행 계층은 없다. `apply`와 `session_restart.execute`가 같은 `runtime_refresh.resume_command`를 호출하고, 실제 설치 버전0.172.0에만 기존 exact UUID/Full Access argv 뒤로 공식 inline flag와 고정 준비 PROMPT를 추가한다. 읽기 경로도 기존 session 분기 → runtime-refresh/session-restart reference를 그대로 사용한다.
+
+```text
+기존 apply / restart / restore
+  → 기존 native mode·설치 버전·UUID 검증 → 단일 공통 resume_command
+    → 설치0.172.0: 기존 권한 옵션 + --no-alt-screen + 고정 준비 PROMPT 1개
+    → 다른 지원 Codex / Claude: 기존 고정 argv
+  → 기존 transport·durable receipt·준비 가드 → native /status
+    → 독립 codex_screen_status가 완전한 새 화면 응답 증명
+      → codex_status_stream_text: exact leading popup 행 최대1개 제거
+      → 기존 stream/화면 신원·ANSI·deadline·output_proof 대조
+```
+
+필터는 새 화면 proof를 만들지 않는다. 기존 stream-only 경로와 zsh foreground/process/exit proof·서명 실패 보존·단일 입력 규칙도 유지한다. 상세 formatter·새 모델 메시지 효과·미지원 거부의 정본은 [운영 계약](../common/base/skills/session/references/runtime-refresh.md#codex01720-scrollback과-단일-준비-턴)이며, 원문과 승인 연결은 [결정](decisions/20261125-codex172-resume-observation.md), 시험/실제 native/배포의 구분은 [검증 기록](verification.md#codex01720-scrollback과-단일-준비-턴--2026-11-25)을 따른다.

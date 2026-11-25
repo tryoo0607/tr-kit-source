@@ -172,6 +172,30 @@ def agent_for(ps, t):
     return found[0]
 
 
+def proc_process(pid, reason):
+    path = Path('/proc') / str(pid)
+    # FileNotFoundError is meaningful only for an unrelated process which
+    # exited during the group scan. Permission and malformed data are errors.
+    raw = (path / 'stat').read_text()
+    prefix, separator, rest = raw.rpartition(') ')
+    fields = rest.split()
+    if not separator or prefix.split(' ', 1)[0] != str(pid) or len(fields) < 20:
+        raise Deferred(reason)
+    try:
+        values = [int(fields[i]) for i in (1, 2, 3, 4, 5, 19)]
+    except ValueError:
+        raise Deferred(reason) from None
+    return dict(zip(('ppid', 'pgrp', 'sid', 'tty', 'foreground', 'starttime'), values),
+                pid=pid, uid=path.stat().st_uid)
+
+
+def proc_executable(pid):
+    value = os.readlink('/proc/' + str(pid) + '/exe')
+    entry = os.stat('/proc/' + str(pid) + '/exe')
+    return {'path': value, 'device': entry.st_dev, 'inode': entry.st_ino,
+            'uid': entry.st_uid, 'mode': entry.st_mode, 'mtime': entry.st_mtime_ns}
+
+
 def management_process_proof():
     """Prove this Python is the sole foreground job of a system shell on Linux.
 
@@ -182,26 +206,9 @@ def management_process_proof():
         raise Deferred('management-process-unsupported')
 
     def process(pid):
-        path = Path('/proc') / str(pid)
-        # FileNotFoundError is meaningful only for an unrelated process which
-        # exited during the group scan. Permission and malformed data are errors.
-        raw = (path / 'stat').read_text()
-        prefix, separator, rest = raw.rpartition(') ')
-        fields = rest.split()
-        if not separator or prefix.split(' ', 1)[0] != str(pid) or len(fields) < 20:
-            raise Deferred('management-process-unverifiable')
-        try:
-            values = [int(fields[i]) for i in (1, 2, 3, 4, 5, 19)]
-        except ValueError:
-            raise Deferred('management-process-unverifiable') from None
-        return dict(zip(('ppid', 'pgrp', 'sid', 'tty', 'foreground', 'starttime'), values),
-                    pid=pid, uid=path.stat().st_uid)
+        return proc_process(pid, 'management-process-unverifiable')
 
-    def executable(pid):
-        value = os.readlink('/proc/' + str(pid) + '/exe')
-        entry = os.stat('/proc/' + str(pid) + '/exe')
-        return {'path': value, 'device': entry.st_dev, 'inode': entry.st_ino,
-                'uid': entry.st_uid, 'mode': entry.st_mode, 'mtime': entry.st_mtime_ns}
+    executable = proc_executable
 
     try:
         helper = process(os.getpid())
@@ -240,6 +247,92 @@ def management_process_proof():
                 'parentExecutable': parent_exe}
     except (OSError, ValueError, IndexError):
         raise Deferred('management-process-unverifiable') from None
+
+
+def target_shell_process_proof(identity):
+    """Prove a local empty zsh job, independently of the caller helper proof.
+
+    Only the pane key is retained from proc environ. Nothing in this proof is
+    durable authority, and a process name or prompt alone is never evidence.
+    """
+    failure = 'target-shell-process-unverifiable'
+    if sys.platform != 'linux' or identity['executionHostId'] != 'local':
+        raise Deferred('target-shell-process-unsupported')
+    zsh_paths = {str(Path(path).resolve()) for path in ('/bin/zsh', '/usr/bin/zsh')}
+    shell_paths = zsh_paths | {str(Path(path).resolve()) for path in
+                              ('/bin/bash', '/usr/bin/bash', '/bin/dash', '/usr/bin/dash')}
+
+    def observation():
+        processes, candidates = [], []
+        for entry in Path('/proc').iterdir():
+            if not entry.name.isdecimal():
+                continue
+            try:
+                process = proc_process(int(entry.name), failure)
+            except FileNotFoundError:
+                continue
+            processes.append(process)
+            if (process['uid'] != os.getuid() or process['sid'] != process['pid']
+                    or process['tty'] == 0):
+                continue
+            try:
+                executable = proc_executable(process['pid'])
+                if executable['path'] not in shell_paths or executable['uid'] != 0:
+                    continue
+                with (entry / 'environ').open('rb') as stream:
+                    environment = stream.read(1024 * 1024 + 1)
+                if len(environment) > 1024 * 1024:
+                    raise Deferred(failure)
+                keys = [value for value in environment.split(b'\0') if value.startswith(b'ORCA_PANE_KEY=')]
+                expected_key = b'ORCA_PANE_KEY=' + pane(identity).encode()
+                if expected_key in keys and keys != [expected_key]:
+                    raise Deferred(failure)
+                if keys != [expected_key]:
+                    continue
+                cwd = os.readlink(str(entry / 'cwd'))
+            except FileNotFoundError:
+                # A disappearing same-UID session leader cannot be silently
+                # excluded from the uniqueness proof.
+                raise Deferred(failure) from None
+            candidates.append({'shell': process, 'executable': executable,
+                               'cwd': cwd, 'pane': pane(identity)})
+        if len(candidates) != 1:
+            raise Deferred(failure)
+        proof = candidates[0]
+        shell, executable = proof['shell'], proof['executable']
+        if (shell['pid'] != shell['pgrp'] or shell['pid'] != shell['foreground']
+                or shell['tty'] == 0 or shell['starttime'] <= 0
+                or proof['cwd'] != identity['worktreePath']
+                or executable['path'] not in zsh_paths
+                or executable['uid'] != 0 or not stat.S_ISREG(executable['mode'])
+                or executable['mode'] & (stat.S_IWGRP | stat.S_IWOTH)):
+            raise Deferred(failure)
+        members = sorted((p for p in processes if p['pgrp'] == shell['pgrp']), key=lambda p: p['pid'])
+        if members != [shell]:
+            raise Deferred(failure)
+        # Reread the chosen process after the complete group/uniqueness scan.
+        if (proc_process(shell['pid'], failure) != shell
+                or proc_executable(shell['pid']) != executable
+                or os.readlink('/proc/' + str(shell['pid']) + '/cwd') != proof['cwd']):
+            raise Deferred('target-shell-process-changed')
+        return proof
+
+    try:
+        before = observation()
+        if observation() != before:
+            raise Deferred('target-shell-process-changed')
+        return before
+    except (OSError, ValueError, IndexError):
+        raise Deferred(failure) from None
+
+
+def target_shell_check(client, target):
+    proof = getattr(client, 'target_shell_proof', None)
+    if proof is None:
+        return
+    if proof['identity'] != target['identity']:
+        raise Deferred('target-shell-proof-changed')
+    shell_guard(client, proof['plan'], target, proof['normalExit'])
 
 
 def management_observation(client, self_pane, terms, ps):
@@ -734,6 +827,8 @@ def resume_command(provider, native, *, installed_version):
         raise Deferred('native-identity-unknown') from None
     if mode == 'codex-full-access':
         args = ['codex', 'resume', ident, '--dangerously-bypass-approvals-and-sandbox']
+        if installed_version == '0.172.0':
+            args.extend(['--no-alt-screen', 'Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.'])
     else:
         args = ['claude', '--dangerously-skip-permissions', '--resume', ident]
     return shlex.join(args)
@@ -881,8 +976,12 @@ def passive_guard(client, plan, target, self_pane, modal=False):
 
 def send(client, journal, target, text, phase):
     # Persist before calling the transport. Crash/timeout means no automatic resend.
+    if phase == 'exact-resume':
+        target_shell_check(client, target)
     management_self_check(client, process_only=True)
     journal.record('sending', handle=target['handle'], step=phase)
+    if phase == 'exact-resume':
+        target_shell_check(client, target)
     management_self_check(client, process_only=True)
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', text, '--enter')
     receipt = obj(result.get('send'))
@@ -894,6 +993,8 @@ def send(client, journal, target, text, phase):
     if prompt is not None and obj(prompt).get('processIncarnation') != target['identity']['incarnationId']:
         raise Deferred('send-incarnation-mismatch')
     journal.record('accepted', handle=target['handle'], step=phase, requestId=request)
+    if phase == 'exact-resume':
+        client.target_shell_proof = None
     return result
 
 
@@ -953,10 +1054,24 @@ def shell_guard(client, plan, target, normal_exit):
     if read.get('draft') not in (None, ''):
         raise Deferred('draft')
     shell_prompt = r'[^\n]*' + re.escape(target['identity']['worktreePath']) + r'[$#]'
-    if not re.fullmatch(shell_prompt, text.splitlines()[-1] if text else ''):
+    final = text.splitlines()[-1] if text else ''
+    process_proof = None
+    if final == '❯':
+        if getattr(client, 'remote_configured', False) or getattr(client, 'environment', None):
+            raise Deferred('target-shell-process-unsupported')
+        for inventory in (ts, ps):
+            if (inventory.get('truncated') is not False
+                    or 'local' not in obj(inventory.get('hostScope')).get('hostIds', [])):
+                raise Deferred('inventory-incomplete')
+        if sum(pane(term) == pane(t) for term in array(ts.get('terminals'))) != 1:
+            raise Deferred('target-changed')
+        process_proof = target_shell_process_proof(target['identity'])
+    elif not re.fullmatch(shell_prompt, final):
         raise Deferred('shell-unconfirmed')
     for w in array(ps.get('worktrees')):
         for a in array(w.get('agents', [])):
+            if process_proof is not None and a.get('parentPaneKey') == pane(t):
+                raise Deferred('shell-unconfirmed')
             if a.get('paneKey') != pane(t):
                 continue
             if (a.get('state') not in ('done', 'idle') or a.get('children') or a.get('subagents') or
@@ -986,6 +1101,18 @@ def shell_guard(client, plan, target, normal_exit):
         raise Deferred('shell-unconfirmed')
 
     management_self_check(client, process_only=True)
+    proof = None
+    if process_proof is not None:
+        if target_shell_process_proof(target['identity']) != process_proof or client.runtime != plan['runtimeId']:
+            raise Deferred('target-shell-process-changed')
+        proof = {'identity': dict(target['identity']), 'process': process_proof,
+                 'plan': {'runtimeId': plan['runtimeId'], 'selfPane': plan['selfPane']},
+                 'normalExit': dict(normal_exit)}
+    previous = getattr(client, 'target_shell_proof', None)
+    if previous is not None and proof != previous:
+        raise Deferred('target-shell-proof-changed')
+    if proof is not None:
+        client.target_shell_proof = proof
     return t
 
 
@@ -1081,6 +1208,62 @@ def current_status_response(provider, text):
     if other_command:
         raise Deferred('native-response-boundary-changed')
     return '\n'.join(lines[start:])
+
+
+def codex_status_stream_text(fresh, previous, current, proved_response):
+    """Remove one exact native autocomplete rendering only after screen proof.
+
+    Orca's ANSI-stripped stream can flatten the /status completion popup and
+    composer into one line. This is UI, not a submitted /statusline command.
+    Match the official 0.172.0 captions, exact /status composer and an observed
+    footer prefix. Unknown lines and actual subsequent commands remain intact.
+    """
+    identity = codex_screen_identity(proved_response)
+    if identity['nativeVersion'] != '0.172.0':
+        return fresh
+    models = re.findall(r'^[ \t]*Model:[ \t]*([A-Za-z0-9][A-Za-z0-9_.-]*)'
+                        r'(?:[ \t]+\([^\r\n]*\))?[ \t]*$', proved_response, re.MULTILINE)
+    if len(models) != 1:
+        return fresh
+    directories = {identity['cwd']}
+    home = str(Path.home())
+    if identity['cwd'] == home:
+        directories.add('~')
+    elif identity['cwd'].startswith(home + '/'):
+        directories.add('~' + identity['cwd'][len(home):])
+    compact = lambda value: re.sub(r'[ \t]+', ' ', value.strip(' \t'))
+    popup = ('› /status show current session configuration and token usage '
+             '/statusline configure which items appear in the status line › /status ')
+    allowed = set()
+    idle = ('›', '› Ask Codex to do anything')
+    for text in (previous, current):
+        lines = text.splitlines()
+        prompts = [i for i, line in enumerate(lines) if line.strip() in idle]
+        if not prompts:
+            continue
+        footer = [line for line in lines[prompts[-1]+1:] if line.strip()]
+        if not 1 <= len(footer) <= 2:
+            continue
+        first = compact(footer[0])
+        prefixes = [models[0] + ' default · ' + directory + ' · ' for directory in directories]
+        matching = [prefix for prefix in prefixes if first.startswith(prefix)]
+        if len(matching) != 1:
+            continue
+        prefix = matching[0]
+        title = first[len(prefix):]
+        if (not title or len(title) > 512
+                or re.search(r'[\x00-\x1f\x7f›❯]', title)
+                or len(footer) == 2 and compact(footer[1]) != '← for agents · ? for shortcuts'):
+            continue
+        for end in range(1, len(footer)+1):
+            allowed.add(popup + compact(' '.join(footer[:end])))
+    lines = fresh.splitlines()
+    visible = [i for i, line in enumerate(lines) if line.strip()]
+    if (len(visible) < 3 or compact(lines[visible[0]]) not in allowed
+            or lines[visible[1]].strip() != '/status'
+            or lines[visible[2]].strip() != '>_ OpenAI Codex (v0.172.0)'):
+        return fresh
+    return '\n'.join(line for i, line in enumerate(lines) if i != visible[0])
 
 
 def codex_screen_status(previous, current):
@@ -1246,7 +1429,11 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
     if cursor is None:
         raise Deferred('native-response-freshness-unknown')
     previous_text = screen(previous)
-    send(client, journal, target, command, phase)
+    wire_command = command
+    if (target['provider'] == 'codex' and command == '/status'
+            and codex_versions(previous_text)[-1:] == ['0.172.0']):
+        wire_command += ' '
+    send(client, journal, target, wire_command, phase)
     wait_idle(client, target)
     if target['provider'] == 'claude':
         marker = '❯ ' + command
@@ -1382,6 +1569,7 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
                     raise Deferred('native-response-output-unknown')
                 fresh = '\n'.join(tail)
                 if screen_fresh is not None:
+                    fresh = codex_status_stream_text(fresh, previous_text, screen(current), screen_fresh)
                     # Even an unchanged cursor must expose a well-formed stream
                     # read. Empty/partial identity is permitted only because the
                     # screen independently proved a new complete boundary.
@@ -1635,6 +1823,7 @@ def validate_plan(plan):
 
 
 def apply(client, plan, self_pane, journal_root):
+    client.target_shell_proof = None
     validate_plan(plan)
     if getattr(client, 'remote_configured', False) or client.environment or plan.get('environment') or plan.get('remoteConfigured') or any(t['identity']['executionHostId'] != 'local' for t in plan['targets']):
         raise Deferred('remote-apply-delegate-to-host-session')

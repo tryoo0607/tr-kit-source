@@ -5,6 +5,7 @@ import importlib.util
 import json
 import io
 import os
+import shlex
 from pathlib import Path
 import tempfile
 import stat
@@ -21,6 +22,7 @@ spec.loader.exec_module(m)
 SESSION = '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'
 CODEX_RESUME = 'codex resume '
 CODEX_OPTION = ' --dangerously-bypass-approvals-and-sandbox'
+READINESS_PROMPT = 'Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.'
 CLAUDE_RESUME = 'claude --dangerously-skip-permissions --resume '
 INSTALL = {'state': 'observed', 'plugins': [{'id': 'owned@test', 'scope': 'user', 'version': '1.0'}]}
 
@@ -102,6 +104,9 @@ class Fake:
                 raise m.Deferred(self.fail)
             h = args[args.index('--terminal')+1]
             command = args[args.index('--text')+1]
+            if self.terms[h]['agentIdentity'] == 'codex' and self.codex_version == '0.172.0':
+                # Native composer trims submissions; self.sent retains wire bytes.
+                command = command.strip()
             frame = self.frames[h]
             frame['latestCursor'] = str(int(frame['latestCursor']) + 1)
             if command == '/status':
@@ -226,6 +231,85 @@ class Restart(unittest.TestCase):
 
     def texts(self):
         return [a[a.index('--text')+1] for a in self.client.sent]
+
+    def glyph_exit(self):
+        original = self.client.call
+        def call(*args):
+            result = original(*args)
+            if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/exit':
+                self.client.frames['term_target']['tail'] = ['NAS prompt context', '❯']
+            return result
+        self.client.call = call
+
+    def test_glyph_restart_preserves_exact_identity_once_and_clears_ephemeral_proof(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        self.glyph_exit()
+        self.client.target_shell_proof = {'stale': 'previous invocation'}
+        with patch.object(m.rr, 'target_shell_process_proof', return_value={'owned-zsh': 'fixed'}):
+            row = self.execute(ident)['targets'][0]
+            self.assertEqual('restarted', row['state'])
+            self.assertEqual(['/status', '/exit', CODEX_RESUME+SESSION+CODEX_OPTION, '/status'], self.texts())
+            self.assertIsNone(self.client.target_shell_proof)
+            self.assertEqual('already-running', self.execute(ident)['targets'][0]['state'])
+        batch = self.load(ident)
+        row = batch['targets'][0]
+        self.assertEqual(SESSION, row['nativeObserved']['sessionId'])
+        self.assertEqual('/work', row['nativeObserved']['cwd'])
+        self.assertEqual('Full Access', row['nativeObserved']['permissions'])
+        self.assertEqual('codex-full-access', row['nativeObserved']['resumeMode'])
+        self.assertEqual(1, self.texts().count('/exit'))
+        self.assertEqual(1, self.texts().count(CODEX_RESUME+SESSION+CODEX_OPTION))
+        self.assertEqual([], self.client.created)
+        self.assertNotIn('owned-zsh', json.dumps(batch))
+        self.assertNotIn('target_shell_proof', json.dumps(batch))
+
+    def test_glyph_process_refusal_retains_failed_attempt_and_never_resumes_or_creates(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        self.glyph_exit()
+        with patch.object(m.rr, 'target_shell_process_proof', side_effect=m.Deferred('target-shell-process-unverifiable')):
+            row = self.execute(ident)['targets'][0]
+        self.assertEqual('failed', row['state'])
+        self.assertEqual('target-shell-process-unverifiable', row['reason'])
+        self.assertEqual(['/status', '/exit'], self.texts())
+        batch = self.load(ident)
+        self.assertEqual('uncertain', batch['targets'][0]['attempt']['state'])
+        self.assertTrue(any(e['phase'] == 'stopped' and e['reason'] == row['reason'] for e in batch['events']))
+        self.assertFalse(any(e['phase'] == 'sending' and e.get('step') == 'exact-resume' for e in batch['events']))
+        self.assertEqual([], self.client.created)
+
+    def test_glyph_drift_across_exit_record_and_durable_resume_refuses_single_transport(self):
+        for boundary in ('native-exit-observed', 'sending'):
+            for drift in ('process', 'pane', 'draft', 'runtime', 'installation'):
+                with self.subTest(boundary=boundary, drift=drift), tempfile.TemporaryDirectory() as folder:
+                    self.root = Path(folder) / 'state'
+                    self.client = Fake()
+                    ident = self.prepare()
+                    self.client.sent.clear()
+                    self.glyph_exit()
+                    process = {'generation': 1}
+                    record = m.Recorder.record
+                    def durable(recorder, event, **values):
+                        result = record(recorder, event, **values)
+                        if event == boundary and (boundary != 'sending' or values.get('step') == 'exact-resume'):
+                            if drift == 'process': process['generation'] = 2
+                            elif drift == 'pane': self.client.terms['term_target']['leafId'] = 'other'
+                            elif drift == 'draft': self.client.frames['term_target']['draft'] = 'typed'
+                            elif drift == 'runtime': self.client.runtime = 'changed'
+                            else: self.client.installed_codex_version = '0.172.0'
+                        return result
+                    with patch.object(m.rr, 'target_shell_process_proof', side_effect=lambda identity: copy.deepcopy(process)), \
+                         patch.object(m.Recorder, 'record', new=durable):
+                        row = self.execute(ident)['targets'][0]
+                    self.assertEqual('failed', row['state'])
+                    self.assertEqual(['/status', '/exit'], self.texts())
+                    self.assertEqual([], self.client.created)
+                    batch = self.load(ident)
+                    sends = [e for e in batch['events'] if e['phase'] == 'sending' and e.get('step') == 'exact-resume']
+                    self.assertEqual(1 if boundary == 'sending' else 0, len(sends))
+                    self.assertEqual('uncertain', batch['targets'][0]['attempt']['state'])
+                    self.assertEqual('stopped', batch['events'][-1]['phase'])
 
     def management_batch(self):
         own = self.client.terms['term_self']
@@ -624,8 +708,17 @@ class Restart(unittest.TestCase):
                         self.assertEqual(original_native[field], observed[field])
                     self.assertEqual(original_native, self.load(ident)['targets'][0]['native'])
                     self.assertEqual(1 if mode == 'restore' else 0, len(self.client.created))
+                    def launches():
+                        return ([args[args.index('--command')+1] for args in self.client.created]
+                                + [text for text in self.texts() if text.startswith(CODEX_RESUME)])
+                    self.assertEqual([['codex', 'resume', SESSION,
+                        '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen',
+                        READINESS_PROMPT]], [shlex.split(command) for command in launches()])
                     self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+                    self.assertEqual('/status ', self.texts()[-1])
                     self.assertEqual(1 if mode == 'restore' else 0, len(self.client.created))
+                    self.assertEqual(1, len(launches()))
+                    self.assertNotIn(READINESS_PROMPT, self.texts())
 
     def test_owned_restore_can_verify_and_repeat_without_duplicate_or_reusing_changed_identity(self):
         for provider in ('codex', 'claude'):
@@ -666,6 +759,7 @@ class Restart(unittest.TestCase):
         self.assertEqual(1, len(self.client.created))
 
     def test_owned_restore_persistent_child_unknown_stops_without_status_or_second_create(self):
+        self.client.installed_codex_version = '0.172.0'
         ident = self.prepare()
         self.client.remove('term_target')
         self.client.sent.clear()
@@ -678,6 +772,15 @@ class Restart(unittest.TestCase):
         sleep.assert_called_once_with(0.2)
         self.assertEqual([], self.client.sent)
         self.assertEqual(1, len(self.client.created))
+        self.assertEqual(['codex', 'resume', SESSION,
+            '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', READINESS_PROMPT],
+            shlex.split(self.client.created[0][self.client.created[0].index('--command')+1]))
+        failed = self.load(ident)
+        repeated = self.execute(ident, 'restore')['targets'][0]
+        self.assertEqual('unresolved-attempt-verify-before-any-recovery', repeated['reason'])
+        self.assertEqual(1, len(self.client.created))
+        self.assertEqual([], self.client.sent)
+        self.assertEqual(failed['targets'][0]['attempt'], self.load(ident)['targets'][0]['attempt'])
 
     def test_owned_restore_readiness_never_retries_other_safety_guards(self):
         for reason in ('child-work', 'busy-or-state-unknown', 'approval-or-wait', 'approval-or-menu', 'draft'):

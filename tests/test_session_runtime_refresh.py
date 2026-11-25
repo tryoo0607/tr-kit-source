@@ -311,6 +311,86 @@ class RuntimeRefreshTests(unittest.TestCase):
             with self.assertRaises(m.Deferred):
                 m.shell_guard(self.client, self.plan, self.plan['targets'][0], {'cursor': '10', 'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'})
 
+    def glyph_shell(self):
+        self.client.read['tail'] = ['NAS prompt context', '❯']
+        inventory = self.client.inventory
+        def complete():
+            ts, ps = inventory()
+            ps.update(truncated=False, hostScope={'hostIds': ['local']})
+            return ts, ps
+        self.client.inventory = complete
+        return self.plan['targets'][0], {'cursor': '10', 'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'}
+
+    def test_glyph_shell_requires_fixed_process_and_fresh_exit_proof(self):
+        target, evidence = self.glyph_shell()
+        with patch.object(m, 'target_shell_process_proof', return_value={'generation': 1}):
+            m.shell_guard(self.client, self.plan, target, evidence)
+            self.assertEqual({'generation': 1}, self.client.target_shell_proof['process'])
+            m.shell_guard(self.client, self.plan, target, evidence)
+            with patch.object(self.client, 'call', return_value={'terminal': {'source': 'stream', 'tail': []}}):
+                with self.assertRaisesRegex(m.Deferred, 'shell-unconfirmed'):
+                    m.shell_guard(self.client, self.plan, target, evidence)
+            self.assertEqual([], self.client.sent)
+        with patch.object(m, 'target_shell_process_proof', return_value={'generation': 2}):
+            with self.assertRaisesRegex(m.Deferred, 'target-shell-proof-changed'):
+                m.shell_guard(self.client, self.plan, target, evidence)
+
+    def test_glyph_false_prompt_and_live_agent_matrix_never_sends(self):
+        for unsafe in ('typed', 'draft', 'repl', 'child', 'parent', 'child-pane', 'duplicate-pane', 'wait', 'busy', 'remote', 'incomplete'):
+            with self.subTest(unsafe=unsafe):
+                self.client = Fake()
+                target, evidence = self.glyph_shell()
+                if unsafe == 'typed': self.client.read['tail'][-1] = '❯ command'
+                elif unsafe == 'draft': self.client.read['draft'] = 'secret'
+                elif unsafe == 'repl': self.client.read['tail'][-1] = '>>> '
+                elif unsafe == 'child': self.client.agents[1]['children'] = [{'state': 'running'}]
+                elif unsafe == 'parent': self.client.agents[1]['parentPaneKey'] = 'tab:other'
+                elif unsafe == 'child-pane':
+                    self.client.agents.append({'paneKey': 'tab:child', 'parentPaneKey': 'tab:target'})
+                elif unsafe == 'duplicate-pane':
+                    inventory = self.client.inventory
+                    def duplicate():
+                        ts, ps = inventory()
+                        ts['terminals'].append(terminal('term_duplicate'))
+                        return ts, ps
+                    self.client.inventory = duplicate
+                elif unsafe == 'wait': self.client.target['agentWait'] = {'kind': 'approval'}
+                elif unsafe == 'busy': self.client.agents[1]['programStatus']['state'] = 'running'
+                elif unsafe == 'remote': self.client.environment = 'remote'
+                else:
+                    inventory = self.client.inventory
+                    def incomplete():
+                        ts, ps = inventory()
+                        ps['truncated'] = True
+                        return ts, ps
+                    self.client.inventory = incomplete
+                with patch.object(m, 'target_shell_process_proof', return_value={'fixed': True}):
+                    with self.assertRaises(m.Deferred):
+                        m.shell_guard(self.client, self.plan, target, evidence)
+                self.assertEqual([], self.client.sent)
+                self.assertIsNone(getattr(self.client, 'target_shell_proof', None))
+
+    def test_glyph_resume_rechecks_durable_write_and_retains_sending_without_transport(self):
+        target, evidence = self.glyph_shell()
+        process = {'generation': 1}
+        journal = Mock()
+        with patch.object(m, 'target_shell_process_proof', side_effect=lambda identity: copy.deepcopy(process)):
+            m.shell_guard(self.client, self.plan, target, evidence)
+            def durable(*args, **kwargs):
+                process['generation'] = 2
+            journal.record.side_effect = durable
+            with self.assertRaisesRegex(m.Deferred, 'target-shell-proof-changed'):
+                m.send(self.client, journal, target, 'codex resume exact', 'exact-resume')
+        self.assertEqual([], self.client.sent)
+        journal.record.assert_called_once_with('sending', handle=target['handle'], step='exact-resume')
+
+    def test_legacy_absolute_shell_does_not_require_target_process_probe(self):
+        for suffix in ('$', '#'):
+            self.client.read['tail'] = ['user@host:/work' + suffix]
+            with patch.object(m, 'target_shell_process_proof', side_effect=AssertionError('legacy branch')):
+                m.shell_guard(self.client, self.plan, self.plan['targets'][0],
+                              {'cursor': '10', 'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'})
+
     def test_native_status_metadata_and_hostile_input(self):
         text = 'Session: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\nDirectory: /work\nPermissions: Full Access\n'
         self.assertEqual('/work', m.status('codex', text)['cwd'])
@@ -495,6 +575,205 @@ class RuntimeRefreshTests(unittest.TestCase):
         for name, (previous, current) in cases.items():
             with self.subTest(name=name):
                 client = self.screen_only_codex(previous, current)
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
+    def popup_pair(self, cwd='/work', displayed_cwd=None):
+        before, after = codex_screen_pair(cwd)
+        before = [line.replace('v0.167.2', 'v0.172.0') for line in before]
+        after = [line.replace('v0.167.2', 'v0.172.0') for line in after]
+        before = [line.replace('fixture-line-5', '  Model: GPT-6.2-Sol (reasoning low, summaries auto)') for line in before]
+        after = [line.replace('fixture-line-5', '  Model: GPT-6.2-Sol (reasoning low, summaries auto)') for line in after]
+        footer = ['  GPT-6.2-Sol default · '+(displayed_cwd or cwd)+' · fixture',
+                  '  ← for agents · ? for shortcuts']
+        before[-2:] = footer
+        after[-2:] = footer
+        popup = (' › /status      show current session configuration and token usage '
+                 ' /statusline configure which items appear in the status line '
+                 '› /status '+footer[0])
+        return before, after, popup
+
+    def test_codex_01720_exact_autocomplete_repaint_and_known_footer_is_not_a_command(self):
+        for cursor in ('10', '11'):
+            for hints in (False, True):
+                with self.subTest(cursor=cursor, hints=hints):
+                    before, after, popup = self.popup_pair()
+                    if hints:
+                        popup += ' ← for agents · ? for shortcuts'
+                    stream = {'source': 'stream', 'tail': ['', popup, *after[7:-3]]}
+                    client = self.screen_only_codex(before, after, stream=stream, cursor=cursor)
+                    native = self.run_screen_status(client)
+                    self.assertEqual('11111111-1111-4111-8111-111111111111', native['sessionId'])
+                    self.assertEqual('0.172.0', native['nativeVersion'])
+                    self.assertEqual(1, len(client.sent))
+                    self.assertEqual('/status ', client.sent[0][client.sent[0].index('--text')+1])
+
+    def test_status_wire_space_requires_latest_visible_01720_and_keeps_legacy_input(self):
+        for version in ('0.167.1', '0.167.2', '0.171.0', '0.172.0'):
+            with self.subTest(version=version):
+                before, after = codex_screen_pair()
+                before = [line.replace('0.167.2', version) for line in before]
+                after = [line.replace('0.167.2', version) for line in after]
+                # Historical01720 must not override a later supported header.
+                before.insert(0, '>_ OpenAI Codex (v0.172.0)')
+                client = self.screen_only_codex(before, after)
+                self.run_screen_status(client)
+                self.assertEqual(['/status ' if version == '0.172.0' else '/status'],
+                    [args[args.index('--text')+1] for args in client.sent])
+        # An installed172 or fresh172 reply cannot stand in for the pre-send header.
+        _, after, _ = self.popup_pair()
+        client = self.screen_only_codex(['›'], after,
+            stream={'source': 'stream', 'tail': after[7:-3]}, cursor='11')
+        self.run_screen_status(client)
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_status_wire_space_leaves_other_commands_and_claude_unchanged(self):
+        before, _, _ = self.popup_pair()
+        client = self.screen_only_codex(before, ['done', '›'],
+            stream={'source': 'stream', 'tail': ['done']}, cursor='11')
+        m.native_query(client, self.plan, self.plan['targets'][0], self.self_pane,
+                       Mock(), '/help', 'help')
+        self.assertEqual(['/help'], [args[args.index('--text')+1] for args in client.sent])
+        client = ClaudeFake()
+        plan = m.inspect(client, self.self_pane)
+        m.native_status(client, plan, plan['targets'][1], self.self_pane, Mock())
+        self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_status_wire_space_preserves_typed_input_and_draft_refusals(self):
+        before, after, _ = self.popup_pair()
+        for kind in ('typed-other', 'draft'):
+            with self.subTest(kind=kind):
+                previous = [*before[:-3], '› do other work', *before[-2:]] if kind == 'typed-other' else before
+                client = self.screen_only_codex(previous, after)
+                if kind == 'draft':
+                    client.read['draft'] = 'unfinished'
+                with self.assertRaisesRegex(m.Deferred, '^draft$'):
+                    self.run_screen_status(client)
+                self.assertEqual([], client.sent)
+
+    def test_status_wire_space_preserves_receipts_and_timeout_single_send(self):
+        before, after, _ = self.popup_pair()
+        for failure in ('rejected', 'missing-request', 'missing-mutation', 'timeout'):
+            with self.subTest(failure=failure):
+                client = self.screen_only_codex(before, after)
+                original = client.call
+                def call(*args):
+                    result = original(*args)
+                    if args[:2] == ('terminal', 'send'):
+                        if failure == 'timeout':
+                            raise m.Deferred('cli-unavailable-or-timeout')
+                        response = {'send': {'accepted': failure != 'rejected'}}
+                        if failure != 'missing-mutation':
+                            response['mutation'] = {} if failure == 'missing-request' else {'requestId': 'request'}
+                        return response
+                    return result
+                client.call = call
+                expected = ('cli-unavailable-or-timeout' if failure == 'timeout'
+                            else 'invalid-json-shape' if failure == 'missing-mutation'
+                            else 'send-receipt-unknown')
+                with self.assertRaisesRegex(m.Deferred, '^'+expected+'$'):
+                    self.run_screen_status(client)
+                self.assertEqual(['/status '], [args[args.index('--text')+1] for args in client.sent])
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
+    def test_codex_01720_popup_footer_uses_receiver_home_abbreviation_only(self):
+        home = Path('/receiver/home')
+        with patch.object(m.Path, 'home', return_value=home):
+            for cwd, shown in ((str(home), '~'), (str(home/'project'), '~/project'),
+                               (str(home/'project'), str(home/'project'))):
+                with self.subTest(cwd=cwd, shown=shown):
+                    before, after, popup = self.popup_pair(cwd, shown)
+                    fresh = '\n'.join([popup, *after[7:-3]])
+                    response = '\n'.join(after[8:-3])
+                    self.assertEqual('\n'.join(after[7:-3]), m.codex_status_stream_text(
+                        fresh, '\n'.join(before), '\n'.join(after), response))
+            for cwd, shown in (('/receiver/home-other/project', '~/project'),
+                               ('/other/project', '~/project'), (str(home), '~/')):
+                with self.subTest(cwd=cwd, shown=shown):
+                    before, after, popup = self.popup_pair(cwd, shown)
+                    fresh = '\n'.join([popup, *after[7:-3]])
+                    self.assertEqual(fresh, m.codex_status_stream_text(
+                        fresh, '\n'.join(before), '\n'.join(after), '\n'.join(after[8:-3])))
+
+    def test_codex_01720_autocomplete_filter_never_hides_other_commands_or_unknown_ui(self):
+        before, after, popup = self.popup_pair()
+        cases = {
+            'changed-caption': [popup.replace('show current session', 'unknown caption')],
+            'changed-menu-command': [popup.replace('/statusline', '/help')],
+            'changed-composer': [popup.replace('› /status  ', '› /help  ')],
+            'unknown-footer': [popup.replace('fixture', 'other title')],
+            'changed-default': [popup.replace('default ·', 'fast ·')],
+            'empty-title': [popup.replace('fixture', '')],
+            'missing-composer': [popup.replace('› /status   GPT', 'GPT')],
+            'actual-help': [popup, '/help'],
+            'actual-user-message': [popup, '› do different work'],
+            'prefixed-command': ['› /help '+popup],
+            'ansi-control': ['\x1b[31m'+popup],
+            'duplicate-popup': [popup, popup],
+            'later-popup': ['previous output', popup],
+            'typed-identical-menu-text': ['› '+popup.strip()],
+            'typed-status-with-invalid-arguments': [popup, 'Unknown arguments for /status'],
+        }
+        for name, prefix in cases.items():
+            with self.subTest(name=name):
+                client = self.screen_only_codex(before, after,
+                    stream={'source': 'stream', 'tail': [*prefix, *after[7:-3]]}, cursor='11')
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+                self.assertEqual(1, len(client.sent))
+                self.assertNotIn('nativeProof', self.plan['targets'][0])
+
+    def test_codex_01720_popup_requires_model_cwd_and_known_footer_structure(self):
+        before, after, popup = self.popup_pair()
+        for old, new in (('GPT-6.2-Sol default · /work', 'GPT-6.2-Sol default · /other'),
+                         ('GPT-6.2-Sol default', 'OtherModel default'),
+                         ('← for agents · ? for shortcuts', '› unrelated footer command')):
+            with self.subTest(changed=new):
+                previous = [line.replace(old, new) for line in before]
+                current = [line.replace(old, new) for line in after]
+                changed_popup = popup.replace(old, new)
+                client = self.screen_only_codex(previous, current,
+                    stream={'source': 'stream', 'tail': [changed_popup, *current[7:-3]]}, cursor='11')
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+
+    def test_codex_01720_popup_never_strips_matching_row_from_response_body(self):
+        before, after, popup = self.popup_pair()
+        response = '\n'.join(after[8:-3])
+        for prefix in ('/status\n', 'ordinary output\n'):
+            text = prefix+popup+'\n/status\n'+response
+            self.assertEqual(text, m.codex_status_stream_text(text, '\n'.join(before),
+                                                           '\n'.join(after), response))
+
+    def test_codex_01720_autocomplete_needs_independent_screen_proof_and_supported_version(self):
+        before, after, popup = self.popup_pair()
+        for version in ('0.167.2', '0.171.0'):
+            with self.subTest(version=version):
+                old_before = [line.replace('0.172.0', version) for line in before]
+                old_after = [line.replace('0.172.0', version) for line in after]
+                client = self.screen_only_codex(old_before, old_after,
+                    stream={'source': 'stream', 'tail': [popup, *old_after[7:-3]]}, cursor='11')
+                with self.assertRaises(m.Deferred):
+                    self.run_screen_status(client)
+        with self.assertRaises(m.Deferred):
+            m.codex_status_stream_text(popup, '\n'.join(before), '\n'.join(after), '')
+
+    def test_codex_01720_popup_cannot_supply_screen_freshness_or_identity(self):
+        before, after, popup = self.popup_pair()
+        for name, current in {
+            'unchanged': before,
+            'missing-session': [line for line in after if 'Session:' not in line],
+            'wrong-current-cwd': [line.replace('Directory:           /work',
+                                               'Directory:           /other') for line in after],
+            'wrong-current-uuid': [line.replace('11111111-1111-4111-8111-111111111111',
+                '22222222-2222-4222-8222-222222222222') if i > 7 else line
+                for i, line in enumerate(after)],
+        }.items():
+            with self.subTest(name=name):
+                client = self.screen_only_codex(before, current,
+                    stream={'source': 'stream', 'tail': [popup, *after[7:-3]]}, cursor='10')
                 with self.assertRaises(m.Deferred):
                     self.run_screen_status(client)
                 self.assertEqual(1, len(client.sent))
@@ -1052,8 +1331,7 @@ class RuntimeRefreshTests(unittest.TestCase):
             with self.subTest(permission=permission):
                 native = m.status('codex', header+'\n'+fields+permission)
                 if permission == 'Full Access':
-                    self.assertEqual('codex resume '+native['sessionId']+
-                                     ' --dangerously-bypass-approvals-and-sandbox',
+                    self.assertEqual(shlex.join(['codex', 'resume', native['sessionId'], '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', 'Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.']),
                                      m.resume_command('codex', native, installed_version='0.172.0'))
                 else:
                     with self.assertRaisesRegex(m.Deferred, 'native-resume-permissions-unverified'):
@@ -2478,6 +2756,135 @@ finally:
         self.assertIn('OWNED_BACKGROUND_OK', text)
         self.assertIn('OWNED_GROUP_REJECTED', text)
         self.assertNotIn('UNSAFE_ACCEPTED', text)
+
+
+class TargetShellProcessTests(unittest.TestCase):
+    @contextmanager
+    def proc_fixture(self):
+        uid = os.getuid()
+        rows = {40: dict(pid=40, ppid=1, pgrp=40, sid=40, tty=1234, foreground=40, starttime=90, uid=uid),
+                60: dict(pid=60, ppid=40, pgrp=60, sid=40, tty=1234, foreground=40, starttime=95, uid=uid)}
+        exes = {40: dict(path='/usr/bin/zsh', device=1, inode=40, uid=0, mode=0o100755, mtime=100)}
+        environments = {40: b'ORCA_PANE_KEY=tab:target\0PRIVATE_UNUSED=never-retained\0'}
+        cwds = {40: '/work'}
+        real_open, real_readlink = Path.open, os.readlink
+        def readlink(path):
+            value = str(path)
+            if value.startswith('/proc/') and value.endswith('/cwd'):
+                return cwds[int(value.split('/')[2])]
+            return real_readlink(path)
+        def process(pid, reason):
+            value = rows[pid]
+            if isinstance(value, Exception): raise value
+            return copy.deepcopy(value)
+        def environment(path, *args, **kwargs):
+            if path.parent.parent == Path('/proc') and path.name == 'environ':
+                value = environments[int(path.parent.name)]
+                if isinstance(value, Exception): raise value
+                return io.BytesIO(value)
+            return real_open(path, *args, **kwargs)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(m, 'proc_process', side_effect=process))
+            stack.enter_context(patch.object(m, 'proc_executable', side_effect=lambda pid: copy.deepcopy(exes[pid])))
+            stack.enter_context(patch.object(m.Path, 'iterdir', return_value=[Path('/proc') / str(pid) for pid in rows]))
+            stack.enter_context(patch.object(m.Path, 'open', autospec=True, side_effect=environment))
+            stack.enter_context(patch.object(m.os, 'readlink', side_effect=readlink))
+            yield rows, exes, environments, cwds
+
+    def test_exact_pane_cwd_system_zsh_sole_foreground_retains_no_environment(self):
+        with self.proc_fixture():
+            proof = m.target_shell_process_proof(m.fingerprint(terminal()))
+        self.assertEqual(40, proof['shell']['pid'])
+        self.assertEqual('/usr/bin/zsh', proof['executable']['path'])
+        self.assertEqual('/work', proof['cwd'])
+        self.assertNotIn('PRIVATE_UNUSED', json.dumps(proof))
+        self.assertNotIn('never-retained', json.dumps(proof))
+
+    def test_wrong_process_identity_foreground_executable_and_environment_matrix(self):
+        for unsafe in ('pane', 'duplicate-key', 'missing-key', 'environment-denied', 'cwd', 'uid',
+                       'tty', 'pgrp', 'sid', 'foreground', 'starttime', 'exe-path', 'exe-uid',
+                       'exe-mode', 'not-regular', 'member', 'duplicate', 'duplicate-bash', 'duplicate-dash',
+                       'duplicate-other-cwd', 'native-foreground', 'permission'):
+            with self.subTest(unsafe=unsafe), self.proc_fixture() as (rows, exes, environments, cwds):
+                if unsafe == 'pane': environments[40] = b'ORCA_PANE_KEY=tab:wrong\0'
+                elif unsafe == 'duplicate-key': environments[40] *= 2
+                elif unsafe == 'missing-key': environments[40] = b'OTHER=1\0'
+                elif unsafe == 'environment-denied': environments[40] = PermissionError()
+                elif unsafe == 'cwd': cwds[40] = '/elsewhere'
+                elif unsafe == 'uid': rows[40]['uid'] += 1
+                elif unsafe in ('tty', 'pgrp', 'sid', 'foreground', 'starttime'): rows[40][unsafe] = 0
+                elif unsafe == 'exe-path': exes[40]['path'] = '/tmp/zsh'
+                elif unsafe == 'exe-uid': exes[40]['uid'] = 1000
+                elif unsafe == 'exe-mode': exes[40]['mode'] |= 0o020
+                elif unsafe == 'not-regular': exes[40]['mode'] = 0o040755
+                elif unsafe == 'member': rows[60]['pgrp'] = 40
+                elif unsafe.startswith('duplicate'):
+                    rows[60].update(pid=60, pgrp=60, sid=60, foreground=60)
+                    exes[60] = copy.deepcopy(exes[40])
+                    environments[60] = environments[40]
+                    cwds[60] = '/other' if unsafe == 'duplicate-other-cwd' else '/work'
+                    if unsafe in ('duplicate-bash', 'duplicate-dash'):
+                        exes[60]['path'] = '/usr/bin/' + unsafe.split('-')[1]
+                elif unsafe == 'native-foreground': rows[40]['foreground'] = 60
+                else: rows[60] = PermissionError()
+                with self.assertRaises(m.Deferred):
+                    m.target_shell_process_proof(m.fingerprint(terminal()))
+
+    def test_process_pid_executable_cwd_pane_and_membership_drift_fails_closed(self):
+        for drift in ('pid', 'executable', 'cwd', 'pane', 'member'):
+            with self.subTest(drift=drift), self.proc_fixture() as (rows, exes, environments, cwds):
+                entries = list(rows)
+                scans = []
+                def scan():
+                    scans.append(True)
+                    if len(scans) == 2:
+                        if drift == 'pid': rows[40]['starttime'] += 1
+                        elif drift == 'executable': exes[40]['inode'] += 1
+                        elif drift == 'cwd': cwds[40] = '/other'
+                        elif drift == 'pane': environments[40] = b'ORCA_PANE_KEY=tab:other\0'
+                        else: rows[60]['pgrp'] = 40
+                    return iter(Path('/proc') / str(pid) for pid in entries)
+                with patch.object(m.Path, 'iterdir', side_effect=scan):
+                    with self.assertRaises(m.Deferred):
+                        m.target_shell_process_proof(m.fingerprint(terminal()))
+
+    def test_nonlocal_and_nonlinux_cannot_use_process_proof(self):
+        for platform, host in (('darwin', 'local'), ('linux', 'remote')):
+            identity = m.fingerprint(terminal())
+            identity['executionHostId'] = host
+            with patch.object(m.sys, 'platform', platform):
+                with self.assertRaisesRegex(m.Deferred, 'target-shell-process-unsupported'):
+                    m.target_shell_process_proof(identity)
+
+    def test_real_owned_pty_system_shell_is_bounded_to_zsh(self):
+        # If zsh is absent this proves the real bash refusal, without installing
+        # tools or presenting a simulated executable as a native zsh result.
+        shell = '/usr/bin/zsh' if Path('/usr/bin/zsh').is_file() else '/bin/bash'
+        pid, master = pty.fork()
+        if pid == 0:
+            env = dict(os.environ, ORCA_PANE_KEY='tab:target')
+            os.execve(shell, [shell, '-f', '-i'] if shell.endswith('zsh') else
+                      [shell, '--noprofile', '--norc', '-i'], env)
+        try:
+            os.write(master, b"stty -echo; printf '\\nOWNED_TARGET_READY\\n'\n")
+            output = bytearray()
+            deadline = time.monotonic() + 5
+            while b'\r\nOWNED_TARGET_READY\r\n' not in output:
+                if time.monotonic() >= deadline: self.fail('owned shell did not become ready')
+                ready, _, _ = select.select([master], [], [], 0.1)
+                if ready: output.extend(os.read(master, 65536))
+            identity = m.fingerprint(terminal())
+            identity['worktreePath'] = os.getcwd()
+            if shell.endswith('zsh'):
+                proof = m.target_shell_process_proof(identity)
+                self.assertEqual(pid, proof['shell']['pid'])
+            else:
+                with self.assertRaisesRegex(m.Deferred, 'target-shell-process-unverifiable'):
+                    m.target_shell_process_proof(identity)
+        finally:
+            os.close(master)
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
 
 
 class ClaudeNativeRecoveryContracts(unittest.TestCase):
