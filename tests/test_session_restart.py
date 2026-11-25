@@ -227,6 +227,85 @@ class Restart(unittest.TestCase):
     def texts(self):
         return [a[a.index('--text')+1] for a in self.client.sent]
 
+    def glyph_exit(self):
+        original = self.client.call
+        def call(*args):
+            result = original(*args)
+            if args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/exit':
+                self.client.frames['term_target']['tail'] = ['NAS prompt context', '❯']
+            return result
+        self.client.call = call
+
+    def test_glyph_restart_preserves_exact_identity_once_and_clears_ephemeral_proof(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        self.glyph_exit()
+        self.client.target_shell_proof = {'stale': 'previous invocation'}
+        with patch.object(m.rr, 'target_shell_process_proof', return_value={'owned-zsh': 'fixed'}):
+            row = self.execute(ident)['targets'][0]
+            self.assertEqual('restarted', row['state'])
+            self.assertEqual(['/status', '/exit', CODEX_RESUME+SESSION+CODEX_OPTION, '/status'], self.texts())
+            self.assertIsNone(self.client.target_shell_proof)
+            self.assertEqual('already-running', self.execute(ident)['targets'][0]['state'])
+        batch = self.load(ident)
+        row = batch['targets'][0]
+        self.assertEqual(SESSION, row['nativeObserved']['sessionId'])
+        self.assertEqual('/work', row['nativeObserved']['cwd'])
+        self.assertEqual('Full Access', row['nativeObserved']['permissions'])
+        self.assertEqual('codex-full-access', row['nativeObserved']['resumeMode'])
+        self.assertEqual(1, self.texts().count('/exit'))
+        self.assertEqual(1, self.texts().count(CODEX_RESUME+SESSION+CODEX_OPTION))
+        self.assertEqual([], self.client.created)
+        self.assertNotIn('owned-zsh', json.dumps(batch))
+        self.assertNotIn('target_shell_proof', json.dumps(batch))
+
+    def test_glyph_process_refusal_retains_failed_attempt_and_never_resumes_or_creates(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        self.glyph_exit()
+        with patch.object(m.rr, 'target_shell_process_proof', side_effect=m.Deferred('target-shell-process-unverifiable')):
+            row = self.execute(ident)['targets'][0]
+        self.assertEqual('failed', row['state'])
+        self.assertEqual('target-shell-process-unverifiable', row['reason'])
+        self.assertEqual(['/status', '/exit'], self.texts())
+        batch = self.load(ident)
+        self.assertEqual('uncertain', batch['targets'][0]['attempt']['state'])
+        self.assertTrue(any(e['phase'] == 'stopped' and e['reason'] == row['reason'] for e in batch['events']))
+        self.assertFalse(any(e['phase'] == 'sending' and e.get('step') == 'exact-resume' for e in batch['events']))
+        self.assertEqual([], self.client.created)
+
+    def test_glyph_drift_across_exit_record_and_durable_resume_refuses_single_transport(self):
+        for boundary in ('native-exit-observed', 'sending'):
+            for drift in ('process', 'pane', 'draft', 'runtime', 'installation'):
+                with self.subTest(boundary=boundary, drift=drift), tempfile.TemporaryDirectory() as folder:
+                    self.root = Path(folder) / 'state'
+                    self.client = Fake()
+                    ident = self.prepare()
+                    self.client.sent.clear()
+                    self.glyph_exit()
+                    process = {'generation': 1}
+                    record = m.Recorder.record
+                    def durable(recorder, event, **values):
+                        result = record(recorder, event, **values)
+                        if event == boundary and (boundary != 'sending' or values.get('step') == 'exact-resume'):
+                            if drift == 'process': process['generation'] = 2
+                            elif drift == 'pane': self.client.terms['term_target']['leafId'] = 'other'
+                            elif drift == 'draft': self.client.frames['term_target']['draft'] = 'typed'
+                            elif drift == 'runtime': self.client.runtime = 'changed'
+                            else: self.client.installed_codex_version = '0.172.0'
+                        return result
+                    with patch.object(m.rr, 'target_shell_process_proof', side_effect=lambda identity: copy.deepcopy(process)), \
+                         patch.object(m.Recorder, 'record', new=durable):
+                        row = self.execute(ident)['targets'][0]
+                    self.assertEqual('failed', row['state'])
+                    self.assertEqual(['/status', '/exit'], self.texts())
+                    self.assertEqual([], self.client.created)
+                    batch = self.load(ident)
+                    sends = [e for e in batch['events'] if e['phase'] == 'sending' and e.get('step') == 'exact-resume']
+                    self.assertEqual(1 if boundary == 'sending' else 0, len(sends))
+                    self.assertEqual('uncertain', batch['targets'][0]['attempt']['state'])
+                    self.assertEqual('stopped', batch['events'][-1]['phase'])
+
     def management_batch(self):
         own = self.client.terms['term_self']
         own.update(worktreeId='repo::/work', worktreePath='/work', agentIdentity=None)

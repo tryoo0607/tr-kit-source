@@ -1268,6 +1268,7 @@ def verify_preparation(client, store, batch, self_pane):
 
 def execute(client, store, batch_id, self_pane, mode):
     # A reused client never inherits a previous invocation's exception authority.
+    client.target_shell_proof = None
     client.management_self = None
     client.recovery_exception_check = None
     client.exception_proofs = {}

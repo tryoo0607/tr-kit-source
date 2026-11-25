@@ -311,6 +311,86 @@ class RuntimeRefreshTests(unittest.TestCase):
             with self.assertRaises(m.Deferred):
                 m.shell_guard(self.client, self.plan, self.plan['targets'][0], {'cursor': '10', 'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'})
 
+    def glyph_shell(self):
+        self.client.read['tail'] = ['NAS prompt context', '❯']
+        inventory = self.client.inventory
+        def complete():
+            ts, ps = inventory()
+            ps.update(truncated=False, hostScope={'hostIds': ['local']})
+            return ts, ps
+        self.client.inventory = complete
+        return self.plan['targets'][0], {'cursor': '10', 'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'}
+
+    def test_glyph_shell_requires_fixed_process_and_fresh_exit_proof(self):
+        target, evidence = self.glyph_shell()
+        with patch.object(m, 'target_shell_process_proof', return_value={'generation': 1}):
+            m.shell_guard(self.client, self.plan, target, evidence)
+            self.assertEqual({'generation': 1}, self.client.target_shell_proof['process'])
+            m.shell_guard(self.client, self.plan, target, evidence)
+            with patch.object(self.client, 'call', return_value={'terminal': {'source': 'stream', 'tail': []}}):
+                with self.assertRaisesRegex(m.Deferred, 'shell-unconfirmed'):
+                    m.shell_guard(self.client, self.plan, target, evidence)
+            self.assertEqual([], self.client.sent)
+        with patch.object(m, 'target_shell_process_proof', return_value={'generation': 2}):
+            with self.assertRaisesRegex(m.Deferred, 'target-shell-proof-changed'):
+                m.shell_guard(self.client, self.plan, target, evidence)
+
+    def test_glyph_false_prompt_and_live_agent_matrix_never_sends(self):
+        for unsafe in ('typed', 'draft', 'repl', 'child', 'parent', 'child-pane', 'duplicate-pane', 'wait', 'busy', 'remote', 'incomplete'):
+            with self.subTest(unsafe=unsafe):
+                self.client = Fake()
+                target, evidence = self.glyph_shell()
+                if unsafe == 'typed': self.client.read['tail'][-1] = '❯ command'
+                elif unsafe == 'draft': self.client.read['draft'] = 'secret'
+                elif unsafe == 'repl': self.client.read['tail'][-1] = '>>> '
+                elif unsafe == 'child': self.client.agents[1]['children'] = [{'state': 'running'}]
+                elif unsafe == 'parent': self.client.agents[1]['parentPaneKey'] = 'tab:other'
+                elif unsafe == 'child-pane':
+                    self.client.agents.append({'paneKey': 'tab:child', 'parentPaneKey': 'tab:target'})
+                elif unsafe == 'duplicate-pane':
+                    inventory = self.client.inventory
+                    def duplicate():
+                        ts, ps = inventory()
+                        ts['terminals'].append(terminal('term_duplicate'))
+                        return ts, ps
+                    self.client.inventory = duplicate
+                elif unsafe == 'wait': self.client.target['agentWait'] = {'kind': 'approval'}
+                elif unsafe == 'busy': self.client.agents[1]['programStatus']['state'] = 'running'
+                elif unsafe == 'remote': self.client.environment = 'remote'
+                else:
+                    inventory = self.client.inventory
+                    def incomplete():
+                        ts, ps = inventory()
+                        ps['truncated'] = True
+                        return ts, ps
+                    self.client.inventory = incomplete
+                with patch.object(m, 'target_shell_process_proof', return_value={'fixed': True}):
+                    with self.assertRaises(m.Deferred):
+                        m.shell_guard(self.client, self.plan, target, evidence)
+                self.assertEqual([], self.client.sent)
+                self.assertIsNone(getattr(self.client, 'target_shell_proof', None))
+
+    def test_glyph_resume_rechecks_durable_write_and_retains_sending_without_transport(self):
+        target, evidence = self.glyph_shell()
+        process = {'generation': 1}
+        journal = Mock()
+        with patch.object(m, 'target_shell_process_proof', side_effect=lambda identity: copy.deepcopy(process)):
+            m.shell_guard(self.client, self.plan, target, evidence)
+            def durable(*args, **kwargs):
+                process['generation'] = 2
+            journal.record.side_effect = durable
+            with self.assertRaisesRegex(m.Deferred, 'target-shell-proof-changed'):
+                m.send(self.client, journal, target, 'codex resume exact', 'exact-resume')
+        self.assertEqual([], self.client.sent)
+        journal.record.assert_called_once_with('sending', handle=target['handle'], step='exact-resume')
+
+    def test_legacy_absolute_shell_does_not_require_target_process_probe(self):
+        for suffix in ('$', '#'):
+            self.client.read['tail'] = ['user@host:/work' + suffix]
+            with patch.object(m, 'target_shell_process_proof', side_effect=AssertionError('legacy branch')):
+                m.shell_guard(self.client, self.plan, self.plan['targets'][0],
+                              {'cursor': '10', 'sessionId': '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'})
+
     def test_native_status_metadata_and_hostile_input(self):
         text = 'Session: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b\nDirectory: /work\nPermissions: Full Access\n'
         self.assertEqual('/work', m.status('codex', text)['cwd'])
@@ -2478,6 +2558,135 @@ finally:
         self.assertIn('OWNED_BACKGROUND_OK', text)
         self.assertIn('OWNED_GROUP_REJECTED', text)
         self.assertNotIn('UNSAFE_ACCEPTED', text)
+
+
+class TargetShellProcessTests(unittest.TestCase):
+    @contextmanager
+    def proc_fixture(self):
+        uid = os.getuid()
+        rows = {40: dict(pid=40, ppid=1, pgrp=40, sid=40, tty=1234, foreground=40, starttime=90, uid=uid),
+                60: dict(pid=60, ppid=40, pgrp=60, sid=40, tty=1234, foreground=40, starttime=95, uid=uid)}
+        exes = {40: dict(path='/usr/bin/zsh', device=1, inode=40, uid=0, mode=0o100755, mtime=100)}
+        environments = {40: b'ORCA_PANE_KEY=tab:target\0PRIVATE_UNUSED=never-retained\0'}
+        cwds = {40: '/work'}
+        real_open, real_readlink = Path.open, os.readlink
+        def readlink(path):
+            value = str(path)
+            if value.startswith('/proc/') and value.endswith('/cwd'):
+                return cwds[int(value.split('/')[2])]
+            return real_readlink(path)
+        def process(pid, reason):
+            value = rows[pid]
+            if isinstance(value, Exception): raise value
+            return copy.deepcopy(value)
+        def environment(path, *args, **kwargs):
+            if path.parent.parent == Path('/proc') and path.name == 'environ':
+                value = environments[int(path.parent.name)]
+                if isinstance(value, Exception): raise value
+                return io.BytesIO(value)
+            return real_open(path, *args, **kwargs)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(m, 'proc_process', side_effect=process))
+            stack.enter_context(patch.object(m, 'proc_executable', side_effect=lambda pid: copy.deepcopy(exes[pid])))
+            stack.enter_context(patch.object(m.Path, 'iterdir', return_value=[Path('/proc') / str(pid) for pid in rows]))
+            stack.enter_context(patch.object(m.Path, 'open', autospec=True, side_effect=environment))
+            stack.enter_context(patch.object(m.os, 'readlink', side_effect=readlink))
+            yield rows, exes, environments, cwds
+
+    def test_exact_pane_cwd_system_zsh_sole_foreground_retains_no_environment(self):
+        with self.proc_fixture():
+            proof = m.target_shell_process_proof(m.fingerprint(terminal()))
+        self.assertEqual(40, proof['shell']['pid'])
+        self.assertEqual('/usr/bin/zsh', proof['executable']['path'])
+        self.assertEqual('/work', proof['cwd'])
+        self.assertNotIn('PRIVATE_UNUSED', json.dumps(proof))
+        self.assertNotIn('never-retained', json.dumps(proof))
+
+    def test_wrong_process_identity_foreground_executable_and_environment_matrix(self):
+        for unsafe in ('pane', 'duplicate-key', 'missing-key', 'environment-denied', 'cwd', 'uid',
+                       'tty', 'pgrp', 'sid', 'foreground', 'starttime', 'exe-path', 'exe-uid',
+                       'exe-mode', 'not-regular', 'member', 'duplicate', 'duplicate-bash', 'duplicate-dash',
+                       'duplicate-other-cwd', 'native-foreground', 'permission'):
+            with self.subTest(unsafe=unsafe), self.proc_fixture() as (rows, exes, environments, cwds):
+                if unsafe == 'pane': environments[40] = b'ORCA_PANE_KEY=tab:wrong\0'
+                elif unsafe == 'duplicate-key': environments[40] *= 2
+                elif unsafe == 'missing-key': environments[40] = b'OTHER=1\0'
+                elif unsafe == 'environment-denied': environments[40] = PermissionError()
+                elif unsafe == 'cwd': cwds[40] = '/elsewhere'
+                elif unsafe == 'uid': rows[40]['uid'] += 1
+                elif unsafe in ('tty', 'pgrp', 'sid', 'foreground', 'starttime'): rows[40][unsafe] = 0
+                elif unsafe == 'exe-path': exes[40]['path'] = '/tmp/zsh'
+                elif unsafe == 'exe-uid': exes[40]['uid'] = 1000
+                elif unsafe == 'exe-mode': exes[40]['mode'] |= 0o020
+                elif unsafe == 'not-regular': exes[40]['mode'] = 0o040755
+                elif unsafe == 'member': rows[60]['pgrp'] = 40
+                elif unsafe.startswith('duplicate'):
+                    rows[60].update(pid=60, pgrp=60, sid=60, foreground=60)
+                    exes[60] = copy.deepcopy(exes[40])
+                    environments[60] = environments[40]
+                    cwds[60] = '/other' if unsafe == 'duplicate-other-cwd' else '/work'
+                    if unsafe in ('duplicate-bash', 'duplicate-dash'):
+                        exes[60]['path'] = '/usr/bin/' + unsafe.split('-')[1]
+                elif unsafe == 'native-foreground': rows[40]['foreground'] = 60
+                else: rows[60] = PermissionError()
+                with self.assertRaises(m.Deferred):
+                    m.target_shell_process_proof(m.fingerprint(terminal()))
+
+    def test_process_pid_executable_cwd_pane_and_membership_drift_fails_closed(self):
+        for drift in ('pid', 'executable', 'cwd', 'pane', 'member'):
+            with self.subTest(drift=drift), self.proc_fixture() as (rows, exes, environments, cwds):
+                entries = list(rows)
+                scans = []
+                def scan():
+                    scans.append(True)
+                    if len(scans) == 2:
+                        if drift == 'pid': rows[40]['starttime'] += 1
+                        elif drift == 'executable': exes[40]['inode'] += 1
+                        elif drift == 'cwd': cwds[40] = '/other'
+                        elif drift == 'pane': environments[40] = b'ORCA_PANE_KEY=tab:other\0'
+                        else: rows[60]['pgrp'] = 40
+                    return iter(Path('/proc') / str(pid) for pid in entries)
+                with patch.object(m.Path, 'iterdir', side_effect=scan):
+                    with self.assertRaises(m.Deferred):
+                        m.target_shell_process_proof(m.fingerprint(terminal()))
+
+    def test_nonlocal_and_nonlinux_cannot_use_process_proof(self):
+        for platform, host in (('darwin', 'local'), ('linux', 'remote')):
+            identity = m.fingerprint(terminal())
+            identity['executionHostId'] = host
+            with patch.object(m.sys, 'platform', platform):
+                with self.assertRaisesRegex(m.Deferred, 'target-shell-process-unsupported'):
+                    m.target_shell_process_proof(identity)
+
+    def test_real_owned_pty_system_shell_is_bounded_to_zsh(self):
+        # If zsh is absent this proves the real bash refusal, without installing
+        # tools or presenting a simulated executable as a native zsh result.
+        shell = '/usr/bin/zsh' if Path('/usr/bin/zsh').is_file() else '/bin/bash'
+        pid, master = pty.fork()
+        if pid == 0:
+            env = dict(os.environ, ORCA_PANE_KEY='tab:target')
+            os.execve(shell, [shell, '-f', '-i'] if shell.endswith('zsh') else
+                      [shell, '--noprofile', '--norc', '-i'], env)
+        try:
+            os.write(master, b"stty -echo; printf '\\nOWNED_TARGET_READY\\n'\n")
+            output = bytearray()
+            deadline = time.monotonic() + 5
+            while b'\r\nOWNED_TARGET_READY\r\n' not in output:
+                if time.monotonic() >= deadline: self.fail('owned shell did not become ready')
+                ready, _, _ = select.select([master], [], [], 0.1)
+                if ready: output.extend(os.read(master, 65536))
+            identity = m.fingerprint(terminal())
+            identity['worktreePath'] = os.getcwd()
+            if shell.endswith('zsh'):
+                proof = m.target_shell_process_proof(identity)
+                self.assertEqual(pid, proof['shell']['pid'])
+            else:
+                with self.assertRaisesRegex(m.Deferred, 'target-shell-process-unverifiable'):
+                    m.target_shell_process_proof(identity)
+        finally:
+            os.close(master)
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
 
 
 class ClaudeNativeRecoveryContracts(unittest.TestCase):

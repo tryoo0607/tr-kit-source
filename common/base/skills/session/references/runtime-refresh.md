@@ -31,6 +31,14 @@ Codex `/status`는 접수·idle 뒤 화면이 늦게 도착하거나 새 metadat
 
 native cwd의 정확한 `~` 또는 `~/safe/path`만 수신자 프로세스의 absolute·정규화된 `Path.home()`에 연결한다. inventory의 경로로 home이나 UUID를 추측하지 않는다. `~user`, 환경변수·shell 구문, 상대경로, 빈 구간·`.`·`..`·앞뒤 공백 등 모호한 home 하위 구간은 거부한다. 확장 후에도 원 workspace 경로와 정확히 같아야 하며 mismatch는 보류다. 절대경로의 기존 비교와 stale-output 검사는 유지한다. 이 계약은 [세션 재시작 배치](session-restart.md)의 준비와 검증에서도 같은 함수를 재사용한다.
 
+### 정상 종료 뒤 NAS zsh 빈 shell 증명
+
+기존 absolute cwd로 끝나는 `$`/`#` prompt 판정은 유지한다. 추가 지원은 마지막 비어 있지 않은 화면 행이 정확히 `❯`인 Linux local zsh뿐이다. glyph·comm 이름·이력·경과 시간·남은 provider hint를 단독 증거로 사용하지 않는다. 기존 empty draft, 연결·쓰기·incarnation/runtime·self·설치·wait와 agent/main/program/child guard, `/exit` 직전 cursor 이후의 같은 native UUID 종료 안내가 모두 필요하다. glyph 분기는 완전한 local list/ps와 유일한 target pane 및 그 pane을 부모로 연결한 child가 없음도 확인한다.
+
+`runtime_refresh.target_shell_process_proof`는 호출자 관리 helper의 증명과 별개로 실제 `/proc`를 읽는다. 같은 UID·controlling TTY의 root 소유 system bash/dash/zsh session leader 중 `ORCA_PANE_KEY`가 target tab/leaf와 정확히 같은 후보가 하나여야 하며, 그 유일 후보가 zsh여야 한다. 다른 shell이나 다른 cwd의 exact-pane 후보를 버리고 남은 zsh의 증명을 빌리지 않는다. UID·session/TTY·지원 실행 파일로 후보를 좁힌 뒤 bounded environ에서 pane key만 읽어 판정하며, 관련 증거를 읽을 수 없으면 거부한다. `/bin/zsh` 또는 `/usr/bin/zsh`의 해석된 실행 파일은 root 소유 regular file이고 group/other 쓰기가 불가능해야 한다. PID/starttime·sid/pgrp·controlling TTY·foreground가 확인되며, shell 자신이 session/process group leader이자 그 foreground group의 유일한 구성원이어야 한다. proc cwd는 원 absolute workspace 경로와 정확히 같아야 한다. 두 전체 관측과 선택 PID/executable/cwd 재조회가 일치해야 하며, 잘못되거나 읽을 수 없는 proc·중복 후보·다른 foreground/native/REPL·cwd/pane/executable/process membership drift는 입력 없이 거부한다. 별도 background group의 존재만으로는 단독 foreground 조건을 위반하지 않는다.
+
+증명은 client 메모리에만 고정하며 이후 관측으로 새 기준을 만들지 않는다. same-UUID fresh exit 안내와 shell을 다시 확인하고, exact-resume의 durable `sending` 기록 전후에 설치·runtime·target pane/화면·기존 가드·고정 process proof를 재대조한다. `apply/execute` 시작에서 과거 증명을 지우고 접수된 exact resume 뒤 해제한다. 전체 environment·화면·process proof를 signed 배치나 journal에 저장하지 않는다. 기록 후 증거가 바뀌면 실제 resume을 보내지 않아도 기존 uncertain receipt와 중단 이력을 보존하며 자동 재전송하지 않는다. 최종 관측과 transport 사이의 비원자 경합은 남는다. 이 지원은 Claude clean exit·일반 missing-state admission·미지원 shell/OS·원격 직접 입력이나 권한 모드 확대가 아니다. source/PTY와 실제 NAS canary·원래 세션 재시작·소비 여부는 [검증 기록](../../../../../docs/verification.md#nas-zsh-빈-shell-증명--2026-11-25)에서 구분한다.
+
 ## 연계와 의존
 
 | 대상과 요청 | 입력 | 필요한 결과 | 의존과 부재 시 동작 |
