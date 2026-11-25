@@ -827,6 +827,8 @@ def resume_command(provider, native, *, installed_version):
         raise Deferred('native-identity-unknown') from None
     if mode == 'codex-full-access':
         args = ['codex', 'resume', ident, '--dangerously-bypass-approvals-and-sandbox']
+        if installed_version == '0.172.0':
+            args.extend(['--no-alt-screen', 'Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.'])
     else:
         args = ['claude', '--dangerously-skip-permissions', '--resume', ident]
     return shlex.join(args)
@@ -1208,6 +1210,62 @@ def current_status_response(provider, text):
     return '\n'.join(lines[start:])
 
 
+def codex_status_stream_text(fresh, previous, current, proved_response):
+    """Remove one exact native autocomplete rendering only after screen proof.
+
+    Orca's ANSI-stripped stream can flatten the /status completion popup and
+    composer into one line. This is UI, not a submitted /statusline command.
+    Match the official 0.172.0 captions, exact /status composer and an observed
+    footer prefix. Unknown lines and actual subsequent commands remain intact.
+    """
+    identity = codex_screen_identity(proved_response)
+    if identity['nativeVersion'] != '0.172.0':
+        return fresh
+    models = re.findall(r'^[ \t]*Model:[ \t]*([A-Za-z0-9][A-Za-z0-9_.-]*)'
+                        r'(?:[ \t]+\([^\r\n]*\))?[ \t]*$', proved_response, re.MULTILINE)
+    if len(models) != 1:
+        return fresh
+    directories = {identity['cwd']}
+    home = str(Path.home())
+    if identity['cwd'] == home:
+        directories.add('~')
+    elif identity['cwd'].startswith(home + '/'):
+        directories.add('~' + identity['cwd'][len(home):])
+    compact = lambda value: re.sub(r'[ \t]+', ' ', value.strip(' \t'))
+    popup = ('› /status show current session configuration and token usage '
+             '/statusline configure which items appear in the status line › /status ')
+    allowed = set()
+    idle = ('›', '› Ask Codex to do anything')
+    for text in (previous, current):
+        lines = text.splitlines()
+        prompts = [i for i, line in enumerate(lines) if line.strip() in idle]
+        if not prompts:
+            continue
+        footer = [line for line in lines[prompts[-1]+1:] if line.strip()]
+        if not 1 <= len(footer) <= 2:
+            continue
+        first = compact(footer[0])
+        prefixes = [models[0] + ' default · ' + directory + ' · ' for directory in directories]
+        matching = [prefix for prefix in prefixes if first.startswith(prefix)]
+        if len(matching) != 1:
+            continue
+        prefix = matching[0]
+        title = first[len(prefix):]
+        if (not title or len(title) > 512
+                or re.search(r'[\x00-\x1f\x7f›❯]', title)
+                or len(footer) == 2 and compact(footer[1]) != '← for agents · ? for shortcuts'):
+            continue
+        for end in range(1, len(footer)+1):
+            allowed.add(popup + compact(' '.join(footer[:end])))
+    lines = fresh.splitlines()
+    visible = [i for i, line in enumerate(lines) if line.strip()]
+    if (len(visible) < 3 or compact(lines[visible[0]]) not in allowed
+            or lines[visible[1]].strip() != '/status'
+            or lines[visible[2]].strip() != '>_ OpenAI Codex (v0.172.0)'):
+        return fresh
+    return '\n'.join(line for i, line in enumerate(lines) if i != visible[0])
+
+
 def codex_screen_status(previous, current):
     """Prove an appended /status card from ordered content, not a repaint hash.
 
@@ -1371,7 +1429,11 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
     if cursor is None:
         raise Deferred('native-response-freshness-unknown')
     previous_text = screen(previous)
-    send(client, journal, target, command, phase)
+    wire_command = command
+    if (target['provider'] == 'codex' and command == '/status'
+            and codex_versions(previous_text)[-1:] == ['0.172.0']):
+        wire_command += ' '
+    send(client, journal, target, wire_command, phase)
     wait_idle(client, target)
     if target['provider'] == 'claude':
         marker = '❯ ' + command
@@ -1507,6 +1569,7 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
                     raise Deferred('native-response-output-unknown')
                 fresh = '\n'.join(tail)
                 if screen_fresh is not None:
+                    fresh = codex_status_stream_text(fresh, previous_text, screen(current), screen_fresh)
                     # Even an unchanged cursor must expose a well-formed stream
                     # read. Empty/partial identity is permitted only because the
                     # screen independently proved a new complete boundary.

@@ -5,6 +5,7 @@ import importlib.util
 import json
 import io
 import os
+import shlex
 from pathlib import Path
 import tempfile
 import stat
@@ -21,6 +22,7 @@ spec.loader.exec_module(m)
 SESSION = '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'
 CODEX_RESUME = 'codex resume '
 CODEX_OPTION = ' --dangerously-bypass-approvals-and-sandbox'
+READINESS_PROMPT = 'Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.'
 CLAUDE_RESUME = 'claude --dangerously-skip-permissions --resume '
 INSTALL = {'state': 'observed', 'plugins': [{'id': 'owned@test', 'scope': 'user', 'version': '1.0'}]}
 
@@ -102,6 +104,9 @@ class Fake:
                 raise m.Deferred(self.fail)
             h = args[args.index('--terminal')+1]
             command = args[args.index('--text')+1]
+            if self.terms[h]['agentIdentity'] == 'codex' and self.codex_version == '0.172.0':
+                # Native composer trims submissions; self.sent retains wire bytes.
+                command = command.strip()
             frame = self.frames[h]
             frame['latestCursor'] = str(int(frame['latestCursor']) + 1)
             if command == '/status':
@@ -703,8 +708,17 @@ class Restart(unittest.TestCase):
                         self.assertEqual(original_native[field], observed[field])
                     self.assertEqual(original_native, self.load(ident)['targets'][0]['native'])
                     self.assertEqual(1 if mode == 'restore' else 0, len(self.client.created))
+                    def launches():
+                        return ([args[args.index('--command')+1] for args in self.client.created]
+                                + [text for text in self.texts() if text.startswith(CODEX_RESUME)])
+                    self.assertEqual([['codex', 'resume', SESSION,
+                        '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen',
+                        READINESS_PROMPT]], [shlex.split(command) for command in launches()])
                     self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+                    self.assertEqual('/status ', self.texts()[-1])
                     self.assertEqual(1 if mode == 'restore' else 0, len(self.client.created))
+                    self.assertEqual(1, len(launches()))
+                    self.assertNotIn(READINESS_PROMPT, self.texts())
 
     def test_owned_restore_can_verify_and_repeat_without_duplicate_or_reusing_changed_identity(self):
         for provider in ('codex', 'claude'):
@@ -745,6 +759,7 @@ class Restart(unittest.TestCase):
         self.assertEqual(1, len(self.client.created))
 
     def test_owned_restore_persistent_child_unknown_stops_without_status_or_second_create(self):
+        self.client.installed_codex_version = '0.172.0'
         ident = self.prepare()
         self.client.remove('term_target')
         self.client.sent.clear()
@@ -757,6 +772,15 @@ class Restart(unittest.TestCase):
         sleep.assert_called_once_with(0.2)
         self.assertEqual([], self.client.sent)
         self.assertEqual(1, len(self.client.created))
+        self.assertEqual(['codex', 'resume', SESSION,
+            '--dangerously-bypass-approvals-and-sandbox', '--no-alt-screen', READINESS_PROMPT],
+            shlex.split(self.client.created[0][self.client.created[0].index('--command')+1]))
+        failed = self.load(ident)
+        repeated = self.execute(ident, 'restore')['targets'][0]
+        self.assertEqual('unresolved-attempt-verify-before-any-recovery', repeated['reason'])
+        self.assertEqual(1, len(self.client.created))
+        self.assertEqual([], self.client.sent)
+        self.assertEqual(failed['targets'][0]['attempt'], self.load(ident)['targets'][0]['attempt'])
 
     def test_owned_restore_readiness_never_retries_other_safety_guards(self):
         for reason in ('child-work', 'busy-or-state-unknown', 'approval-or-wait', 'approval-or-menu', 'draft'):

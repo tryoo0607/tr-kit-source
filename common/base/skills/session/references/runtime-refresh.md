@@ -31,6 +31,16 @@ Codex `/status`는 접수·idle 뒤 화면이 늦게 도착하거나 새 metadat
 
 native cwd의 정확한 `~` 또는 `~/safe/path`만 수신자 프로세스의 absolute·정규화된 `Path.home()`에 연결한다. inventory의 경로로 home이나 UUID를 추측하지 않는다. `~user`, 환경변수·shell 구문, 상대경로, 빈 구간·`.`·`..`·앞뒤 공백 등 모호한 home 하위 구간은 거부한다. 확장 후에도 원 workspace 경로와 정확히 같아야 하며 mismatch는 보류다. 절대경로의 기존 비교와 stale-output 검사는 유지한다. 이 계약은 [세션 재시작 배치](session-restart.md)의 준비와 검증에서도 같은 함수를 재사용한다.
 
+### Codex0.172.0 scrollback과 단일 준비 턴
+
+공통 `resume_command`는 현재 설치 버전이 정확히0.172.0이고 기존 native UUID·Full Access·`codex-full-access`가 검증된 재개에만 `--no-alt-screen`과 고정 positional PROMPT `Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.`을 한 번 붙인다. refresh/restart/부재 restore가 같은 구성기를 사용한다. 이 PROMPT는 새 사용자 메시지와 모델 실행이며 토큰을 사용한다. 도구 사용 금지는 모델 지시이고 도구 제거를 강제하지 않는다. 기존 Full Access 옵션을 유지하며 권한을 늘리는 새 옵션·hook trust 우회·전역 설정은 추가하지 않는다. 다른 지원 Codex 버전과 Claude의 기존 argv는 유지하고 미지원 버전·모드는 계속 거부한다. `/status`·대기 실패 뒤 PROMPT나 resume을 재전송하지 않으며 signed 실패·키·이력은 보존하고 명시 `verify`로 확인한다.
+
+직전 화면의 마지막 native header가 정확히0.172.0인 Codex `/status` 요청은 물리 입력을 `/status `처럼 공백 하나로 끝낸다. 공식 composer는 명령 토큰 뒤의 caret에서 자동완성을 닫고 제출 시 끝 공백을 제거하므로 수행 명령은 `/status` 그대로다. 한 번의 기존 send/receipt만 사용하며 추가 키나 요청을 보내지 않는다. 다른 버전·제품·명령의 입력은 유지하고, 화면 header가 미확인이면 이 입력 형식을 추정해 적용하지 않는다.
+
+0.172.0의 ANSI 제거 stream은 `/status` 자동완성 두 항목과 composer·footer가 한 줄로 합쳐질 수 있다. 앞 절의 완전한 새 화면 응답이 **먼저 독립적으로 증명된 분기 안에서만** `codex_status_stream_text`가 첫 비어 있지 않은 행 하나를 제거한다. 정확한 두 설명(`show current session configuration and token usage`, `configure which items appear in the status line`), `/status` composer와 같은 관측 footer가 필요하다. footer는 증명된 카드의 유일한 Model, `default`, 정규화한 cwd 또는 수신자 `Path.home()` 기준 `~` 축약, 비어 있지 않은 제목을 포함하는1행과 선택적인 정확한 `← for agents · ? for shortcuts` 행뿐이다. popup 바로 다음 비어 있지 않은 행은 `/status`, 그다음은 정확한0.172.0 header여야 한다. 제목·model·cwd·설명 변경, 다른 명령·typed echo·중복/늦은 popup·알 수 없는 footer는 제거하지 않는다. 이후 기존 stream 문법·ANSI·신원 충돌·현재 frame·deadline·proof 검사가 모두 유지된다. 이 필터 자체는 신원이나 freshness를 증명하지 않고 기존 stream 경로의 허용 범위를 바꾸지 않는다.
+
+공식0.172.0 source의 queued SessionStart와 첫 모델 턴 실행, presentation-only prompt header는 [승인 결정과 원문 근거](../../../../../docs/decisions/20261125-codex172-resume-observation.md)에 연결한다. readiness 응답이나 plugin inventory는 실제 plugin 소비의 증명이 아니다. 이전 넓은 prototype의 NAS 관측, strict source 회귀와 정확한 source native/배포 검증 상태는 [검증 기록](../../../../../docs/verification.md#codex01720-scrollback과-단일-준비-턴--2026-11-25)에서 구분한다.
+
 ### 정상 종료 뒤 NAS zsh 빈 shell 증명
 
 기존 absolute cwd로 끝나는 `$`/`#` prompt 판정은 유지한다. 추가 지원은 마지막 비어 있지 않은 화면 행이 정확히 `❯`인 Linux local zsh뿐이다. glyph·comm 이름·이력·경과 시간·남은 provider hint를 단독 증거로 사용하지 않는다. 기존 empty draft, 연결·쓰기·incarnation/runtime·self·설치·wait와 agent/main/program/child guard, `/exit` 직전 cursor 이후의 같은 native UUID 종료 안내가 모두 필요하다. glyph 분기는 완전한 local list/ps와 유일한 target pane 및 그 pane을 부모로 연결한 child가 없음도 확인한다.

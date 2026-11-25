@@ -394,3 +394,21 @@ common/base/skills/session/
 ```
 
 관리 helper의 의미와 기존 absolute prompt 경로는 변경하지 않았다. 상세 지원·거부·기록 경계는 [단일 공통 계약](../common/base/skills/session/references/runtime-refresh.md#정상-종료-뒤-nas-zsh-빈-shell-증명), 승인 범위와 실제 검증은 [결정](decisions/20261125-session-zsh-shell-proof.md)과 [검증 기록](verification.md#nas-zsh-빈-shell-증명--2026-11-25)을 따른다.
+
+
+## Codex0.172.0 scrollback과 단일 준비 턴 — 2026-11-25
+
+기존 session skill·공통 helper·reference의 배치를 유지하며 새 hook·config·adapter·private 실행 계층은 없다. `apply`와 `session_restart.execute`가 같은 `runtime_refresh.resume_command`를 호출하고, 실제 설치 버전0.172.0에만 기존 exact UUID/Full Access argv 뒤로 공식 inline flag와 고정 준비 PROMPT를 추가한다. 읽기 경로도 기존 session 분기 → runtime-refresh/session-restart reference를 그대로 사용한다.
+
+```text
+기존 apply / restart / restore
+  → 기존 native mode·설치 버전·UUID 검증 → 단일 공통 resume_command
+    → 설치0.172.0: 기존 권한 옵션 + --no-alt-screen + 고정 준비 PROMPT 1개
+    → 다른 지원 Codex / Claude: 기존 고정 argv
+  → 기존 transport·durable receipt·준비 가드 → native /status
+    → 독립 codex_screen_status가 완전한 새 화면 응답 증명
+      → codex_status_stream_text: exact leading popup 행 최대1개 제거
+      → 기존 stream/화면 신원·ANSI·deadline·output_proof 대조
+```
+
+필터는 새 화면 proof를 만들지 않는다. 기존 stream-only 경로와 zsh foreground/process/exit proof·서명 실패 보존·단일 입력 규칙도 유지한다. 상세 formatter·새 모델 메시지 효과·미지원 거부의 정본은 [운영 계약](../common/base/skills/session/references/runtime-refresh.md#codex01720-scrollback과-단일-준비-턴)이며, 원문과 승인 연결은 [결정](decisions/20261125-codex172-resume-observation.md), 시험/실제 native/배포의 구분은 [검증 기록](verification.md#codex01720-scrollback과-단일-준비-턴--2026-11-25)을 따른다.
