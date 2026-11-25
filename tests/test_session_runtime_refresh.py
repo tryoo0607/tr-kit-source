@@ -53,12 +53,13 @@ def codex_screen_pair(cwd='/work'):
     return before, after
 
 
-def completed_hook_error_screen(version='0.167.2', composer='› Ask Codex to do anything'):
+def completed_hook_error_screen(version='0.167.2', composer='› Ask Codex to do anything',
+                                completion='  Worked for 3s • 1:02 PM'):
     """Synthetic history only: never copy personal native frames into fixtures."""
     return ['  >_ OpenAI Codex (v'+version+')', '› fixture completed request',
             '• fixture response', '• Hook failed',
             '  └ plugin contents changed; hook approval required',
-            '  Worked for 3s • 1:02 PM', '  ↳ fixture completion recap', composer,
+            completion, '  ↳ fixture completion recap', composer,
             '  fixture-model default · /work · fixture', '  ← for agents · ? for shortcuts']
 
 
@@ -2174,16 +2175,43 @@ class RuntimeRefreshTests(unittest.TestCase):
     def test_completed_historical_hook_error_keeps_original_text_frame_and_proof(self):
         for version in m.CODEX_RESUME_VERSIONS:
             for composer in ('›', '› Ask Codex to do anything'):
-                with self.subTest(version=version, composer=composer):
-                    read = dict(source='screen', tail=completed_hook_error_screen(version, composer),
-                                draft=None, latestCursor='10')
-                    original = copy.deepcopy(read)
-                    proof = m.output_proof(read)
-                    text = m.idle_screen('codex', read)
-                    self.assertEqual('\n'.join(original['tail']), text)
-                    self.assertIn('hook approval required', text)
-                    self.assertEqual(original, read)
-                    self.assertEqual(proof, m.output_proof(read))
+                for completion in ('  Worked for 3s • 1:02 PM', '  Worked for 0s • 12:00 AM',
+                                   '  Worked for 42s • 13:21', '  Worked for 3s • 13:22',
+                                   '  Worked for 0s • 00:00', '  Worked for 59s • 23:59'):
+                    with self.subTest(version=version, composer=composer, completion=completion):
+                        read = dict(source='screen', tail=completed_hook_error_screen(version, composer, completion),
+                                    draft=None, latestCursor='10')
+                        original = copy.deepcopy(read)
+                        proof = m.output_proof(read)
+                        text = m.idle_screen('codex', read)
+                        self.assertEqual('\n'.join(original['tail']), text)
+                        self.assertIn('hook approval required', text)
+                        self.assertEqual(original, read)
+                        self.assertEqual(proof, m.output_proof(read))
+
+    def test_historical_hook_error_owns_only_its_adjacent_completion(self):
+        earlier = ['› fixture earlier request', '• fixture earlier response',
+                   '  Worked for 2s • 12:59 PM']
+        later = ['› fixture later request', '• fixture later response',
+                 '  Worked for 4s • 13:23']
+        for version in m.CODEX_RESUME_VERSIONS:
+            for completion in ('  Worked for 3s • 1:02 PM', '  Worked for 3s • 13:22'):
+                good = completed_hook_error_screen(version, completion=completion)
+                for label, lines in {
+                    'earlier-normal-turn': [good[0], *earlier, *good[1:]],
+                    # The approved matrix supersedes source06's later-turn refusal.
+                    'later-normal-turn': [*good[:7], *later, *good[7:]],
+                    'both-normal-turns': [good[0], *earlier, *good[1:7], *later, *good[7:]],
+                    'header-after-completed-error': [*good[1:7], '/status', good[0], *good[7:]],
+                    'cropped-with-normal-turns': [*earlier, *good[1:7], *later, '/status', good[0], *good[7:]],
+                }.items():
+                    with self.subTest(version=version, completion=completion, label=label):
+                        read = dict(source='screen', tail=lines, draft=None, latestCursor='10')
+                        original = copy.deepcopy(read)
+                        proof = m.output_proof(read)
+                        self.assertEqual('\n'.join(lines), m.idle_screen('codex', read))
+                        self.assertEqual(original, read)
+                        self.assertEqual(proof, m.output_proof(read))
 
     def test_completed_historical_hook_error_does_not_hide_dialogs_or_approval_prose(self):
         for dialog in ('Yes, proceed', 'Trust this workspace?', 'Select an option',
@@ -2207,6 +2235,12 @@ class RuntimeRefreshTests(unittest.TestCase):
             'missing-completion': good[:5]+good[6:],
             'changed-completion': [*good[:5], '  Worked for 3s • unknown time', *good[6:]],
             'invalid-clock': [*good[:5], '  Worked for 3s • 13:02 PM', *good[6:]],
+            'invalid-24h-hour': [*good[:5], '  Worked for 3s • 24:00', *good[6:]],
+            'invalid-24h-minute': [*good[:5], '  Worked for 3s • 13:60', *good[6:]],
+            'non-padded-24h': [*good[:5], '  Worked for 3s • 1:02', *good[6:]],
+            'padded-12h': [*good[:5], '  Worked for 3s • 01:02 PM', *good[6:]],
+            'clock-with-seconds': [*good[:5], '  Worked for 3s • 13:02:01', *good[6:]],
+            'padded-duration': [*good[:5], '  Worked for 03s • 13:02', *good[6:]],
             'changed-duration-format': [*good[:5], '  Worked for 1m 3s • 1:02 PM', *good[6:]],
             'interleaved-error': [*good[:4], '  fixture output', *good[4:]],
             'interleaved-completion': [*good[:5], '  fixture output', *good[5:]],
@@ -2227,10 +2261,9 @@ class RuntimeRefreshTests(unittest.TestCase):
             'duplicate-heading': [*good[:3], good[3], *good[3:]],
             'duplicate-message': [*good[:4], good[4], *good[4:]],
             'duplicate-completion': [*good[:6], good[5], *good[6:]],
-            'later-normal-turn-completion': [*good[:7], '› fixture later request',
-                                            '• fixture later response',
-                                            '  Worked for 4s • 1:03 PM', *good[7:]],
+            'adjacent-different-completion': [*good[:6], '  Worked for 4s • 13:23', *good[6:]],
             'changed-second-boundary': [*good[:6], '  Worked for unknown', *good[6:]],
+            'truncated-own-completion': good[:5]+[good[7]],
         }.items():
             with self.subTest(label=label):
                 with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
@@ -2294,6 +2327,51 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertEqual(after, client.read['tail'])
         self.assertEqual(m.output_proof(client.read), self.plan['targets'][0]['nativeProof'])
         self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_historical_hook_error_status_crop_keeps_local_completion_and_fresh_proof(self):
+        for completion in ('  Worked for 3s • 1:02 PM', '  Worked for 3s • 13:22'):
+            for version in ('0.167.2', '0.171.0'):
+                with self.subTest(completion=completion, version=version):
+                    before, cropped = codex_screen_pair()
+                    before = [line.replace('v0.167.2', 'v'+version) for line in before]
+                    cropped = [line.replace('v0.167.2', 'v'+version) for line in cropped]
+                    history = completed_hook_error_screen(completion=completion)[3:7]
+                    before = before[:-3]+history+before[-3:]
+                    # Retain the old Session suffix and completed error, while
+                    # cropping its earlier header. Only the new card has one.
+                    session = next(i for i, line in enumerate(before) if line.startswith('  Session:'))
+                    after = [before[0], *before[session-1:-3], *cropped[7:]]
+                    self.assertLess(after.index(history[0]), next(
+                        i for i, line in enumerate(after) if 'OpenAI Codex (v' in line))
+                    client = self.screen_only_codex(before, after)
+                    native = self.run_screen_status(client)
+                    self.assertEqual('11111111-1111-4111-8111-111111111111', native['sessionId'])
+                    self.assertEqual('/work', native['cwd'])
+                    self.assertEqual('Full Access', native['permissions'])
+                    self.assertEqual('codex-full-access', native['resumeMode'])
+                    self.assertEqual(version, native['nativeVersion'])
+                    self.assertEqual(after, client.read['tail'])
+                    self.assertEqual(m.output_proof(client.read), self.plan['targets'][0]['nativeProof'])
+                    self.assertEqual(['/status'], [args[args.index('--text')+1] for args in client.sent])
+
+    def test_historical_hook_error_real_approval_shape_still_stops_status(self):
+        good = completed_hook_error_screen(completion='  Worked for 3s • 13:22')
+        cropped = [*good[1:7], '/status', good[0], *good[7:]]
+        popup = ['Do you want to run this command?', '  $ fixture-command',
+                 '› 1. Yes, proceed', '  2. No, and tell Codex what to do differently',
+                 '  Esc to cancel', '› Ask Codex to do anything']
+        for frame in (good, cropped):
+            for position in (0, 6, len(frame)):
+                with self.subTest(cropped=frame == cropped, position=position):
+                    lines = frame[:position]+popup+frame[position:]
+                    client = self.screen_only_codex(lines, lines)
+                    with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
+                        self.run_screen_status(client)
+                    self.assertEqual([], client.sent)
+            client = self.screen_only_codex(frame, frame+popup)
+            with self.assertRaisesRegex(m.Deferred, '^approval-or-menu$'):
+                self.run_screen_status(client)
+            self.assertEqual(1, len(client.sent))
 
     def test_historical_hook_error_never_substitutes_for_native_freshness(self):
         before = completed_hook_error_screen()
