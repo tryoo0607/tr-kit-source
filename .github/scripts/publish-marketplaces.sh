@@ -32,7 +32,8 @@ for product in codex claude; do
   rsync -a --delete --exclude='/.git/' "$marketplaces/$product/" "$repo/"
   jq -n --arg path "$repo" --arg gitleaks "$scanner" \
     '{gitleaks:$gitleaks,repositories:[{path:$path,local_only:[],allow_artifacts:[]}]}' > "$temp/$product-policy.json"
-  git -C "$repo" add --all --force
+  mapfile -d '' paths < <(git -C "$repo" ls-files --cached --others -z)
+  git -C "$repo" add --force -- "${paths[@]}"
   python3 -B "$root/scripts/check-git-secrets.py" index --repo "$repo" --policy "$temp/$product-policy.json"
   if git -C "$repo" diff --cached --quiet; then
     continue
