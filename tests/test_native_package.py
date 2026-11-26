@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 sys.path.insert(0,str(ROOT/'common/base/scripts'))
 import assemble
+import delivery
 import package
 import plugin_runtime
 from upstream_guard import make_catalog
@@ -41,16 +42,30 @@ class NativePackage(unittest.TestCase):
         for product in ('codex','claude'):
             out=self.build(product,name=product);report=package.verify(out,product)
             payload=Path(report['payload']);self.assertFalse(report['operational_ready']);self.assertFalse(report['mcp_registered'])
-            self.assertTrue((payload/'common/base/skills/mem-search/SKILL.md').is_file())
-            self.assertFalse((payload/'skills').exists());self.assertFalse((payload/'CLAUDE.md').exists())
+            self.assertTrue((payload/'skills/mem-search/SKILL.md').is_file())
+            self.assertFalse((payload/'common').exists())
+            self.assertFalse((payload/'adapters').exists())
+            self.assertFalse((payload/'CLAUDE.md').exists())
             self.assertFalse((payload/'.mcp.json').exists())
-            self.assertTrue((payload/'adapters'/product/'mcp').is_dir())
+            self.assertTrue((payload/'scripts/mcp'/product).is_dir())
+            wiki = payload/'skills/wiki/SKILL.md'
+            link = f'../../references/products/{product}/skills/wiki/references/provider.md'
+            self.assertIn(link, wiki.read_text())
+            self.assertTrue((wiki.parent/link).is_file())
+
+    def test_export_excludes_verification_inventory(self):
+        package_dir = self.build()
+        _, files = package.verified_package(package_dir, 'codex')
+        output = self.base/'marketplace'
+        delivery.export(package_dir, output, files)
+        self.assertEqual({p.name for p in output.iterdir()}, {'.agents', 'plugins', 'release.json'})
+        self.assertTrue((output/'plugins/tr-codex/skills/wiki/SKILL.md').is_file())
 
     def test_session_restart_readonly_cli_preserves_both_payloads_without_bytecode(self):
         for product in ('codex','claude'):
             out=self.build(product,name='restart-'+product)
             payload=Path(package.verify(out,product)['payload'])
-            helper=payload/'common/base/skills/session/scripts/session_restart.py'
+            helper=payload/'skills/session/scripts/session_restart.py'
             env=dict(os.environ);env.pop('PYTHONDONTWRITEBYTECODE',None)
             result=subprocess.run([sys.executable,str(helper),'list','--state',str(self.base/('absent-'+product))],
                                   text=True,capture_output=True,env=env)
@@ -75,7 +90,7 @@ class NativePackage(unittest.TestCase):
             text=json.dumps(hooks);self.assertNotIn('@@',text);self.assertNotIn(str(ROOT),text)
 
     def test_tampered_payload_refused(self):
-        out=self.build();(out/'plugins/tr-codex/common/base/instructions.md').write_text('tamper')
+        out=self.build();(out/'plugins/tr-codex/instructions.md').write_text('tamper')
         with self.assertRaises(ValueError):package.verify(out,'codex')
 
     def test_extra_or_symlink_payload_refused(self):

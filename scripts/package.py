@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import posixpath
 from pathlib import Path
 import re
 import sys
@@ -14,6 +15,60 @@ import assemble
 
 def encoded(value):return (json.dumps(value,ensure_ascii=False,indent=2)+'\n').encode()
 def digest(data):return hashlib.sha256(data).hexdigest()
+
+
+def native_layout(files):
+    """Relocate owned files and rebase references in the native distribution."""
+    prefixes = {
+        'common/base/scripts': 'scripts/lib/common',
+        'common/base': '',
+        'adapters/codex/scripts': 'scripts/product/codex',
+        'adapters/claude/scripts': 'scripts/product/claude',
+        'adapters/codex/skills': 'references/products/codex/skills',
+        'adapters/claude/skills': 'references/products/claude/skills',
+        'adapters/codex/hooks': 'hooks/templates/codex',
+        'adapters/claude/hooks': 'hooks/templates/claude',
+        'adapters/codex/mcp': 'scripts/mcp/codex',
+        'adapters/claude/mcp': 'scripts/mcp/claude',
+    }
+
+    def relocate(path):
+        for source, target in prefixes.items():
+            if path == source or path.startswith(source + '/'):
+                return posixpath.join(target, path[len(source):].lstrip('/')).rstrip('/') or '.'
+        return path
+
+    def link(match, source_path, target_path):
+        relative = match[1]
+        destination = posixpath.normpath(posixpath.join(posixpath.dirname(source_path), relative))
+        if destination == '..' or destination.startswith('../'):
+            return match[0]
+        return '(' + posixpath.relpath(relocate(destination), posixpath.dirname(target_path) or '.')
+
+    layout = {}
+    for source_path, data in files.items():
+        if source_path == 'common/base/workflow.md' or source_path.endswith('/plugin.json.in'):
+            continue
+        target_path = relocate(source_path)
+        if target_path in layout:
+            raise ValueError('native layout collision')
+        if source_path.endswith(('.md', '.py', '.sh', '.in', '.json')):
+            content = data.decode()
+            if source_path.endswith('.md'):
+                content = re.sub(r'\((\.\.?/[^\s)#]+)', lambda match: link(match, source_path, target_path), content)
+            for source, target in prefixes.items():
+                if target:
+                    content = content.replace(source, target)
+            content = content.replace('common/base/instructions.md', 'instructions.md')
+            if source_path.endswith('.md'):
+                content = content.replace('common/base/skills', 'skills')
+            content = content.replace('adapters/{product}/scripts', 'scripts/product/{product}')
+            content = content.replace('adapters/$product/scripts', 'scripts/product/$product')
+            content = content.replace('adapters/{product}/hooks', 'hooks/templates/{product}')
+            content = content.replace('adapters/{p["product"]}/mcp', 'scripts/mcp/{p["product"]}')
+            data = content.encode()
+        layout[target_path] = data
+    return layout
 
 
 def native_files(root,product,files,options):
@@ -39,25 +94,26 @@ def native_files(root,product,files,options):
                 for group in groups:
                     for handler in group['hooks']:
                         if role=='secret':
-                            handler['command']=f'python3 -B "${{CLAUDE_PLUGIN_ROOT}}/adapters/{product}/scripts/secret_guard.py" --event {event}'
+                            handler['command']=f'python3 -B "${{CLAUDE_PLUGIN_ROOT}}/scripts/product/{product}/secret_guard.py" --event {event}'
                         else:handler['command']=f'python3 -B "${{CLAUDE_PLUGIN_ROOT}}/scripts/plugin-runtime.py" upstream --product {product} --event {event}'
                 hooks.setdefault(event,[]).extend(groups)
     for filename in ('LICENSE','NOTICE','SECURITY.md','INSTALL.md'):
         path=root/filename
         if path.is_symlink() or not path.is_file():raise ValueError('own distribution notice missing')
-    return wrap_native_files(product,files,manifest,{'hooks':hooks},profile,
+    manifest['skills'] = './skills/'
+    return wrap_native_files(product,native_layout(files),manifest,{'hooks':hooks},profile,
         ['native hook trust and new-session verification','official external providers/resources (G7)',
-         'upstream binding and pinned Gitleaks for guarded profile'])
+         'upstream binding and pinned Gitleaks for guarded profile'], source_files=files)
 
 
-def wrap_native_files(product,files,manifest,hooks,profile,requires):
+def wrap_native_files(product,files,manifest,hooks,profile,requires,*,source_files=None):
     """Reusable own envelope; callers own identity, hooks and prerequisites."""
     name=manifest.get('name');version=manifest.get('version')
     if product not in ('codex','claude') or not isinstance(name,str) or not re.fullmatch(r'[a-z][a-z0-9-]{0,63}',name):
         raise ValueError('explicit native identity required')
     if (not isinstance(version,str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?',version)
             or profile not in ('review','guarded')):raise ValueError('invalid native version/profile')
-    if manifest.get('skills')!='./common/base/skills/' or manifest.get('hooks')!='./hooks/hooks.json':
+    if manifest.get('skills') not in ('./common/base/skills/', './skills/') or manifest.get('hooks')!='./hooks/hooks.json':
         raise ValueError('unsupported component contract')
     if not isinstance(hooks,dict) or set(hooks)!= {'hooks'} or not isinstance(hooks['hooks'],dict):
         raise ValueError('explicit hook mapping required')
@@ -69,7 +125,6 @@ def wrap_native_files(product,files,manifest,hooks,profile,requires):
     # Native managers install the payload, without the marketplace assembly.
     body['installation.json']=encoded({'schema_version':1,'product':product,'name':name,'version':version,
         'profile':profile,'files':[{'path':p,'sha256':digest(b)} for p,b in sorted(body.items())]})
-    # Preserve paths. Native manifests select the common skill directory directly.
     result={f'plugins/{name}/{path}':data for path,data in body.items()}
     metadata='.agents/plugins' if product=='codex' else '.claude-plugin'
     source={'source':'local','path':f'./plugins/{name}'} if product=='codex' else f'./plugins/{name}'
@@ -77,7 +132,8 @@ def wrap_native_files(product,files,manifest,hooks,profile,requires):
     if product=='codex':market['interface']={'displayName':manifest.get('interface',{}).get('displayName',name)}
     else:market['owner']={'name':'tryoo0607'}
     result[metadata+'/marketplace.json']=encoded(market)
-    source_hash=digest(encoded({path:digest(data) for path,data in sorted(files.items())}))
+    source_inventory = files if source_files is None else source_files
+    source_hash=digest(encoded({path:digest(data) for path,data in sorted(source_inventory.items())}))
     result['release.json']=encoded({'schema_version':1,'product':product,'name':name,'version':version,
         'profile':profile,'source_inventory_sha256':source_hash,'operational_ready':False,
         'requires':requires,
@@ -86,6 +142,11 @@ def wrap_native_files(product,files,manifest,hooks,profile,requires):
 
 
 def verify(path,product,*,scan=True,expected_name=None):
+    report, _ = verified_package(path, product, scan=scan, expected_name=expected_name)
+    return report
+
+
+def verified_package(path,product,*,scan=True,expected_name=None):
     """Fresh exact inventory; a self-declared hash map is not signature evidence."""
     path=Path(path)
     if expected_name is not None and (not isinstance(expected_name,str) or not re.fullmatch(r'[a-z][a-z0-9-]{0,63}',expected_name)):
@@ -129,8 +190,9 @@ def verify(path,product,*,scan=True,expected_name=None):
     if installed['files']!=expected_inventory:raise ValueError('native payload inventory mismatch')
     if scan:assemble.secrets.scan(list(actual.items()),assemble.secrets.trusted_scanner())
     assemble.output_bytes(path,expected)
-    return {**release,'package_sha256':digest(encoded({p:digest(b) for p,b in sorted(actual.items())})),
-            'files':len(actual),'payload':str(payload),'limits':'Fresh bytes/scan only, not official origin or native readiness.'}
+    report = {**release,'package_sha256':digest(encoded({p:digest(b) for p,b in sorted(actual.items())})),
+              'files':len(actual),'payload':str(payload),'limits':'Fresh bytes/scan only, not official origin or native readiness.'}
+    return report, actual
 
 
 def main():

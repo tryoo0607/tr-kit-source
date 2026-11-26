@@ -315,11 +315,13 @@ common/base/scripts/claude_mem.py는 provider_links와 toolchain의 명시 entry
 
 ### G5 이후 제품 포장과 격리 수명 관리
 
-기존 assemble.py의 source-bundle-v1과 fresh 검사를 보존하고 native 분기에서 package.py가 제품 manifest/marketplace·hook 등록·현재 파일 명세를 추가한다. skill/reference는 common/base 경로를 유지한다. 공통 초기 지침과 upstream binding relay는 common/base/scripts/plugin_runtime.py, native 등록 형식은 adapters/<product>, package/lifecycle/CI 도구는 root scripts가 소유한다. 외부 기능·runtime은 동봉하지 않는다.
+기존 assemble.py의 source-bundle-v1과 fresh 검사를 보존한다. native 분기에서 package.py가 각 제품의 marketplace와 manifest를 생성하고 설치본의 `plugins/tr-<product>/` 아래에 `skills/`, `references/`, `hooks/`, `scripts/`를 배치한다. 이때 설치본에서 사용하는 참조와 실행 경로를 함께 변환한다. 공통 초기 지침과 upstream binding relay는 common/base/scripts/plugin_runtime.py, native 등록 형식은 adapters/<product>, package/lifecycle/CI 도구는 root scripts가 소유한다. 외부 기능·runtime은 동봉하지 않는다.
+
+`tr-kit-source`가 편집 원본이며 `tr-codex`와 `tr-claude`는 제품이 등록할 설치 결과물의 위치다. `assembly.json`은 검증용 package에 두고, `delivery.py --output`이 마켓플레이스 트리를 내보낼 때 제외한다.
 
 source 작성→raw source 조립→native 구조 생성→현재 package 검사→정적 설치 계획→apply 전 scanner→격리 official manager→cache byte 대조의 단계다. review/guarded·초기 지침 전달·실제 native trust/callback·G4 MCP/공식 providers·private 통합을 서로 다른 상태로 관리한다. 세부 트리와 변경 이유는 [G5 기록](decisions/20261118-g5-packaging.md), 실제 절차는 root INSTALL.md, 검증 범위는 verification.md가 소유한다.
 
-양 adapter의 mcp/*.in은 native 형식 출력 원문이며 조립에서도 제품별 상대경로를 보존한다. render는 stdout 출력만 하고 native 등록은 수행하지 않는다. 외부 worker/MCP는 source 밖 명시 설치본을 직접 실행한다. source별 책임과 전후 트리·실행 흐름은 [G4 기록](decisions/20261118-g4-claude-mem.md)에 있다. 현재 native 설치·기존 개인 DB 연결은 미실행이며 자동 인수 기능은 없다.
+양 adapter의 mcp/*.in은 native 형식 출력 원문이며 설치본에서는 `scripts/mcp/<product>/`에 둔다. render는 stdout 출력만 하고 native 등록은 수행하지 않는다. 외부 worker/MCP는 source 밖 명시 설치본을 직접 실행한다. source별 책임과 기존 실행 흐름은 [G4 기록](decisions/20261118-g4-claude-mem.md)에 있다. 현재 native 설치·기존 개인 DB 연결은 미실행이며 자동 인수 기능은 없다.
 
 ### G7 이후 설치 리소스·제품 검수
 

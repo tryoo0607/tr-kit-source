@@ -2,7 +2,7 @@
 
 ## 패키지 상태
 
-- 소스 구조는 common/base·adapters·scripts를 유지한다. 외부 본문·runtime은 포함하지 않는다. native manifest는 제품이 지원하는 skill 경로를 직접 선택한다.
+- 소스는 `tr-kit-source`의 `common/base/`, `adapters/`, `scripts/`에서 관리한다. 제품별 설치본은 `plugins/tr-codex/` 또는 `plugins/tr-claude/` 바로 아래에 `skills/`, `references/`, `hooks/`, `scripts/`를 생성한다. 각 제품의 매니페스트는 `./skills/`를 읽는다. 외부 본문·runtime은 포함하지 않는다.
 - `scripts/package.py build`는 명시 product/version/profile·catalog/scope/providers로 새 출력 하나를 만든다. source 밖 output과 모든 실제 입력·산출물을 scope에 등록해야 한다. `verify`는 현재 전체 파일/hash와 Gitleaks를 다시 검사한다. 자체 명세 일치는 서명·공식 출처 인증이 아니다.
 - `review`: SessionStart를 통해 자체 공통 원칙을 전달하는 검토용. secret/upstream 가드의 native 등록은 포함하지 않는다. 운영용 보호가 준비됐다고 판단하지 않는다.
 - `guarded`: 기존 secret/upstream hook을 제품별로 함께 등록한다. secret scanner는 기존 pin/receipt가 필요하다. upstream은 아래 호스트 runtime 연결에서 선택한 binding 파일의 정확한 `root`, `catalog`, `scope` canonical 절대 경로를 사용한다. binding 부재·오류는 Pre에서 명시 deny, Post에서 실패를 보고한다. 등록 전 실제 scope·scanner·native event/신뢰를 검증한다. review로 다시 만들기를 보호 우회로 사용하지 않는다.
@@ -45,4 +45,6 @@
 
 ## 전송·CI와 운영 경계
 
-`scripts/delivery.py`는 현재 package 검사 전용이며 push하지 않는다. CI도 검사 전용이며 배포 key·secret·SSH·원격 저장소 push가 없다. 운영 전송·기존 호스트 설정 변경과 전체 README 재작성은 이 단계에 포함하지 않는다. 기존 private의 common pin·native 통합은 별도 확인 대상이다.
+`scripts/delivery.py`는 현재 package를 다시 검증한다. `--output <새 절대 경로>`를 지정하면 검증한 파일 중 `assembly.json`을 제외한 마켓플레이스 트리를 내보낸다. 격리 설치 도구에는 `assembly.json`이 있는 검증용 package를 사용한다.
+
+GitHub Actions는 PR마다 테스트와 두 제품의 패키징을 검증한다. `main`이 갱신되면 같은 커밋에서 만든 두 설치 트리를 `tr-codex/main`과 `tr-claude/main`에 게시한다. 기존 제품별 쓰기 권한이 있는 배포 키를 사용하고, 두 대상의 검사와 푸시 사전 확인을 마친 후 게시한다. 실패한 경우 현재 `main`에 대해 같은 실행을 재시도할 수 있다. CI는 고정된 공개 원문 목록으로 보호 검사를 수행하고 공식 runtime의 설치와 검수는 설치 호스트에 맡긴다.
