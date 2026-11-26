@@ -278,7 +278,49 @@ def snapshot(client, self_pane):
     return terms, ps
 
 
-def target_from(client, item, ps, self_pane):
+def bind_selected_claude_provider(client, target, row, self_pane, *, proof=None):
+    """Bind only an explicit selected row; never rewrite Orca observations."""
+    identity = dict(target['identity'])
+    if (row is None or row.get('choice') != 'restart' or row.get('provider') != 'claude'
+            or identity not in (row.get('terminal'), row.get('ownedTerminal'), row.get('currentTerminal'))
+            or identity['worktreePath'] != row['terminal']['worktreePath']
+            or rr.pane(identity) == self_pane):
+        raise Deferred('selected-claude-provider-unverified')
+    native = row.get('native')
+    expected = None if native is None else native['sessionId']
+    runtime = client.runtime
+    proof = proof if proof is not None else live.observe(
+        rr, identity['worktreePath'], rr.pane(identity), expected=expected)
+    if (proof['producerVersion'] != '2.1.332' or proof['kind'] != 'interactive'
+            or proof['cwd'] != identity['worktreePath'] or proof['paneKey'] != rr.pane(identity)
+            or proof['process'].get('cwd') != identity['worktreePath']
+            or proof['process'].get('paneKey') != rr.pane(identity) or proof['process'].get('pid') != proof['pid']
+            or expected is not None and proof['sessionId'] != expected
+            or Path(proof['queryExecutable']['path']) != Path.home() / '.local/share/claude/versions/2.1.332'
+            or Path(proof['process']['executable']['path']).name not in rr.CLAUDE_RESTART_SOURCE_VERSIONS):
+        raise Deferred('selected-claude-provider-unverified')
+    session_id = uuid_value(proof['sessionId'])
+    proof = json.loads(encoded(proof))
+    if client.runtime != runtime:
+        raise Deferred('selected-claude-provider-changed')
+    def check(current_client, terminal=None):
+        if (current_client.runtime != runtime or target['identity'] != identity
+                or target.get('nativeProviderProof') != proof or proof['sessionId'] != session_id
+                or proof['cwd'] != identity['worktreePath'] or proof['paneKey'] != rr.pane(identity)
+                or proof['process']['cwd'] != identity['worktreePath']
+                or proof['process']['paneKey'] != rr.pane(identity)):
+            raise Deferred('selected-claude-provider-changed')
+        if terminal is not None and (rr.fingerprint(terminal) != identity
+                or terminal.get('agentIdentity') not in (None, 'claude')):
+            raise Deferred('selected-claude-provider-changed')
+        live.recheck(rr, proof)
+        return rr.VerifiedClaudeProvider(identity)
+    target.update(nativeProviderCheck=check, nativeProviderProof=json.loads(encoded(proof)),
+                  requireCompleteInventory=True)
+    check(client)
+
+
+def target_from(client, item, ps, self_pane, *, selected_row=None):
     if item.get('executionHostId') != 'local':
         raise Deferred('remote-operation-delegate-to-host-session')
     t, frame = client.observe(item['handle'])
@@ -287,12 +329,21 @@ def target_from(client, item, ps, self_pane):
     # First check the entire passive guard before the idle wait. No native input
     # is allowed for an unsafe target, including a freshly busy one.
     provider = t.get('agentIdentity')
-    rr.eligible(t, frame, ps, self_pane, True, tui_idle=provider == 'claude')
+    target = {'handle': t['handle'], 'identity': rr.fingerprint(t), 'provider': provider, 'state': 'idle'}
+    if provider is None:
+        if (ps.get('truncated') is not False
+                or 'local' not in rr.obj(ps.get('hostScope')).get('hostIds', [])):
+            raise Deferred('inventory-incomplete')
+        if rr.agent_for(ps, t).get('agentType') != 'claude':
+            raise Deferred('provider-or-structured-unsupported')
+        bind_selected_claude_provider(client, target, selected_row, self_pane)
+        provider = target['provider'] = 'claude'
+    verified = rr.native_provider_check(client, target, t)
+    rr.eligible(t, frame, ps, self_pane, True, tui_idle=provider == 'claude', verified_provider=verified)
     rr.wait_idle(client, t)
-    rr.eligible(t, frame, ps, self_pane, True, tui_idle=True)
-    inventory = rr.plugin_inventory(provider, t['worktreePath'])
-    target = {'handle': t['handle'], 'identity': rr.fingerprint(t),
-              'provider': provider, 'installation': inventory, 'state': 'idle'}
+    verified = rr.native_provider_check(client, target, t)
+    rr.eligible(t, frame, ps, self_pane, True, tui_idle=True, verified_provider=verified)
+    target['installation'] = rr.plugin_inventory(provider, t['worktreePath'])
     rr.installation_guard(target)
     return target
 
@@ -353,7 +404,7 @@ def prepare_rows(client, store, batch, rows, by_handle, ps, self_pane, *, contin
             continue
         log = Recorder(store, batch, row, 'prepare')
         try:
-            target = target_from(client, by_handle[row['targetId']], ps, self_pane)
+            target = target_from(client, by_handle[row['targetId']], ps, self_pane, selected_row=row)
             if continuation and target['provider'] != row['provider']:
                 raise Deferred('provider-changed')
             if continuation and client.runtime != batch['preparedRuntime']:
@@ -718,7 +769,15 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
         return any(r['terminal']['worktreeId'] == item.get('worktreeId')
                    and (rr.pane(r['terminal']) == rr.pane(item)
                         or r.get('ownedTerminal') == rr.fingerprint(item)) for r in allowed)
+    def owner(item):
+        matching = [r for r in allowed if r['terminal']['worktreeId'] == item.get('worktreeId')
+                    and (rr.pane(r['terminal']) == rr.pane(item)
+                         or r.get('ownedTerminal') == rr.fingerprint(item))]
+        if len(matching) != 1:
+            raise Deferred('unselected-or-uncertain-native-candidate')
+        return matching[0]
     candidates = []
+    prepared_targets = {}
     for item in related:
         if blocked_by_exception(batch, item, client.runtime) or rr.pane(item) == self_pane:
             continue
@@ -734,6 +793,10 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
             raise Deferred('workspace-or-target-changed')
         provider = t.get('agentIdentity')
         if provider == row['provider']:
+            candidates.append(t)
+        elif (provider is None and row['provider'] == 'claude'
+              and owner(t)['provider'] == 'claude' and rr.agent_for(ps, t).get('agentType') == 'claude'):
+            prepared_targets[t['handle']] = target_from(client, t, ps, self_pane, selected_row=owner(t))
             candidates.append(t)
         elif provider not in ('codex', 'claude'):
             # An empty shell is allowed to remain, but will never receive input.
@@ -766,7 +829,8 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
                    and (rr.pane(r['terminal']) == rr.pane(candidate)
                         or r.get('ownedTerminal') == rr.fingerprint(candidate)) for r in allowed):
             raise Deferred('unselected-or-uncertain-native-candidate')
-    targets = [target_from(client, candidate, ps, self_pane) for candidate in candidates]
+    targets = [prepared_targets[candidate['handle']] if candidate['handle'] in prepared_targets else
+               target_from(client, candidate, ps, self_pane, selected_row=owner(candidate)) for candidate in candidates]
     if log is None:
         return targets[0], None
     identities = []
@@ -775,6 +839,14 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
             # Track owned modals even if a later identity/duplicate check fails.
             proofs.append(target)
         options = {'keep_modal': True} if proofs is not None else {}
+        if row['provider'] == 'claude':
+            owners = [r for r in allowed if r['provider'] == 'claude'
+                      and r['terminal']['worktreeId'] == target['identity']['worktreeId']
+                      and (rr.pane(r['terminal']) == rr.pane(target['identity'])
+                           or r.get('ownedTerminal') == target['identity'])]
+            if len(owners) != 1:
+                raise Deferred('native-identity-or-permissions-mismatch')
+            claude_candidate_before_status(client, batch, owners[0], target)
         identities.append(rr.native_status(client, current_plan(client, self_pane), target,
                                            self_pane, log, **options))
     if len({n['sessionId'] for n in identities}) != len(identities):
@@ -806,6 +878,133 @@ def equal_identity(expected, actual, *, resumed=False):
         raise Deferred('native-identity-or-permissions-mismatch')
     if resumed and expected.get('resumeMode') is not None and expected['resumeMode'] != actual.get('resumeMode'):
         raise Deferred('native-identity-or-permissions-mismatch')
+    if expected.get('accountProof') is not None and expected['accountProof'] != actual.get('accountProof'):
+        raise Deferred('claude-account-mismatch')
+
+
+def final_claude_permission(frame):
+    text = rr.screen(frame)
+    final = text.rstrip().splitlines()[-1].strip() if text.strip() else ''
+    if final not in ('⏵⏵ bypass permissions on (shift+tab to cycle)',
+                     '⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents'):
+        raise Deferred('claude-permissions-unknown')
+    return rr.claude_permission(text)
+
+
+def settle_claude_ui(client, target, before, plan, self_pane):
+    """Read-only quiet window; retain exact cursor/screen and every full guard."""
+    deadline = time.monotonic() + 15
+    previous = None
+    quiet_since = None
+    observations = 0
+    while True:
+        if time.monotonic() >= deadline:
+            raise Deferred('claude-ui-settling-timeout')
+        _, frame = rr.guard(client, plan, target, self_pane)
+        if final_claude_permission(frame) != before['permissions']:
+            raise Deferred('native-identity-or-permissions-mismatch')
+        cursor = frame.get('latestCursor')
+        if not re.fullmatch(r'\d+', str(cursor)):
+            raise Deferred('native-exit-freshness-unknown')
+        observed_at = time.monotonic()
+        if observed_at >= deadline:
+            raise Deferred('claude-ui-settling-timeout')
+        current = (str(cursor), rr.screen(frame))
+        if current != previous:
+            previous, quiet_since, observations = current, observed_at, 1
+        else:
+            observations += 1
+        if observations >= 3 and observed_at - quiet_since >= 2:
+            return
+        time.sleep(min(0.5, deadline - observed_at))
+
+
+def claude_restart_proof(client, target, before, plan, self_pane):
+    """Separate selected native/process, launch, and account evidence."""
+    if (before.get('nativeVersion') not in rr.CLAUDE_RESTART_SOURCE_VERSIONS
+            or target['installation'].get('nativeVersion') != '2.1.332'):
+        raise Deferred('claude-restart-source-version-mismatch')
+    if not re.fullmatch(r'[a-f0-9]{64}', str(before.get('accountProof', ''))):
+        raise Deferred('claude-account-unverified')
+    settle_claude_ui(client, target, before, plan, self_pane)
+    proof = live.observe(rr, before['cwd'], rr.pane(target['identity']), expected=before['sessionId'])
+    if Path(proof['process']['executable']['path']).name != before['nativeVersion']:
+        raise Deferred('claude-restart-source-version-mismatch')
+    launch = live.selected_launch(rr, proof)
+    target['claudeRestart'] = True
+
+    def check(phase, shell=None):
+        if phase in ('normal-exit', 'exact-resume'):
+            try:
+                live.checked.inspect_proof(target['launchIntent'])
+            except (live.checked.Refused, OSError, ValueError, KeyError):
+                raise Deferred('claude-checked-resume-proof-changed') from None
+        if phase == 'normal-exit':
+            _, frame = rr.guard(client, plan, target, self_pane)
+            if final_claude_permission(frame) != before['permissions']:
+                raise Deferred('native-identity-or-permissions-mismatch')
+            evidence = target.get('exitEvidence')
+            if evidence is not None and (frame.get('latestCursor') != evidence['cursor']
+                    or hashlib.sha256(rr.screen(frame).encode()).hexdigest() != evidence['frameSha256']):
+                raise Deferred('native-exit-proof-changed')
+            if live.selected_launch(rr, proof) != launch:
+                raise Deferred('claude-launch-proof-changed')
+        else:
+            shell = shell or rr.target_shell_process_proof(target['identity'])
+            live.exited(rr, proof, launch, shell)
+    target['restartCheck'] = check
+    return {'native': proof, 'launch': launch, 'accountProof': before['accountProof']}
+
+
+def claude_candidate_before_status(client, batch, row, target):
+    """No stale hint may authorize shell input, including explicit verify."""
+    restart = row.get('restartProof')
+    if restart is None:
+        return
+    fresh = live.observe(rr, row['native']['cwd'], rr.pane(target['identity']),
+                         expected=row['native']['sessionId'])
+    operation = restart.get('operationId')
+    observed_exit = any(e['phase'] == 'native-exit-observed'
+                        and e.get('targetId') == row['targetId']
+                        and e.get('sessionId') == row['native']['sessionId']
+                        and (operation is None or e.get('operationId') == operation)
+                        for e in batch['events'])
+    if not observed_exit and fresh == restart['native']:
+        if live.selected_launch(rr, fresh) != restart['launch']:
+            raise Deferred('claude-launch-proof-changed')
+        return  # Still the proven original; status alone cannot complete restart.
+    proven = verify_claude_process(client, target, row['native'], restart, observed=fresh)
+    if row.get('processObserved') is not None and row['processObserved'] != proven:
+        raise Deferred('claude-resumed-process-changed')
+
+
+def verify_claude_process(client, target, before, restart_proof, *, status_verified=False, observed=None):
+    proof = observed if observed is not None else live.observe(
+        rr, before['cwd'], rr.pane(target['identity']), expected=before['sessionId'])
+    if status_verified and Path(proof['process']['executable']['path']).name != before.get('nativeVersion'):
+        raise Deferred('claude-restart-source-version-mismatch')
+    old = restart_proof['native']
+    pinned = old['queryExecutable']
+    comparisons = {'nativeExecutableEqual': proof['process']['executable'] == pinned,
+                   'queryExecutableEqual': proof['queryExecutable'] == pinned}
+    if not all(comparisons.values()):
+        client.claude_launch_comparison = comparisons
+        raise Deferred('claude-resumed-launch-mismatch')
+    if (proof['pid'] == old['pid'] or proof['process']['startTicks'] == old['process']['startTicks']
+            or proof['process']['pidNamespace'] != old['process']['pidNamespace']):
+        raise Deferred('claude-new-process-unproven')
+    launch = live.selected_launch(rr, proof)
+    expected = restart_proof['launch']
+    comparisons.update(environmentProofEqual=launch['environment'] == expected['environment'],
+                       environmentEqual=launch['environment'].get('environmentSha256') == expected['environment'].get('environmentSha256'),
+                       profileEqual=launch['environment'].get('profileSha256') == expected['environment'].get('profileSha256'),
+                       shellFieldsEqual=all(launch['shell'][key] == expected['shell'][key]
+                                            for key in ('pid', 'starttime', 'uid', 'sid', 'pgrp', 'tty')),
+                       shellExecutableEqual=launch['shellExecutable'] == expected['shellExecutable'])
+    if not all(comparisons.values()):
+        client.claude_launch_comparison = comparisons
+        raise Deferred('claude-resumed-launch-mismatch')
+    return proof
 
 
 def launch_state(terms, ps, old, self_pane):
@@ -889,7 +1088,8 @@ def owned_launch(client, batch, row, self_pane, log, installation):
                 raise Deferred('restore-safety-state-changed')
             if target['provider'] is not None:
                 if rr.eligible(t, frame, ps, self_pane, True, tui_idle=True,
-                               modal=bool(target.get('ownedStatusModal'))) != target['provider']:
+                               modal=bool(target.get('ownedStatusModal')),
+                               verified_provider=rr.native_provider_check(client, target, t)) != target['provider']:
                     raise Deferred('provider-changed')
             elif any(t.get(k) != matches[0].get(k) for k in
                      ('agentIdentity', 'agentWait', 'orphaned', 'connected', 'writable')) or frame.get('draft') not in (None, ''):
@@ -932,7 +1132,7 @@ def owned_launch(client, batch, row, self_pane, log, installation):
         if len(matches) != 1 or rr.fingerprint(matches[0]) != identity:
             raise Deferred('restore-terminal-changed')
         try:
-            target = target_from(client, matches[0], ps, self_pane)
+            target = target_from(client, matches[0], ps, self_pane, selected_row=row)
             if target['provider'] != row['provider']:
                 raise Deferred('restore-provider-mismatch')
             return target
@@ -1241,7 +1441,7 @@ def verify_preparation(client, store, batch, self_pane):
         if row.get('reason') is not None:
             log.record('preparation-failed', reason=row['reason'])
         try:
-            target = target_from(client, items[row['targetId']], ps, self_pane)
+            target = target_from(client, items[row['targetId']], ps, self_pane, selected_row=row)
             if target['provider'] != row['provider']:
                 raise Deferred('provider-changed')
             native = validate_native(rr.native_status(client, plan, target, self_pane, log, keep_modal=True))
@@ -1272,6 +1472,7 @@ def execute(client, store, batch_id, self_pane, mode):
     client.management_self = None
     client.recovery_exception_check = None
     client.exception_proofs = {}
+    client.claude_launch_comparison = None
     if mode not in ('restart', 'restore', 'verify'):
         raise Deferred('invalid-operation')
     batch = store.load(batch_id)
@@ -1292,7 +1493,8 @@ def execute(client, store, batch_id, self_pane, mode):
         if row.get('native') is None:
             # Unsafe targets never get a later implicit preparation/status query.
             continue
-        if mode == 'restart' and row['provider'] == 'claude':
+        if (mode == 'restart' and row['provider'] == 'claude'
+                and resume_basis(batch, row).get('nativeVersion') not in rr.CLAUDE_RESTART_SOURCE_VERSIONS):
             row.update(state='manual-restart-required', reason='claude-clean-exit-contract-unverified')
             store.save(batch)
             continue
@@ -1307,6 +1509,7 @@ def execute(client, store, batch_id, self_pane, mode):
             row['attempt'] = {'operationId': operation, 'mode': mode, 'state': 'started'}
             store.save(batch)
         log = Recorder(store, batch, row, operation)
+        client.claude_launch_comparison = None
         try:
             found = locate(client, batch, row, self_pane, log)
             needs_resume = ((found is None and mode == 'restore') or
@@ -1320,6 +1523,20 @@ def execute(client, store, batch_id, self_pane, mode):
                         raise Deferred('installed-versions-unverified')
                     command = rr.resume_command(row['provider'], native,
                                                 installed_version=installation.get('nativeVersion'))
+                    if found is not None and row['provider'] == 'claude':
+                        restart_proof = claude_restart_proof(client, found[0], native, current_plan(client, self_pane), self_pane)
+                        restart_proof['operationId'] = operation
+                        store.check_directory()
+                        try:
+                            launch_intent = live.checked.write_proof(store.root, batch_id=batch_id, attempt_id=operation,
+                                                                    native=restart_proof['native'], launch=restart_proof['launch'])
+                        except (live.checked.Refused, OSError, ValueError, KeyError):
+                            raise Deferred('claude-checked-resume-proof-unverifiable') from None
+                        command = live.checked.command(launch_intent)
+                        restart_proof['launchIntent'] = launch_intent
+                        found[0]['launchIntent'] = launch_intent
+                        row['restartProof'] = restart_proof
+                        log.record('claude-restart-preflight', proof=restart_proof)
                 except Deferred as error:
                     row.update(state='manual-restart-required', reason=str(error))
                     row['attempt']['state'] = 'not-submitted'
@@ -1351,15 +1568,26 @@ def execute(client, store, batch_id, self_pane, mode):
                         break
                     equal_identity(resume_basis(batch, row), before, resumed=True)
                 if mode != 'restart' or (prior and prior.get('state') == 'complete'):
+                    if row['provider'] == 'claude' and row.get('restartProof'):
+                        observed_process = verify_claude_process(client, target, before, row['restartProof'], status_verified=True)
+                        if row.get('processObserved') is not None and row['processObserved'] != observed_process:
+                            raise Deferred('claude-resumed-process-changed')
+                        row['processObserved'] = observed_process
                     after, state = before, 'already-running'
                 else:
-                    # Claude clean-exit evidence is not established by reload or
-                    # by a guessed shell marker. Do not send /exit until proven.
                     _, frame = rr.guard(client, plan, target, self_pane)
                     cursor = frame.get('latestCursor')
                     if not re.fullmatch(r'\d+', str(cursor)):
                         raise Deferred('native-exit-freshness-unknown')
                     evidence = {'sessionId': before['sessionId'], 'cursor': cursor}
+                    if target.get('claudeRestart'):
+                        if final_claude_permission(frame) != before['permissions']:
+                            raise Deferred('native-identity-or-permissions-mismatch')
+                        evidence.update(nativeVersion=before['nativeVersion'],
+                                        frameSha256=hashlib.sha256(rr.screen(frame).encode()).hexdigest(),
+                                        nativeProof=target['nativeProof'])
+                        target['exitEvidence'] = evidence
+                    log.record('native-exit-planned', handle=target['handle'], **evidence)
                     rr.send(client, log, target, '/exit', 'normal-exit')
                     deadline = time.monotonic() + 10
                     while True:
@@ -1371,11 +1599,40 @@ def execute(client, store, batch_id, self_pane, mode):
                                 raise
                             time.sleep(0.2)
                     rr.shell_guard(client, plan, target, evidence)
-                    log.record('native-exit-observed', sessionId=before['sessionId'])
+                    log.record('native-exit-observed', **evidence)
                     rr.send(client, log, target, command, 'exact-resume')
-                    rr.wait_resumed(client, plan, target, self_pane)
+                    try:
+                        if target.get('nativeProviderCheck') is not None:
+                            rr.wait_idle(client, target)
+                            renewed = verify_claude_process(client, target, before, row['restartProof'])
+                            bind_selected_claude_provider(client, target, row, self_pane, proof=renewed)
+                        rr.wait_resumed(client, plan, target, self_pane)
+                        if row['provider'] == 'claude':
+                            # Old done hints and scrollback can also describe a
+                            # shell. Prove the exact new native before any input.
+                            resumed_process = verify_claude_process(client, target, before, row['restartProof'])
+                    except Deferred:
+                        if target.get('claudeRestart'):
+                            intent = row['restartProof']['launchIntent']
+                            refused = Path(intent['path'] + '.refused')
+                            try:
+                                fd = os.open(refused, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                                with os.fdopen(fd, 'rb') as receipt:
+                                    info = os.fstat(receipt.fileno())
+                                    if (stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+                                            and stat.S_IMODE(info.st_mode) == 0o400 and info.st_nlink == 1
+                                            and receipt.read(65) == intent['sha256'].encode()):
+                                        raise Deferred('claude-checked-resume-stopped-before-native-launch')
+                            except OSError:
+                                pass
+                        raise
                     after = rr.native_status(client, plan, target, self_pane, log)
                     equal_identity(before, after, resumed=True)
+                    if row['provider'] == 'claude':
+                        observed_process = verify_claude_process(client, target, after, row['restartProof'], status_verified=True)
+                        if observed_process != resumed_process:
+                            raise Deferred('claude-resumed-process-changed')
+                        row['processObserved'] = observed_process
                     state = 'restarted'
             row.update(state=state, reason=None, nativeObserved=after,
                        currentTerminal=target['identity'], installationObserved=rr.installation_guard(target),
@@ -1394,6 +1651,14 @@ def execute(client, store, batch_id, self_pane, mode):
             # If persistence failed, the previous durable sending record remains
             # authoritative. Never perform another action to repair the receipt.
             try:
+                comparison = getattr(client, 'claude_launch_comparison', None)
+                if row['reason'] == 'claude-resumed-launch-mismatch' and isinstance(comparison, dict):
+                    safe = {key: comparison[key] for key in
+                            ('nativeExecutableEqual', 'queryExecutableEqual', 'environmentProofEqual',
+                             'environmentEqual', 'profileEqual', 'shellFieldsEqual', 'shellExecutableEqual')
+                            if type(comparison.get(key)) is bool}
+                    if safe:
+                        log.record('claude-launch-comparison', **safe)
                 log.record('stopped', reason=row['reason'])
             except (Deferred, OSError):
                 row['reason'] = 'storage-failed-inspect-existing-record'

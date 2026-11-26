@@ -376,5 +376,100 @@ class ExactProducerTransport(unittest.TestCase):
         self.assertFalse(self.marker.exists())
 
 
+class Selected332Launch(unittest.TestCase):
+    write_stat = Live.write_stat
+    write_status = Live.write_status
+    observe = Live.observe
+
+    def setUp(self):
+        Live.setUp(self)
+        self.exe.rename(self.exe.with_name('2.1.332'))
+        self.exe = self.exe.with_name('2.1.332')
+        self.patches[1].stop()
+        current_path = patch.object(m.shutil, 'which', return_value=str(self.exe))
+        current_path.start()
+        self.addCleanup(current_path.stop)
+        (self.path/'exe').unlink()
+        (self.path/'exe').symlink_to(self.exe)
+        self.parent = self.proc/'42'
+        self.parent.mkdir()
+        environment = b'HOME='+os.fsencode(self.home)+b'\0ORCA_PANE_KEY=tab:manual\0TOKEN=opaque-secret\0'
+        (self.path/'environ').write_bytes(environment)
+        (self.parent/'environ').write_bytes(environment)
+        owned_roots = patch.object(m.checked, 'project_roots', return_value=[Path('/work')])
+        owned_roots.start()
+        self.addCleanup(owned_roots.stop)
+        self.arguments = b'claude\0--dangerously-skip-permissions\0'
+        (self.path/'cmdline').write_bytes(self.arguments)
+        self.child = dict(pid=self.pid, ppid=42, uid=os.getuid(), pgrp=self.pid,
+                          sid=42, tty=5, foreground=self.pid, starttime=100)
+        self.shell = dict(pid=42, ppid=1, uid=os.getuid(), pgrp=42,
+                          sid=42, tty=5, foreground=self.pid, starttime=10)
+        self.shell_exe = dict(path=str(Path('/usr/bin/zsh').resolve()), uid=0, mode=0o100755)
+        for item in (patch.object(rr, 'proc_process', side_effect=lambda pid, reason:
+                                 copy.deepcopy(self.child if pid == self.pid else self.shell)),
+                     patch.object(rr, 'proc_executable', return_value=self.shell_exe)):
+            item.start()
+            self.addCleanup(item.stop)
+
+    def native(self, provider, args, cwd, *, executable=None):
+        if args == ['--version']:
+            self.queries.append(args)
+            return '2.1.332 (Claude Code)\n'
+        return Live.native(self, provider, args, cwd, executable=executable)
+
+    def test_selected_launch_strict_classification_and_opaque_environment(self):
+        proof = self.observe()
+        launch = m.selected_launch(rr, proof, proc_root=self.proc)
+        self.assertEqual('fixed-bypass', launch['argumentClass'])
+        self.assertNotIn('opaque-secret', str(launch))
+        self.assertNotIn('--dangerously', str(launch))
+        # Session identity helpers still succeed without reading exception argv.
+        (self.path/'cmdline').unlink()
+        m.recheck(rr, proof)
+        with self.assertRaisesRegex(rr.Deferred, 'options-unverified'):
+            m.selected_launch(rr, proof, proc_root=self.proc)
+
+    def test_selected_launch_options_and_environment_drift_are_manual(self):
+        proof = self.observe()
+        for suffix in (b'--settings\0secret-path\0', b'--plugin-dir\0private-path\0',
+                       b'--add-dir\0/tmp\0', b'--mcp-config\0config\0', b'--continue\0',
+                       b'--resume\0wrong-uuid\0', b'--dangerously-skip-permissions\0', b'prompt\0'):
+            with self.subTest(suffix=suffix):
+                (self.path/'cmdline').write_bytes(self.arguments+suffix)
+                with self.assertRaisesRegex(rr.Deferred, 'options-unverified'):
+                    m.selected_launch(rr, proof, proc_root=self.proc)
+        (self.path/'cmdline').write_bytes(self.arguments+b'--resume\0'+SESSION.encode()+b'\0')
+        self.assertEqual('fixed-bypass-exact-resume', m.selected_launch(rr, proof, proc_root=self.proc)['argumentClass'])
+        (self.parent/'environ').write_bytes((self.parent/'environ').read_bytes().replace(b'opaque-secret', b'drift'))
+        # Parent initial environ is not authority for future exports. Only the
+        # checked child launcher compares actual inherited environment at exec.
+        self.assertEqual('fixed-bypass-exact-resume', m.selected_launch(rr, proof, proc_root=self.proc)['argumentClass'])
+
+    def test_observed_legacy_selected_executables_keep_query332_and_strict_argv(self):
+        for version in ('2.1.319', '2.1.329', '2.1.331'):
+            with self.subTest(version=version):
+                source = self.exe.with_name(version)
+                source.write_bytes(b'owned legacy native fixture')
+                source.chmod(0o700)
+                (self.path / 'exe').unlink()
+                (self.path / 'exe').symlink_to(source)
+                proof = self.observe()
+                if version == '2.1.331':
+                    with self.assertRaisesRegex(rr.Deferred, 'source-version-mismatch'):
+                        m.selected_launch(rr, proof, proc_root=self.proc)
+                else:
+                    launch = m.selected_launch(rr, proof, proc_root=self.proc)
+                    self.assertEqual('fixed-bypass', launch['argumentClass'])
+                    self.assertEqual('2.1.332', proof['producerVersion'])
+                    self.assertNotIn('opaque-secret', str(launch))
+
+    def test_original_pid_presence_never_becomes_exit_proof(self):
+        proof = self.observe()
+        launch = m.selected_launch(rr, proof, proc_root=self.proc)
+        with self.assertRaisesRegex(rr.Deferred, 'shell-unconfirmed'):
+            m.exited(rr, proof, launch, {'shell': self.shell, 'executable': self.shell_exe})
+
+
 if __name__ == '__main__':
     unittest.main()

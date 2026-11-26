@@ -119,8 +119,11 @@ def screen(read):
     return '\n'.join(tail)
 
 
-CLAUDE_NATIVE_VERSIONS = frozenset(('2.1.319', '2.1.329', '2.1.330', '2.1.331'))
-CLAUDE_LAUNCH_VERSIONS = frozenset(('2.1.330', '2.1.331'))
+CLAUDE_NATIVE_VERSIONS = frozenset(('2.1.319', '2.1.329', '2.1.330', '2.1.331', '2.1.332'))
+CLAUDE_LAUNCH_VERSIONS = frozenset(('2.1.330', '2.1.331', '2.1.332'))
+# Source-version-specific owned status/exit/process observations. Full guarded
+# native restart cycles remain a separate operational verification step.
+CLAUDE_RESTART_SOURCE_VERSIONS = frozenset(('2.1.319', '2.1.329', '2.1.332'))
 CLAUDE_331_PLACEHOLDERS = frozenset(('❯\u00a0Try "create a util logging.py that…"',
                                      '❯\u00a0Try "how does <filepath> work?"'))
 
@@ -440,7 +443,23 @@ def management_self_check(client, terms=None, ps=None, *, process_only=False, te
         raise Deferred('management-self-changed')
 
 
-def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False):
+class VerifiedClaudeProvider(tuple):
+    """Immutable terminal-bound authority, separate from Orca observations."""
+    __slots__ = ()
+
+    def __new__(cls, identity):
+        return tuple.__new__(cls, tuple(fingerprint(identity).items()))
+
+    def matches(self, terminal):
+        return tuple(self) == tuple(fingerprint(terminal).items())
+
+
+def native_provider_check(client, target, terminal=None):
+    check = target.get('nativeProviderCheck')
+    return check(client, terminal) if check is not None else None
+
+
+def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False, *, verified_provider=None):
     fingerprint(t)
     if not self_found:
         raise Deferred('self-unidentified')
@@ -452,6 +471,10 @@ def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False):
         raise Deferred('approval-or-wait')
     a = agent_for(ps, t)
     provider = t.get('agentIdentity')
+    if (provider is None
+            and isinstance(verified_provider, VerifiedClaudeProvider) and verified_provider.matches(t)
+            and a.get('agentType') == 'claude'):
+        provider = 'claude'
     if provider not in ('codex', 'claude') or a.get('agentType') != provider or a.get('structuredHostOwned') is True:
         raise Deferred('provider-or-structured-unsupported')
     if a.get('parentPaneKey') or a.get('children') or a.get('subagents'):
@@ -831,6 +854,22 @@ def status(provider, text):
     result = {'sessionId': ident, 'cwd': cwd, 'permissions': permission}
     if provider == 'claude':
         result['nativeVersion'] = field('Version')
+        account_labels = ('Login method', 'Organization', 'Email')
+        has_account = any(re.search(r'(?m)^[ \t]*' + label + ':', text) for label in account_labels)
+        if (result['nativeVersion'] == '2.1.332'
+                or result['nativeVersion'] in ('2.1.319', '2.1.329') and has_account):
+            for label in ('Version', 'Session(?: ID)?', 'Directory|cwd|Working directory', 'Permissions|Permission mode'):
+                if len(re.findall(r'(?im)^[ \t]*(?:' + label + r')[ \t]*:', text)) != 1:
+                    raise Deferred('claude-status-metadata-ambiguous')
+            # Keep only an opaque equality proof, never account values. These
+            # labels belong to the freshly bounded supported status card.
+            account = []
+            for label in account_labels:
+                values = re.findall(r'(?m)^[ \t]*' + label + r':[ \t]*(\S[^\r\n]*)$', text)
+                if len(values) != 1 or not token(values[0]):
+                    raise Deferred('claude-account-unverified')
+                account.append(values[0].strip())
+            result['accountProof'] = hashlib.sha256(json.dumps(account).encode()).hexdigest()
     elif provider == 'codex':
         versions = codex_versions(text)
         result['nativeVersion'] = versions[-1] if versions else None
@@ -849,7 +888,7 @@ def observed_resume_mode(provider, native):
     return None
 
 
-def resume_command(provider, native, *, installed_version):
+def resume_command(provider, native, *, installed_version, executable=None):
     """Construct fixed argv from observed native metadata, never stored commands."""
     native = obj(native)
     mode = observed_resume_mode(provider, native)
@@ -870,6 +909,11 @@ def resume_command(provider, native, *, installed_version):
             args.extend(['--no-alt-screen', 'Reply only TR_KIT_RESTART_READY. Do not use tools or perform any other action.'])
     else:
         args = ['claude', '--dangerously-skip-permissions', '--resume', ident]
+        if executable is not None:
+            expected = Path.home() / '.local/share/claude/versions' / installed_version
+            if installed_version != '2.1.332' or executable != str(expected):
+                raise Deferred('native-resume-executable-unverified')
+            args[0] = executable
     return shlex.join(args)
 
 
@@ -1007,9 +1051,12 @@ def passive_guard(client, plan, target, self_pane, modal=False):
     t, read = client.observe(target['handle'])
     if fingerprint(t) != target['identity']:
         raise Deferred('target-changed')
-    if eligible(t, read, ps, self_pane, self_found, tui_idle=True, modal=modal) != target['provider']:
+    verified = native_provider_check(client, target, t)
+    if eligible(t, read, ps, self_pane, self_found, tui_idle=True, modal=modal,
+                verified_provider=verified) != target['provider']:
         raise Deferred('provider-changed')
     management_self_check(client, process_only=True)
+    native_provider_check(client, target)
     return t, read
 
 
@@ -1018,10 +1065,20 @@ def send(client, journal, target, text, phase):
     if phase == 'exact-resume':
         target_shell_check(client, target)
     management_self_check(client, process_only=True)
+    if phase != 'exact-resume':
+        native_provider_check(client, target)
+    check = target.get('restartCheck')
+    if check is not None and phase in ('normal-exit', 'exact-resume'):
+        check(phase)
     journal.record('sending', handle=target['handle'], step=phase)
     if phase == 'exact-resume':
         target_shell_check(client, target)
     management_self_check(client, process_only=True)
+    if phase != 'exact-resume':
+        native_provider_check(client, target)
+    check = target.get('restartCheck')
+    if check is not None and phase in ('normal-exit', 'exact-resume'):
+        check(phase)
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', text, '--enter')
     receipt = obj(result.get('send'))
     mutation = obj(result.get('mutation'))
@@ -1062,6 +1119,12 @@ def native_status(client, plan, target, self_pane, journal, *, keep_modal=False)
     target.pop('nativeProof', None)
     _, fresh = native_query(client, plan, target, self_pane, journal, '/status', 'status', proof=proof, keep_modal=keep_modal)
     identity = status(target['provider'], fresh)
+    provider_proof = target.get('nativeProviderProof')
+    if provider_proof is not None:
+        if identity['sessionId'] != provider_proof['sessionId'] or identity['cwd'] != provider_proof['cwd']:
+            raise Deferred('native-provider-session-mismatch')
+        if identity.get('nativeVersion') != Path(provider_proof['process']['executable']['path']).name:
+            raise Deferred('native-provider-source-mismatch')
     if identity['cwd'] != target['identity']['worktreePath']:
         raise Deferred('cwd-mismatch')
     target['nativeProof'] = proof
@@ -1095,7 +1158,9 @@ def shell_guard(client, plan, target, normal_exit):
     shell_prompt = r'[^\n]*' + re.escape(target['identity']['worktreePath']) + r'[$#]'
     final = text.splitlines()[-1] if text else ''
     process_proof = None
-    if final == '❯':
+    if final == '❯' or target.get('claudeRestart'):
+        if final != '❯' and not re.fullmatch(shell_prompt, final):
+            raise Deferred('shell-unconfirmed')
         if getattr(client, 'remote_configured', False) or getattr(client, 'environment', None):
             raise Deferred('target-shell-process-unsupported')
         for inventory in (ts, ps):
@@ -1134,8 +1199,18 @@ def shell_guard(client, plan, target, normal_exit):
     # This must be emitted AFTER our guarded /exit. A historical command, a
     # launch/detection identity hint, or a changed PTY is not clean-exit evidence.
     text = '\n'.join(lines)
-    exit_marker = (r'To continue this session, run:?\s+codex resume\s+' +
-                   re.escape(session_id) + r'(?![A-Za-z0-9-])')
+    if target.get('claudeRestart'):
+        if normal_exit.get('nativeVersion') not in CLAUDE_RESTART_SOURCE_VERSIONS:
+            raise Deferred('claude-clean-exit-contract-unverified')
+        # Only the two fixed forms from owned native observations are accepted;
+        # matched text is never executed. Stream/process/empty-shell proof stays.
+        exit_marker = (r'(?m)^[ \t]*Resume this session with:[ \t]*\n'
+                       r'[ \t]*claude(?: --dangerously-skip-permissions)? --resume ' +
+                       re.escape(session_id) + r'[ \t]*$')
+        target['restartCheck']('shell', process_proof)
+    else:
+        exit_marker = (r'To continue this session, run:?\s+codex resume\s+' +
+                       re.escape(session_id) + r'(?![A-Za-z0-9-])')
     if not re.search(exit_marker, text):
         raise Deferred('shell-unconfirmed')
 
@@ -1159,7 +1234,11 @@ def claude_modal(text, command):
     if re.search(r'(?im)((?<![-\w])approve\b|allow once|trust this|select an option|enter to confirm|yes, proceed)', text):
         return False
     if command == '/status':
-        observed_close = (re.search(r'(?m)^\s*Version:\s*2\.1\.(?:329|330|331)\s*$', text) and
+        if re.search(r'(?m)^[ \t]*Version:[ \t]*2\.1\.332[ \t]*$', text):
+            return (len(re.findall(r'(?m)^[ \t]*Version:', text)) == 1
+                    and len(re.findall(r'(?m)^[ \t]*Settings\s+Status\s+Config\s+Usage\s+Stats[ \t]*$', text)) == 1
+                    and len(re.findall(r'(?m)^[ \t]*←/→ to switch · Esc to close[ \t]*$', text)) == 1)
+        observed_close = (re.search(r'(?m)^\s*Version:\s*2\.1\.(?:329|330|331|332)\s*$', text) and
                           re.search(r'(?m)^\s*←/→ to switch · Esc to close\s*$', text))
         return bool(re.search(r'(?m)^\s*Settings\s+Status\s+Config\s+Usage\s+Stats\s*$', text) and
                     ('Esc to cancel' in text or observed_close))
@@ -1176,12 +1255,14 @@ def modal_key(client, plan, target, self_pane, journal, command, key, expected_p
     if not claude_modal(screen(read), command):
         raise Deferred('claude-modal-boundary-unknown')
     management_self_check(client, process_only=True)
+    native_provider_check(client, target)
     journal.record('sending', handle=target['handle'], step='modal-navigation')
     if expected_proof is not None:
         _, confirmed = passive_guard(client, plan, target, self_pane, modal=True)
         if output_proof(confirmed) != expected_proof or not claude_modal(screen(confirmed), command):
             raise Deferred('native-response-proof-changed')
     management_self_check(client, process_only=True)
+    native_provider_check(client, target)
     result = client.call('terminal', 'send', '--terminal', target['handle'], '--text', key)
     receipt = obj(result.get('send'))
     if (receipt.get('handle') != target['handle'] or receipt.get('accepted') is not True or
@@ -1214,9 +1295,10 @@ def claude_permission(text):
     if re.search(r'(?m)^\s*⏵⏵ bypass permissions on \(shift\+tab to cycle\)\s*$', text):
         return 'bypass permissions'
     versions = re.findall(r'Claude Code v([A-Za-z0-9][A-Za-z0-9.+_-]{0,63})', text)
-    if (re.search(r'(?m)^[ \t]*▐▛███▛█   Claude Code v2\.1\.330[ \t]*$', text)
+    if (re.search(r'(?m)^[ \t]*▐▛███▛█   Claude Code v2\.1\.(?:330|332)[ \t]*$', text)
             and versions and len(versions) == text.count('Claude Code v')
-            and all(version == '2.1.330' for version in versions)
+            and len(set(versions)) == 1
+            and all(version in ('2.1.330', '2.1.332') for version in versions)
             and re.search(r'(?m)^\s*⏵⏵ bypass permissions on \(shift\+tab to cycle\) · ← for agents\s*$', text)):
         return 'bypass permissions'
     raise Deferred('claude-permissions-unknown')
@@ -1438,6 +1520,9 @@ def native_query(client, plan, target, self_pane, journal, command, phase, compl
             fresh = current_status_response(target['provider'], fresh)
             actual = status(target['provider'], fresh)
             visible = screen(frame)
+            if (target['provider'] == 'claude' and actual.get('nativeVersion') == '2.1.332'
+                    and not claude_modal(visible, command)):
+                raise Deferred('claude-modal-boundary-unknown')
             if claude_modal(visible, command):
                 visible += '\nPermission mode: ' + claude_permission(previous_text)
             current_identity = status(target['provider'], current_status_response(target['provider'], visible))

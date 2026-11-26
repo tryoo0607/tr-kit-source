@@ -180,6 +180,41 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
 
+    def test_verified_claude_provider_optional_hint_is_terminal_bound_only(self):
+        self.client.target['agentIdentity'] = None
+        self.client.agents[1]['agentType'] = 'claude'
+        self.client.read['tail'] = ['❯', '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
+        _, ps = self.client.inventory()
+        token = m.VerifiedClaudeProvider(m.fingerprint(self.client.target))
+        self.assertEqual('claude', m.eligible(self.client.target, self.client.read, ps, self.self_pane,
+                                            True, tui_idle=True, verified_provider=token))
+        self.assertIsNone(self.client.target['agentIdentity'])
+        omitted = copy.deepcopy(self.client.target)
+        omitted.pop('agentIdentity')
+        self.assertEqual('claude', m.eligible(omitted, self.client.read, ps, self.self_pane,
+                                            True, tui_idle=True, verified_provider=token))
+        self.assertNotIn('agentIdentity', omitted)
+        for unsafe in ('general', 'other-token', 'missing-key-unproven', 'missing-key-ps-other',
+                       'empty-hint', 'explicit-codex', 'ps-mismatch'):
+            with self.subTest(unsafe=unsafe):
+                target, current_ps = copy.deepcopy(self.client.target), copy.deepcopy(ps)
+                authority = token
+                if unsafe == 'general': authority = None
+                elif unsafe == 'other-token': authority = m.VerifiedClaudeProvider(m.fingerprint(self.client.self))
+                elif unsafe == 'missing-key-unproven':
+                    target.pop('agentIdentity')
+                    authority = None
+                elif unsafe == 'missing-key-ps-other':
+                    target.pop('agentIdentity')
+                    m.agent_for(current_ps, target)['agentType'] = 'codex'
+                elif unsafe == 'empty-hint': target['agentIdentity'] = ''
+                elif unsafe == 'explicit-codex': target['agentIdentity'] = 'codex'
+                else: m.agent_for(current_ps, target)['agentType'] = 'codex'
+                with self.assertRaises(m.Deferred):
+                    m.eligible(target, self.client.read, current_ps, self.self_pane,
+                               True, tui_idle=True, verified_provider=authority)
+        self.assertEqual([], self.client.sent)
+
     def test_inspect_is_read_only_and_metadata_only(self):
         self.client.target['preview'] = 'SECRET prompt'
         report = m.inspect(self.client, self.self_pane)
@@ -345,6 +380,58 @@ class RuntimeRefreshTests(unittest.TestCase):
             with self.assertRaisesRegex(m.Deferred, 'target-shell-proof-changed'):
                 m.shell_guard(self.client, self.plan, target, evidence)
 
+    def test_claude_shell_exact_exit_marker_forms_keep_stream_process_and_uuid_guards(self):
+        target, evidence = self.glyph_shell()
+        target.update(provider='claude', claudeRestart=True, restartCheck=Mock())
+        ident = evidence['sessionId']
+        for version in ('2.1.319', '2.1.329', '2.1.332'):
+            for flag in ('', '--dangerously-skip-permissions '):
+                with self.subTest(version=version, flag=flag):
+                    self.client.target_shell_proof = None
+                    evidence['nativeVersion'] = version
+                    marker = ['Resume this session with:', 'claude ' + flag + '--resume ' + ident]
+                    with patch.object(m, 'target_shell_process_proof', return_value={'generation': 1}), \
+                         patch.object(self.client, 'call', return_value={'terminal': {'source': 'stream', 'tail': marker}}) as read:
+                        m.shell_guard(self.client, self.plan, target, evidence)
+                    read.assert_called_once_with('terminal', 'read', '--terminal', target['handle'], '--cursor', '10')
+                    self.assertEqual('shell', target['restartCheck'].call_args.args[0])
+                    self.assertEqual([], self.client.sent)
+
+    def test_claude_shell_wrong_duplicate_unknown_flags_uuid_and_historical_markers_refuse(self):
+        target, evidence = self.glyph_shell()
+        target.update(provider='claude', claudeRestart=True, restartCheck=Mock())
+        evidence['nativeVersion'] = '2.1.319'
+        ident = evidence['sessionId']
+        commands = [
+            'claude --dangerously-skip-permission --resume ' + ident,
+            'claude --dangerously-skip-permissions --dangerously-skip-permissions --resume ' + ident,
+            'claude --permission-mode bypassPermissions --resume ' + ident,
+            'claude --settings owned.json --resume ' + ident,
+            'claude --resume ' + ident + ' --dangerously-skip-permissions',
+            'claude --resume ' + ident + ' --last',
+            'claude --resume ' + ident + ' --resume ' + ident,
+            'claude --dangerously-skip-permissions --resume 11111111-1111-4111-8111-111111111111',
+            'claude --resume 11111111-1111-4111-8111-111111111111',
+        ]
+        for command in commands:
+            with self.subTest(command=command), \
+                 patch.object(m, 'target_shell_process_proof', return_value={'generation': 1}), \
+                 patch.object(self.client, 'call', return_value={'terminal': {
+                     'source': 'stream', 'tail': ['Resume this session with:', command]}}):
+                with self.assertRaisesRegex(m.Deferred, 'shell-unconfirmed'):
+                    m.shell_guard(self.client, self.plan, target, evidence)
+        marker = ['Resume this session with:', 'claude --dangerously-skip-permissions --resume ' + ident]
+        self.client.read['tail'] = marker + ['❯']  # Historical screen is not fresh stream evidence.
+        for response, reason in (({'source': 'stream', 'tail': []}, 'shell-unconfirmed'),
+                                 ({'source': 'screen', 'tail': marker}, 'native-exit-stream-unknown')):
+            with self.subTest(response=response), \
+                 patch.object(m, 'target_shell_process_proof', return_value={'generation': 1}), \
+                 patch.object(self.client, 'call', return_value={'terminal': response}):
+                with self.assertRaisesRegex(m.Deferred, reason):
+                    m.shell_guard(self.client, self.plan, target, evidence)
+        self.assertEqual([], self.client.sent)
+        self.assertIsNone(getattr(self.client, 'target_shell_proof', None))
+
     def test_glyph_false_prompt_and_live_agent_matrix_never_sends(self):
         for unsafe in ('typed', 'draft', 'repl', 'child', 'parent', 'child-pane', 'duplicate-pane', 'wait', 'busy', 'remote', 'incomplete'):
             with self.subTest(unsafe=unsafe):
@@ -436,7 +523,7 @@ class RuntimeRefreshTests(unittest.TestCase):
         session = '01a1c848-8ff2-7e90-bcec-44a3ca07a21b'
         cases = [('codex', 'default', None), ('codex', 'Custom (workspace, Ask for approval)', None),
                  ('codex', 'Full Access --fake-flag', None), ('claude', 'default', '2.1.330'),
-                 ('claude', 'bypass permissions', '2.1.332'), ('claude', 'plan', '2.1.330')]
+                 ('claude', 'bypass permissions', '2.1.333'), ('claude', 'plan', '2.1.330')]
         for provider, permission, version in cases:
             text = 'Session ID: '+session+'\ncwd: /work\nPermissions: '+permission+'\n'
             if version:
@@ -1630,9 +1717,9 @@ class RuntimeRefreshTests(unittest.TestCase):
                           '  Session ID: 01a1c848-8ff2-7e90-bcec-44a3ca07a21b',
                           '  cwd: /work', '  ←/→ to switch · Esc to close'])
         self.assertTrue(m.claude_modal(text, '/status'))
-        for version in ('2.1.329', '2.1.331'):
+        for version in ('2.1.329', '2.1.331', '2.1.332'):
             self.assertTrue(m.claude_modal(text.replace('2.1.330', version), '/status'))
-        for invalid in (text.replace('2.1.330', '2.1.332'),
+        for invalid in (text.replace('2.1.330', '2.1.333'),
                         text.replace('Version:', 'Unknown version:'),
                         text.replace('Settings  Status   Config   Usage   Stats', 'Unknown header'),
                         text.replace('Esc to close', 'Esc to quit'),
@@ -3107,22 +3194,51 @@ class TargetShellProcessTests(unittest.TestCase):
 
 
 class ClaudeNativeRecoveryContracts(unittest.TestCase):
+    def test_legacy_optional_account_proof_keeps_old_fixtures_and_rejects_partial_labels(self):
+        for version in ('2.1.319', '2.1.329'):
+            text = '\n'.join(('Version: ' + version, 'Session ID: 11111111-1111-4111-8111-111111111111',
+                              'cwd: /work', 'Permission mode: bypass permissions'))
+            self.assertNotIn('accountProof', m.status('claude', text))
+            with self.assertRaises(m.Deferred): m.status('claude', text + '\nEmail: owned@example.test')
+            complete = text + '\nLogin method: Owned\nOrganization: Owned\nEmail: owned@example.test'
+            self.assertEqual(64, len(m.status('claude', complete)['accountProof']))
+            with self.assertRaises(m.Deferred): m.status('claude', complete + '\nEmail: duplicate')
+            self.assertNotIn('owned@example.test', str(m.status('claude', complete)))
+
+    def test_332_status_binds_account_without_export_and_rejects_ambiguous_cards(self):
+        text = '\n'.join(('Settings  Status  Config  Usage  Stats', 'Version: 2.1.332',
+                         'Session ID: 11111111-1111-4111-8111-111111111111', 'cwd: /work',
+                         'Login method: Owned Account', 'Organization: Owned Fixture',
+                         'Email: fixture@example.test', 'Permission mode: bypass permissions',
+                         '←/→ to switch · Esc to close'))
+        native = m.status('claude', text)
+        self.assertEqual('claude-bypass-permissions', native['resumeMode'])
+        self.assertNotIn('fixture@example.test', str(native))
+        self.assertNotEqual(native['accountProof'], m.status('claude', text.replace('fixture@example.test', 'other@example.test'))['accountProof'])
+        self.assertTrue(m.claude_modal(text, '/status'))
+        for invalid in (text+'\nAllow once', text.replace('2.1.332', '2.1.333')):
+            self.assertFalse(m.claude_modal(invalid, '/status'))
+        for invalid in (text.replace('Email:', 'Missing:'), text+'\nEmail: duplicate', text+'\nVersion: 2.1.332',
+                        text+'\nSession ID: 11111111-1111-4111-8111-111111111111'):
+            with self.assertRaises(m.Deferred):
+                m.status('claude', invalid)
+
     def test_observed_native_versions_and_distinct_launch_versions_require_explicit_mode(self):
         session = '11111111-1111-4111-8111-111111111111'
         for source in ('2.1.319', '2.1.329', '2.1.330', '2.1.331'):
             native = m.status('claude', '\n'.join(('Session ID: '+session, 'cwd: /work',
                               'Permission mode: bypass permissions', 'Version: '+source)))
             self.assertEqual('claude-bypass-permissions', native['resumeMode'])
-            for launch in ('2.1.330', '2.1.331'):
+            for launch in ('2.1.330', '2.1.331', '2.1.332'):
                 self.assertEqual('claude --dangerously-skip-permissions --resume '+session,
                                  m.resume_command('claude', native, installed_version=launch))
-            for launch in ('2.1.319', '2.1.329', '2.1.332', None):
+            for launch in ('2.1.319', '2.1.329', '2.1.333', None):
                 with self.assertRaisesRegex(m.Deferred, 'version-unverified'):
                     m.resume_command('claude', native, installed_version=launch)
             native['resumeMode'] = None
             with self.assertRaisesRegex(m.Deferred, 'permissions-unverified'):
                 m.resume_command('claude', native, installed_version='2.1.331')
-        for source in ('2.1.318', '2.1.320', '2.1.328', '2.1.332'):
+        for source in ('2.1.318', '2.1.320', '2.1.328', '2.1.333'):
             self.assertIsNone(m.observed_resume_mode('claude', {'nativeVersion': source, 'permissions': 'bypass permissions'}))
         for permission in ('auto', 'default', 'acceptEdits', 'plan'):
             self.assertIsNone(m.observed_resume_mode('claude', {'nativeVersion': '2.1.331', 'permissions': permission}))

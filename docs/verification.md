@@ -1,5 +1,89 @@
 # 검증 상태
 
+## Claude319/329/332 guarded restart source 재도출 — 2026-11-25
+
+Loop2는 data metadata freeze 설계를 교정한 source-only Build다. 이전 own10 diff를 `/tmp/tr-kit-332-before-legacy-profile-refinement.diff`에 보존하고 baseline에 positive patch를 재적용한 뒤 같은10개 파일만 보완했다. index·commit·push·설치 candidate·원격은 변경하지 않았다. frozen intent와 기존 guards/one-use receipts/원본 signed history는 유지한다.
+
+운영 소유자의 소유 native 관측 요약(`/data/projects/_scratch/tr-kit-runtime-followup-20261124/inno-legacy-forms-observe-result.json`)에서319/329 account labels,319 Esc cancel/329 switch-close footer, exact 두 줄 exit marker·원 process 소멸·원 zsh 복귀를 확인했다.332 인터페이스 관측도 운영 소유자가 별도 보유한다. 이 source는 그319/329/332만 즉시 전이 후보로 허용하고 source status/실행체 버전 일치를 요구한다. 이 source 작성자는 native 입력을 수행하지 않았다. **새 data proof로 guarded restart/verify 두 cycle 및 원본 대상 적용은 아직 미검증이다.**
+
+```text
+common/base/skills/session/
+  scripts/
+    session_restart.py
+    runtime_refresh.py
+    claude_live_sessions.py
+    claude_checked_resume.py
+  references/
+    session-restart.md
+```
+
+```text
+사용자 요청 -> agent가 session-restart reference 읽기
+  -> session_restart.execute [Store/Recorder/locate/기존 guards]
+    -> fresh status/account + 선택 UUID/source executable equality
+    -> bounded selected argv + inherited-env/data profile proof
+    -> durable pre-exit cursor/UUID/frame/native proof + 마지막 mode 재검사
+    -> 단일 exit + fresh marker/원 PID 소멸/원 zsh empty shell
+    -> one-use private proof + canonical system Python -I -S launcher
+      -> durable .used claim(검증 실패·crash 뒤에도 재사용 금지)
+      -> 실제 상속 env + stable logical data proof/source/native/shell 대조
+      -> pinned native fd/fixed exact UUID argv exec
+    -> 첫 status 전에 fresh exact UUID/새 process + 원 pinned332 실행체/query equality
+    -> fresh status/account와 같은 새 process + 반복 verify(launch 없음)
+```
+
+Data는 bounded stable content read와 UID/GID/mode equality로 바꾸어 benign0664·동일 내용의 atomic replacement를 허용한다. inode/size/mtime/ctime은 읽기 race 검출에 사용하며 저장된 의미로 동결하지 않는다. `.claude.json`의319/329/332 exact runtime-key list만 projection에서 제외하고 모든 unknown/account/config·MCP/trust/allowedTools를 보존한다. runtime-only/빈 project와 부재 entry는 정규화하지만 meaningful empty/false/null 필드는 삭제하지 않는다. settings/MCP/credentials는 전체 bytes hash를 유지하여 계정 refresh 변경도 계속 거부한다. source/native/executable/proof mode 가드는 완화하지 않는다.
+
+[공식 settings 원문](https://code.claude.com/docs/en/settings)을 확인하여2.1.211 이후 Git root/main checkout local file과 legacy cwd local file을 함께 묶는다. trusted system Git `rev-parse`만 read-only 호출하며 `.git` parser를 만들지 않았다. 별도 Git environment context·bare/separate-git-dir·미지원 ownership은 fail closed다. 관측하지 않은 비기본 `CLAUDE_CONFIG_DIR`는 pre-exit에서 거부하고 다른 profile/managed config로 scope를 확장하지 않는다.
+
+검증 범위는 실제 Python 자식(native exec만 mock), owned Git main/worktree fixture, transport double와 fake proc다. negative 사례는 permissions/MCP/trust/account/unknown drift, same-size/same-mtime 내용 변경, credentials 변경, duplicate JSON, worldwrite/symlink, 읽기 race, source/status mismatch, 재개 뒤319/329 또는 query 실행체 교체 거부, explicit verify의 stale/refused/crashed shell과 exit receipt/관측 유실의 zero-input·원 attempt 보존을 포함한다. 종료 미관측이며 전체 원 API/process와 launch proof가 같은 original만 기존 live-identity-only restart-pending 경로를 유지한다. plugin-authoring의 구성/읽기흐름/지원 script 감사 기준으로 이 요구와 연결을 대조했으며 실제 모델 선택/압축 행동은 미실행이다. 독립 Quick·최종 전송 source/upstream/비밀 검사와 실제 native2cycle은 상위 단계다.
+
+이전 source의322개/skip0 통과(`/tmp/tr-kit-332-root-final-session.log`)는 당시 결과이며 이번 변경의 최종 검증을 대체하지 않는다. UI settling 보완 전 data-profile source에서 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_session*.py'` **336개/skip0 통과**(`/tmp/tr-kit-legacy-profile-final-session.log`), `test_claude_live_sessions.py` **22개/skip0 통과**(`/tmp/tr-kit-legacy-profile-final-live.log`)를 각각 한 번 실행했다. 선행 focused transport19개(`/tmp/tr-kit-legacy-profile-focused-restart.log`)·profile/launcher13개(`/tmp/tr-kit-legacy-profile-focused-launcher.log`)도 통과했다. `git diff --check` 통과이며 현재 source에 생성된 pyc는 없다.
+
+## Claude UI read-only settling 보완 — 2026-11-25
+
+운영 소유자의 candidate-reviewed2 소유 첫 cycle은 **정상 종료 전 실패**했다. exit/resume 접수는 각각0이며 original319의 API full proof와 signed Store/journal은 보존됐다. 원본 대상 입력은 없었다. stream cursor13·12줄은 같았으나 transient effort hint가 공백으로 바뀌어 final exact frame hash가 거부한 관측이다. raw 화면은 inno에 유지하며 진단 metadata는 운영 소유자의 `inno-plain-cycle1-diagnose-result.json`, `inno-plain-screen-difference-result.json`, `inno-plain-screen-atom-result.json`에 있다. 이는 native restart 성공이 아니다.
+
+`claude_restart_proof`의 fresh API/launch proof 전에 기존 full guard와 exact mode를 유지한 read-only quiet window를 추가했다. cursor·전체 screen이2초 이상/3회 이상 같을 때만 진행하며, 안전한 변화는 quiet timer를 재설정하고15초 안에 안정되지 않으면 중단한다. unsafe guard/mode는 즉시 중단하고 hint/hash를 마스킹하지 않는다. 이후 fresh API/launch proof, durable 전후 frame/cursor와 permission 비교, 단일 exit/resume·one-use/no-retry·newPID/pinned-native-before-status를 유지한다. Codex에는 적용하지 않는다. 관련 fixture는 controlled clock을 사용하므로 각 사례마다 실제2초 대기를 추가하지 않았다.
+
+직전336개/skip0 source 결과는 위 source의 이전 검증이다. 이번 보완의 focused Claude23개/skip0 통과(`/tmp/tr-kit-ui-settling-focused.log`)는 transient hint/layout/cursor settling의 API 선행 여부,319/329/332 안정,15초 지속 변화 제한, unsafe 즉시 거부와 기존 durable 뒤 drift 거부를 포함한다. 이번 최종 source의 `test_session*.py` 전체340개/skip0가93.919초에 통과했다(`/tmp/tr-kit-ui-settling-final-session.log`). `git diff --check` 통과이며 source/tests pyc는 없다. 새 source의 native 재검증과 두 성공 cycle은 미실행이다.
+
+## 고정 bypass 종료 marker 형식 보완 — 2026-11-25
+
+운영 소유자의 candidate3 소유319 cycle은 UI settling 뒤 `/exit`1회가 접수됐지만 resume은0회다. 원 PID 소멸·동일 empty zsh/fingerprint가 확인됐으며, fresh stream이 `Resume this session with:` 다음 줄에 고정 `claude --dangerously-skip-permissions --resume <같은 UUID>`를 출력했다. 기존 plain marker와 달라 shell guard에서 멈춘 **미해결 시도**이며 native restart 성공이 아니다. 해당 signed attempt/journal과 candidate3 파일은 유지하고 raw 화면은 inno 밖으로 가져오지 않는다. 운영 진단 metadata는 `inno-plain-shell-diagnose-result.json`에 있다. 원본 대상 입력은 없었다.
+
+source의 Claude marker clause에 기존 승인된 bypass flag 하나를 갖는 정확한 대안만 추가했다. 다른 flag·중복 flag·다른 UUID·historical screen-only marker는 허용하지 않는다. matched 문자열은 실행/재생하지 않으며 실제 resume은 기존 checked launcher의 고정 argv를 쓴다. stream cursor·source version·원 PID 소멸·empty shell와 full guards는 그대로다. old candidate/설치본/원격은 이 source 작성 단계에서 변경하지 않았다.
+
+직전 전체340개/skip0 증거는 위 UI settling source의 결과로 재사용한다. 이번 변경에서 affected shell/runtime focused8개/skip0(`/tmp/tr-kit-fixed-marker-focused-runtime.log`)와 기존 Claude restart focused23개/skip0(`/tmp/tr-kit-fixed-marker-focused-restart.log`)가 통과했다. transport의 기존 restart/repeat-verify 사례는 두 exact marker 형식을 각각 확인한다. `git diff --check` 통과이며 전체340개 재실행은 하지 않았다. 새 형식의 실제 자동 cycle 성공은 아직 미검증이다.
+
+## 선택 Claude null hint와 고정 process authority 보완 — 2026-11-25
+
+운영 소유자는 `inno-owned-provider-diagnose-result.json`의 hint를 처음 null로 해석했지만, 실제 show와 inventory 원문에서는 해당 key가 생략돼 있었다. `.get()` 결과 None을 명시 null로 해석한 진단 오류이며 아래 당시 source는 explicit null만 허용했다. complete ps의 명시 Claude·idle/done·빈 child/wait/draft 및 공식332 API/process의 exact UUID/pane/cwd 관측은 유지된다. switch 요청은 navigated=false였고 hint는 null로 남았다. 이 작성 단계는 native/Orca/global hook/config/기존 candidate/Store/proof를 변경하지 않았다. 앞선 소유332의 현재 증명 일치는 과거 launch-mismatch의 원인을 설명하지 않으며, 당시 하위 비교값이 없어 원인은 계속 미확인이다.
+
+명시 restart Claude 행과 같은 fingerprint/cwd의 정확한 null hint에만 fresh API/process를 붙여 typed authority로 전달한다. 관측 terminal/ps는 수정하지 않는다. authority는 runtime/terminal/proof의 독립 snapshot이며 token도 terminal fingerprint에 고정돼 in-place mutation과 다른 pane 재사용을 거부한다. 모든 full/passive guard와 status/모달 durable 경계는 local fixed proof를 재검사한다. 초기 prepare는 unique API UUID를 발견하지만 fresh native status의 UUID/cwd/source 버전이 모두 일치해야 저장한다. 다른 provider·빈/부재 hint·manual/self/미선택·일반 refresh는 그대로 strict하며 unsafe 가드를 우회하지 않는다. 정상 exit 뒤에는 fresh pinned new process를 먼저 증명한 경우만 authority를 재결합한다.
+
+미래 `claude-resumed-launch-mismatch`에는 고정 필드/boolean만 local signed event에 보존한다. executable/query/env/profile/shell의 원문이나 임의 exception dict는 기록하지 않으며 retry/허용 기준/reason은 바꾸지 않았다. owned negative는 실제 다른 비교만 false로 남고 raw fixture 값이 event에 없음을 확인한다.
+
+focused missing-provider10개(`/tmp/tr-kit-null-provider-focused.log`), 기존 Claude+진단24개(`/tmp/tr-kit-null-provider-existing-focused.log`), runtime typed token1개(`/tmp/tr-kit-null-provider-focused-runtime.log`)가 통과했다. 이번 codefreeze source의 `test_session*.py` 전체354개/skip0가92.872초에 통과했다(`/tmp/tr-kit-null-provider-final-session.log`). `git diff --check` 통과, source/tests pyc 없음도 확인했다. 이전 full340 및 marker focused 증거는 해당 source 시점의 결과이며 새 missing-hint native 검증/완전한 성공 cycle을 대신하지 않는다.
+
+## Optional omitted/null provider hint 형식 교정 — 2026-11-25
+
+소유329/332의 실제 show와 inventory는 `agentIdentity` key를 생략한다. 이전 explicit-null 해석을 위와 같이 정정했다. source의4개 key-presence 조건만 제거하여 optional omitted/null을 같은 입력 형식으로 처리하고, 명시 선택·complete ps Claude·fresh API/process·고정 runtime/fingerprint·source/status·mode/work 가드는 모두 유지했다. 관측 필드를 넣거나 바꾸지 않으며 생략으로 provider를 추론하지 않는다. 명시 다른 값/Codex·빈 값·미증명·manual/미선택은 계속 거부한다.
+
+실제 omitted show/inventory fixture의 초기 prepare·locate/verify·post-resume authority 재결합과 반복 verify를 확인했다. omitted unproven/PS-other·busy/draft/approval/child/wait도 입력 없이 거부한다. MissingProvider11개/skip0(`/tmp/tr-kit-optional-provider-focused.log`), typed-authority1개/skip0(`/tmp/tr-kit-optional-provider-focused-runtime.log`), 기존 Claude24개/skip0(`/tmp/tr-kit-optional-provider-existing-focused.log`) 통과. `git diff --check` 통과이며 full354는 이전 source 증거로 유지하고 재실행하지 않았다.
+
+운영 소유자가 확인한 첫 소유332는 exit/resume 접수1/1과 현재 proof 일치가 있지만 기존 failed Store/history는 그대로다. 이 source 단계는 native·old candidate·Store/proof·원격을 변경하지 않았고 원본 입력도 없다. 새 wire-format source의 native 검증/완전한 성공 cycle은 아직 미실행이다.
+
+## 인증 prompting-only Git 환경 분리 — 2026-11-25
+
+운영 소유자의 remote 분류(`inno-git-auth-leaves-result.json`, `inno-git-auth-values-result.json`)에서 실제 indexed config는 정확한 unscoped `credential.interactive`와 `credential.guiPrompt`이며 count2·문서 enum 범위임을 확인했다. 원문 환경/키 namespace/value는 가져오지 않았다. [GCM 공식 configuration](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/configuration.md#credentialinteractive)은 앞 설정을 GUI/TTY interaction 제어로, [guiPrompt](https://github.com/git-ecosystem/git-credential-manager/blob/main/docs/configuration.md#credentialguiprompt)는 GUI prompting 제어로 설명한다. [Git 공식 문서](https://git-scm.com/docs/git-config/2.43.0#_environment)는 COUNT/KEY/VALUE의 runtime config 의미를 설명하며 [ASKPASS 문서](https://git-scm.com/docs/git/2.43.0#Documentation/git.txt-GITASKPASS)는 인증 시 프로그램을 실행할 수 있음을 밝힌다. 따라서 raw injection을 discovery Git에 전달하지 않는다.
+
+`claude_checked_resume.py`에 bounded 분류를 추가했다. 정확한 두 unscoped key(ASCII case-insensitive)와 문서 prompt enums, count0..2/완전한 contiguous KEY/VALUE, 인증용 ASKPASS/TERMINAL_PROMPT만 인정한다. unknown GIT/config·core.worktree/include/hooks/fsmonitor/helper·scoped credential·extra/orphan/중복·음수/거대/비정상 count는 Git child 전에 거부한다. 검증한 auth-only 항목도 read-only root discovery의 derived env에서 제거한다. user/현재 process 환경은 수정하지 않고 native env hash/checked exec에는 모든 원래 값을 그대로 유지한다. Git의 기존 file-config 동작과 owned root/main/cwd·profile/account·API/provider/exit/status 가드는 바꾸지 않는다.
+
+launcher/profile18개/skip0(`/tmp/tr-kit-git-auth-focused-launcher.log`)와 live/process22개/skip0(`/tmp/tr-kit-git-auth-focused-live.log`) 통과. 실제 owned Git probe에 승인 auth GIT 항목이 전달되지 않음, askpass marker 미실행, native exec의 원본 env 유지, auth 값 변경 시 exec 전 거부, unknown injection의 subprocess 호출0을 확인했다. `git diff --check` 통과이며 full354 broad rerun은 하지 않았다. 새 source의 실제 native 적용은 이 source 단계에서 미실행이며 CB wait timeout은 이 변경 범위가 아니다.
+
+운영 후속(2026-11-26): 후보7 자체4 script의 조립 전·전송 전 source230개 검사와 비밀 검사·원격 hash 대조를 통과했다. 해당 후보의 소유2세션 verify는 기존 성공한 cycle의 종료/재개 각2회를 그대로 유지하며 추가 종료/재개 없이 통과했다. 기존 사용자 선택6개 중 안전한1개는 종료1회·exact resume1회 뒤 새 native332를 확인했고, 처음 profile-only 불일치를 실패 이력에 보존한 같은 배치의 명시 verify로 UUID/cwd/account/mode·실제 새 프로세스를 최종 확인했다. 초기 native/query 실행 파일·전체 환경·shell은 같았으며 profile만 달랐고, 이후 전체 proof가 같아졌다. 당시 달랐던 구체적 profile 필드는 미확인이다. 증거는 운영 로컬 `inno-original-v7-verify-only-result.json` 및 같은 배치의 보존 이벤트다. 다른5개는 미전송 입력3개·권한 확인 불가1개·official idle timeout1개로 보류했다. 소유 시험창2개만 닫고 비대상 terminal identity와 원래 signed 기록을 보존했다. 일반 plugin 설치본 변경·정식 release·다른 호스트 재배포·재부팅·plugin 소비/압축 시험으로 확대하지 않는다.
+
 ## 현재 판정 — 2026-11-23
 
 이 절은 기존 관측과 후속 구현·운영 적용의 현재 요약이다. 상세 수치·실패·제품/설정·revision별 한계는 해당 결정 기록이 소유한다. 아래 이력은 당시 결과이며, 그 안의 ‘현재’·‘최신’·‘미실행’을 최신 후보 상태로 읽지 않는다. **전체 운영 적합 판정은 계속 보류한다.**
@@ -907,3 +991,7 @@ parent가 계획의 추가 note로 제공한 개인정보 제거 dev01 구조 fi
 전체 공통 CI·context-free Quick, 최종 source의 실제 NAS 전후/dev01 네 화면/실제 승인창 replay, package/private pin과 승인 delivery는 parent 후속 범위다. source06의 NAS attempt1500c8e5는 접수된 status 뒤 uncertain·exit0/resume0이며 실패 Store·이벤트·키를 유지한다. parent는 검증된 배포 뒤 명시 verify로 원래 identity/restart-pending을 확인한 뒤 새 restart operation을 진행해야 하며 이전 status를 재전송하지 않는다. root dev01 수동·inno common-only·실제 reboot 제외, Claude332 자동 복원 미지원, plugin 소비 미확인과 실제 모델 새 세션/압축·재개 미실행 한계는 유지한다. 이 구현자는 원격/native 입력·Git·package 작업을 수행하지 않았다.
 
 부모의 최종 전체 `scripts/ci-check.py`는 trusted Gitleaks8.30.1 identity 검증과 **786개/329.658초·실패·오류·skip0**를 통과했고, 입력6파일 hash가 실행 전후 같았다. context-free Quick 검수는 발견 사항0건이었다. 최종 runtime8bcd의 실제 저장 NAS 조회 전후2개/dev01 네 화면은 모두 분류 허용과 원문/frame 보존, 실제 도구 승인창/Hook 검토창2개는 거부를 확인했다. 이 실제 캡처 replay는 원격 입력이나 새 재시작 성공이 아니다. 이후 이 문서와 결정 문서에 결과·승인 출처 표현만 명료화했으며 코드·시험·운영 계약 bytes는 그대로다. 세부 matrix는 기존 사용자 승인 목적을 구현한 설계이며 각 세부 조건을 사용자의 새 발언·추가 합의로 기록하지 않는다. source06의 accepted status/uncertain 이력은 보존하고 새 배포 및 명시 verify/원래 재시작은 다음 단계로 남겼다.
+
+## agent-workspace main 통합 검증 — 2026-11-26
+
+origin/main을 fast-forward한 뒤 보존한 Claude 재시작 지원 변경 10파일을 main에 통합했다. 실행 소스와 시험은 검증 후보7 및 기존 작업 worktree의 최종 bytes와 같다. Git 적용 후 소스 4개의 권한이 0664여서 최초 전체 시험 848개 중 엄격한 실행 증명에서 오류 18개가 발생했다. 검사 기준과 소스 bytes를 유지하고 해당 파일만 0644로 정정했다. 집중 실행 증명 시험 18개와 최종 전체 CI **848개/344.047초·실패·오류·skip0**를 통과했으며 trusted Gitleaks 8.30.1 identity도 검증했다. 최초 실패와 최종 로그는 로컬 `_bmad-output/cleanup-20261126/`에 함께 보존한다. 이는 로컬 통합 검증이며 새로운 제품 설치·배포·실제 세션 재시작 또는 plugin 소비의 증거가 아니다.
