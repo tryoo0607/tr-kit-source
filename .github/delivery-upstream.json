@@ -1,0 +1,170 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/GuillemRoca/agent-skills-android/68fd141eec5ad2029ae8393e510dbe46dea48c36/skills/android-architecture/SKILL.md",
+    "sha256": "b7bfa346b8dcada48389ff14a21a02301030997f4e2ffd46fa0bcf5363d60f7d"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/tt-a1i/archify/a4065941f12be7967436261d9934784e381d423c/archify/SKILL.md",
+    "sha256": "1382cfb7108b05e500b82af93c04fd7b694430d3908039bd92d634f01c1e7181"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad/SKILL.md",
+    "sha256": "a2740b6080a7b79a5a854d7c1261d029e126d19794c4d7038898264f43f1fa64"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-advanced-elicitation/SKILL.md",
+    "sha256": "225a59e2a5377cfa66a4c96a58195134401b356ae3f80b3ca1306e4859141e9a"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-agent-analyst/SKILL.md",
+    "sha256": "0d05a5e7b5a46d9c249089f6c5528c0a1147e58d8c6114a1b0417b8f78df7997"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-agent-architect/SKILL.md",
+    "sha256": "0fa3aa84b26a6cd340ca9e1648e3b0120b8d127dda5a189ba214a6a29c53046e"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-agent-dev/SKILL.md",
+    "sha256": "d617b5c5001b33e9d004ff0e0d61e237576261de3757222b81be09939d7056a5"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-agent-pm/SKILL.md",
+    "sha256": "100585d5ebf07b507695f58441ec475ebca6dff16e7c5e0be73082f1b70df8b4"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-agent-po/SKILL.md",
+    "sha256": "b6d14b60fc74c72456a58fa8caad417052fd371877567930d2c23758798271c2"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-agent-ux-designer/SKILL.md",
+    "sha256": "48607e5b614eed392c05c22b41a4b533f2e9884c68ebca0cbb2fea75de52895e"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-architecture/SKILL.md",
+    "sha256": "9cad6accefa67f9cb67a365f7882b36ee2d7b4c70c9c1f201c370d795636dbf2"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-brainstorming/SKILL.md",
+    "sha256": "26bc84494a4d177dde70557ef224cd10cb6a0a7a43d31ab16563c25e607680da"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-build/SKILL.md",
+    "sha256": "4c19bb23bfedc541df60f100e5333e22d62aff5dbec5cd72d52a8454e7aba228"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-build-auto/SKILL.md",
+    "sha256": "2176e57a1d834e2e8749582ce8e5498ade1ec3e9b9af891809e5c6247e8296fd"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-code-review/SKILL.md",
+    "sha256": "d5af4c76e1dcb7e664a9db25d1a111e8d74b58ffc1ace01a00b08935db685eea"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-customize/SKILL.md",
+    "sha256": "59f75f4b5c91632cf5d94fefd4d2dbbccb2c3ce83c400dffa628de10dffd843b"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-deep-recon/SKILL.md",
+    "sha256": "f5360d92576908b91ce97c1bb75577c4cd724d0dcefaf20dd3b460c5a738507b"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-eval/SKILL.md",
+    "sha256": "f6295371c0767f72b8664d5c0570b46a2c84068c9bf5054685c267ed46713b95"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-forge-idea/SKILL.md",
+    "sha256": "66141864fbbafd7f2d5e7d9fb64b55c45cdbb661eef186460dd1ffb88f4e3164"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-party-mode/SKILL.md",
+    "sha256": "a29ab2937b2f80e28f32ac49aeb63cb8cf3ccac39240b7809acce0c39902a9d6"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-prd/SKILL.md",
+    "sha256": "df1c8433aacd9f341da0cadd35d1d647ce7298a5070ccbd4c0c285085551faea"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-prfaq/SKILL.md",
+    "sha256": "534bd5ee734693e4167b39e36eec56074a839ef53b79db3110c6a7adfb61264c"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-product-brief/SKILL.md",
+    "sha256": "d447aec7a68571e6c1d0fe36c28348e18db9b513837880bb271d6b504babc246"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-project-context/SKILL.md",
+    "sha256": "2fc53a5a9639c832a65673dd9b16ecba4c70739054cad54f15c277e3295490d9"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-qa-generate-e2e-tests/SKILL.md",
+    "sha256": "6b772205d7a82a49cf4cdbf0913b6859f1d023e8834a70d10050ffad95eaa60a"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-retrospective/SKILL.md",
+    "sha256": "3084226f532486a284bb7cd9125a531cfb5f3088b17c9fa1557795b6ea3277d2"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-review/SKILL.md",
+    "sha256": "c5fa7bc6342fc4da84549c9fddcce04313c210863613724e2c44aeee0089e9cc"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-toolsmith/SKILL.md",
+    "sha256": "4cd3682d436e6e00035388cd55c5763f7a16941efc98a3a017975f88c282b7e5"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-ux/SKILL.md",
+    "sha256": "a12bb1f87df1f2a143ffc838838492a2da4c775280e3c4ba31da3d19aa5abe9a"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/867c546e625c4d1f0cfdd290a79dcc035a994586/skills/bmad-walkthrough/SKILL.md",
+    "sha256": "c28fad6ab0ca63cb6b0b00e326dbfd49540d5dd7154ea21216bda66a73a3aacb"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/cathrynlavery/diagram-design/10cfad6a7be7f734a92d3d628e5fa344685d4f01/skills/diagram-design/SKILL.md",
+    "sha256": "f11aeec988fc5c690f6cdd279ec1f790279622dc1e07356c467af2311542cb7e"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/anthropics/skills/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/doc-coauthoring/SKILL.md",
+    "sha256": "2e47d78846faeea4a56e9809c52700087a15a2155a3f293a3efbaded81398ef4"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/anthropics/skills/dbd4588f9e1033efb41dad4bef2f7947c8993d44/skills/frontend-design/SKILL.md",
+    "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/pekral/github-readme-generator/d8bdac94d1a9488751d65e55e78eeabd47895bd0/skills/github-readme-generator/SKILL.md",
+    "sha256": "f58d2ee6e29b02f5da32f44ff0fc115cedbd269276728b2ab8756618e83aa9e8"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/thedotmack/claude-mem/d9b36b66dc68da92af9df238e4c4debab587ba62/plugin/skills/mem-search/SKILL.md",
+    "sha256": "29dce09590fda3f3b7de61d617cdc7c22730863576dab8c5795782870079d682"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/skydoves/android-testing-skills/8665ed59643c90eb1056a256a6ddec161aa1cfa1/adb/tests/running-instrumented-tests-via-adb/SKILL.md",
+    "sha256": "5a6977582327ef6e72abd778eddd52c97e5a24cbfb58082e55411eb894c330bc"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/skydoves/android-testing-skills/8665ed59643c90eb1056a256a6ddec161aa1cfa1/instrumentation/runner/running-instrumented-tests-with-androidjunit4/SKILL.md",
+    "sha256": "e9f1d3d6dd466c2024b5a3965192d512dfbf86315d63060b81628d84b1908e86"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/skydoves/android-testing-skills/8665ed59643c90eb1056a256a6ddec161aa1cfa1/compose/patterns/structuring-a-compose-test/SKILL.md",
+    "sha256": "5aa1d77c63c0af85fd29466aa7683912c1006ac28380828551d58a47cae2dce2"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/android/skills/bf68e2d66a992a1e6aeb7e9263293cc23fcbf475/testing/testing-setup/SKILL.md",
+    "sha256": "613970834fedb22c5f85bbc900e600e9a17cd953157af5a7e953e5938d7c2457"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/android/skills/bf68e2d66a992a1e6aeb7e9263293cc23fcbf475/wear/wear-compose-m3/SKILL.md",
+    "sha256": "40bf5d82a6a9b90b625aef8c6292c8b5ff446e5e6de82a08ec3c4fe6ac9f5b9b"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/nvk/llm-wiki/d60674ff785e5c6d35322657d7839a7c0bdd3ca7/plugins/llm-wiki/skills/wiki/SKILL.md",
+    "sha256": "e235c3f1d4a8421bc6c24dfef83ec7a82de5ef57b3118c28162fa9402a6808c6"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/nvk/llm-wiki/d60674ff785e5c6d35322657d7839a7c0bdd3ca7/plugins/llm-wiki/skills/wiki-query/SKILL.md",
+    "sha256": "d0c64afbe70e752548adf014a59c9e9977d8bce07df4a7d4510fd0ad0438a6e3"
+  }
+]

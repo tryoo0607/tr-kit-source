@@ -104,7 +104,7 @@ class Fake:
                 raise m.Deferred(self.fail)
             h = args[args.index('--terminal')+1]
             command = args[args.index('--text')+1]
-            if self.terms[h]['agentIdentity'] == 'codex' and self.codex_version == '0.172.0':
+            if self.terms[h].get('agentIdentity') == 'codex' and self.codex_version == '0.172.0':
                 # Native composer trims submissions; self.sent retains wire bytes.
                 command = command.strip()
             frame = self.frames[h]
@@ -113,11 +113,11 @@ class Fake:
                 identity = self.identities[h]
                 frame['delta'] = ['Session ID: '+identity['sessionId'], 'cwd: '+identity['cwd'],
                                   'Permissions: '+identity['permissions']]
-                if self.terms[h]['agentIdentity'] == 'claude':
+                if self.terms[h].get('agentIdentity') == 'claude':
                     frame['delta'].append('Version: '+self.claude_version)
                 else:
                     frame['delta'].insert(0, 'OpenAI Codex (v'+self.codex_version+')')
-                frame['tail'] = frame['delta'] + ['›' if self.terms[h]['agentIdentity'] == 'codex' else '❯']
+                frame['tail'] = frame['delta'] + ['›' if self.terms[h].get('agentIdentity') == 'codex' else '❯']
             elif command == '/exit':
                 frame['delta'] = ['To continue this session, run: codex resume '+self.identities[h]['sessionId']]
                 frame['tail'] = ['owned@host:'+self.terms[h]['worktreePath']+'$']
@@ -744,12 +744,12 @@ class Restart(unittest.TestCase):
         self.client.sent.clear()
         original = m.target_from
         calls = []
-        def ready(*args):
+        def ready(*args, **kwargs):
             self.assertEqual([], self.client.sent)
             calls.append(True)
             if len(calls) == 1:
                 raise m.Deferred('child-state-unknown')
-            return original(*args)
+            return original(*args, **kwargs)
         with patch.object(m, 'target_from', side_effect=ready), patch.object(m.time, 'sleep') as sleep:
             row = self.execute(ident, 'restore')['targets'][0]
         self.assertEqual('restarted', row['state'])
@@ -2317,11 +2317,11 @@ class Restart(unittest.TestCase):
                                  'Version: 2.1.329', 'Session ID: '+SESSION, 'cwd: /work',
                                  '←/→ to switch · Esc to close', '❯',
                                  '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
-                if change == 'version': frame['tail'][1] = 'Version: 2.1.332'
+                if change == 'version': frame['tail'][1] = 'Version: 2.1.333'
                 elif change == 'footer': frame['tail'][4] = '←/→ to switch · Esc to quit'
                 else:
                     frame['tail'].pop(0)
-                    frame['tail'][0] = 'Version: 2.1.332'
+                    frame['tail'][0] = 'Version: 2.1.333'
                 self.assertFalse(m.rr.claude_modal(m.rr.screen(frame), '/status'))
                 result = self.recover_preparation(ident)
                 self.assertEqual('uncertain', result['prepareState'])
@@ -2338,7 +2338,7 @@ class Restart(unittest.TestCase):
                 count[0] += 1
                 if count[0] == 2:  # native_status full guard after initial recovery observation
                     self.client.frames[handle]['tail'] = [
-                        'Settings  Status  Config  Usage  Stats', 'Version: 2.1.332',
+                        'Settings  Status  Config  Usage  Stats', 'Version: 2.1.333',
                         'Session ID: '+SESSION, 'cwd: /work', '←/→ to switch · Esc to close',
                         '❯', '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
             return original(handle)
@@ -2392,7 +2392,7 @@ class Restart(unittest.TestCase):
                 if change == 'uuid-missing': frame['tail'] = [x for x in frame['tail'] if 'Session ID:' not in x]
                 elif change == 'uuid-duplicate': frame['tail'].append('Session ID: '+str(uuid.uuid4()))
                 elif change == 'cwd': frame['tail'][3] = 'cwd: /wrong'
-                elif change == 'version': frame['tail'][1] = 'Version: 2.1.332'
+                elif change == 'version': frame['tail'][1] = 'Version: 2.1.333'
                 elif change == 'approval': frame['tail'].append('Allow once')
                 elif change == 'draft': frame['draft'] = 'typed'
                 elif change == 'working': self.client.agents['term_other']['state'] = 'working'
@@ -2871,6 +2871,932 @@ class Restart(unittest.TestCase):
         self.assertEqual('restore-safety-state-changed', result['targets'][0]['reason'])
         self.assertEqual([], self.client.sent)
         self.assertEqual([], self.client.created)
+
+
+class Claude332Fake(ModalFake):
+    def __init__(self):
+        super().__init__()
+        self.claude_version = self.installed_claude_version = '2.1.332'
+        self.resumed = False
+        self.account = 'owned@example.test'
+        self.bad_marker = False
+        self.exit_marker_bypass = False
+
+    def call(self, *args):
+        if args[:2] == ('terminal', 'send'):
+            command = args[args.index('--text')+1]
+            handle = args[args.index('--terminal')+1]
+            if ' --proof ' in command:
+                self.sent.append(args)
+                self.resumed = True
+                self.claude_version = self.installed_claude_version
+                self.frames[handle].update(tail=['❯', '  ⏵⏵ bypass permissions on (shift+tab to cycle)'],
+                                          latestCursor=str(int(self.frames[handle]['latestCursor'])+1))
+                return {'send': {'accepted': True}, 'mutation': {'requestId': str(uuid.uuid4())}}
+            result = super().call(*args)
+            if command == '/status':
+                lines = self.frames[handle]['tail']
+                lines[1] = ' Version: ' + self.claude_version
+                if self.claude_version == '2.1.319':
+                    lines[:] = [line.replace('←/→ to switch · Esc to close', 'Esc to cancel') for line in lines]
+                lines[-1:-1] = [' Login method: Claude Account', ' Organization: Owned fixture',
+                                ' Email: '+self.account]
+            elif command == '/exit':
+                flag = '--dangerously-skip-permissions ' if self.exit_marker_bypass else ''
+                marker = ['Resume this session with:', 'claude ' + flag + '--resume '+self.identities[handle]['sessionId']]
+                self.frames[handle]['delta'] = ['stale marker'] if self.bad_marker else marker
+            return result
+        return super().call(*args)
+
+
+class Claude332Restart(unittest.TestCase):
+    prepare = Restart.prepare
+    execute = Restart.execute
+    load = Restart.load
+    texts = Restart.texts
+
+    def setUp(self):
+        Restart.setUp(self)
+        self.client = Claude332Fake()
+        self.clock = 0.0
+        def sleep(seconds):
+            self.clock += seconds
+        patch.object(m.time, 'monotonic', side_effect=lambda: self.clock).start()
+        patch.object(m.time, 'sleep', side_effect=sleep).start()
+        self.shell = {'shell': {'pid': 42, 'starttime': 10, 'uid': os.getuid(),
+                               'sid': 42, 'pgrp': 42, 'tty': 5},
+                      'executable': {'path': '/usr/bin/zsh'}, 'cwd': '/work', 'pane': 'tab:target'}
+        self.launch = {'environment': {'environmentSha256': 'a'*64, 'profileSha256': 'b'*64},
+                       'shell': self.shell['shell'], 'shellExecutable': self.shell['executable'],
+                       'argumentClass': 'fixed-bypass'}
+        self.native = {'sessionId': SESSION, 'cwd': '/work', 'paneKey': 'tab:target',
+                       'producerVersion': '2.1.332', 'queryExecutable': {
+                           'path': str(Path.home() / '.local/share/claude/versions/2.1.332')},
+                       'kind': 'interactive', 'process': {'startTicks': 100, 'pidNamespace': 'pid:[42]',
+                           'executable': {'path': str(Path.home() / '.local/share/claude/versions/2.1.332')}}}
+        def observe(*args, **kwargs):
+            return {**copy.deepcopy(self.native), 'pid': 200 if self.client.resumed else 100,
+                    'process': {**self.native['process'], 'startTicks': 200 if self.client.resumed else 100,
+                                'executable': {'path': str(Path.home() / '.local/share/claude/versions' / self.client.claude_version)}}}
+        self.intent_patch = patch.object(m.live.checked, 'write_proof', return_value={'path': '/tmp/owned.proof', 'sha256': 'd'*64}).start()
+        self.inspect_patch = patch.object(m.live.checked, 'inspect_proof').start()
+        self.observe_patch = patch.object(m.live, 'observe', side_effect=observe).start()
+        self.launch_patch = patch.object(m.live, 'selected_launch', side_effect=lambda *args: copy.deepcopy(self.launch)).start()
+        self.exited_patch = patch.object(m.live, 'exited').start()
+        self.shell_patch = patch.object(m.rr, 'target_shell_process_proof', return_value=self.shell).start()
+        self.addCleanup(patch.stopall)
+
+    def settling_target(self):
+        ident = self.prepare()
+        before = self.load(ident)['targets'][0]['native']
+        _, ps = self.client.inventory()
+        target = m.target_from(self.client, self.client.terms['term_target'], ps, self.self_pane)
+        self.observe_patch.reset_mock()
+        self.client.sent.clear()
+        return target, before, m.current_plan(self.client, self.self_pane)
+
+    def test_ui_settles_exact_transient_hint_layout_and_cursor_before_native_proof(self):
+        target, before, plan = self.settling_target()
+        original_guard = m.rr.guard
+        observed = self.observe_patch.side_effect
+        frames = []
+        def guard(*args, **kwargs):
+            frame = self.client.frames['term_target']
+            if self.clock < 0.5:
+                frame['tail'] = ['◐ medium · /effort ·', '❯',
+                                 '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
+            elif self.clock < 1.0:
+                frame['tail'][0] = '                       '
+            else:
+                frame['tail'][0] = '   settled layout'
+                frame['latestCursor'] = '13'
+            result = original_guard(*args, **kwargs)
+            frames.append((self.clock, copy.deepcopy(result[1])))
+            self.assertEqual(0, self.observe_patch.call_count)
+            return result
+        def observe(*args, **kwargs):
+            self.assertGreaterEqual(self.clock, 3.0)
+            stable = [(at, frame) for at, frame in frames if at >= 1.0]
+            self.assertGreaterEqual(len(stable), 3)
+            self.assertGreaterEqual(stable[-1][0] - stable[0][0], 2.0)
+            self.assertTrue(all(frame == stable[0][1] for _, frame in stable))
+            return observed(*args, **kwargs)
+        self.observe_patch.side_effect = observe
+        with patch.object(m.rr, 'guard', side_effect=guard):
+            m.claude_restart_proof(self.client, target, before, plan, self.self_pane)
+        self.assertEqual(1, self.observe_patch.call_count)
+        self.assertEqual([], self.texts())
+
+    def test_ui_stable_versions_need_two_seconds_and_three_full_observations(self):
+        original_guard = m.rr.guard
+        for version in ('2.1.319', '2.1.329', '2.1.332'):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                self.client.claude_version = version
+                self.clock = 0.0
+                target, before, plan = self.settling_target()
+                with patch.object(m.rr, 'guard', wraps=original_guard) as guarded:
+                    m.claude_restart_proof(self.client, target, before, plan, self.self_pane)
+                self.assertGreaterEqual(guarded.call_count, 3)
+                self.assertGreaterEqual(self.clock, 2.0)
+                self.assertEqual(1, self.observe_patch.call_count)
+                self.assertEqual([], self.texts())
+
+    def test_ui_persistent_screen_or_cursor_changes_stop_bounded_without_proof_or_exit(self):
+        target, before, plan = self.settling_target()
+        original_guard = m.rr.guard
+        for change in ('screen', 'cursor'):
+            with self.subTest(change=change):
+                self.clock = 0.0
+                self.observe_patch.reset_mock()
+                def guard(*args, **kwargs):
+                    frame = self.client.frames['term_target']
+                    if change == 'screen': frame['tail'] = [str(self.clock), '❯',
+                        '  ⏵⏵ bypass permissions on (shift+tab to cycle)']
+                    else: frame['latestCursor'] = str(int(self.clock * 10))
+                    return original_guard(*args, **kwargs)
+                with patch.object(m.rr, 'guard', side_effect=guard) as guarded:
+                    with self.assertRaisesRegex(m.Deferred, 'claude-ui-settling-timeout'):
+                        m.claude_restart_proof(self.client, target, before, plan, self.self_pane)
+                self.assertEqual(15.0, self.clock)
+                self.assertLessEqual(guarded.call_count, 30)
+                self.assertEqual(0, self.observe_patch.call_count)
+                self.assertEqual([], self.texts())
+
+    def test_ui_unsafe_full_guard_or_mode_failure_is_immediate_without_retry(self):
+        target, before, plan = self.settling_target()
+        original_guard = m.rr.guard
+        for failure in ('target-changed', 'draft', 'busy', 'approval', 'children', 'mode'):
+            with self.subTest(failure=failure):
+                self.clock = 0.0
+                self.observe_patch.reset_mock()
+                def guard(*args, **kwargs):
+                    if failure != 'mode': raise m.Deferred(failure)
+                    result = original_guard(*args, **kwargs)
+                    result[1]['tail'][-1] = '⏵⏵ auto mode on (shift+tab to cycle)'
+                    return result
+                with patch.object(m.rr, 'guard', side_effect=guard) as guarded:
+                    with self.assertRaises(m.Deferred):
+                        m.claude_restart_proof(self.client, target, before, plan, self.self_pane)
+                self.assertEqual(1, guarded.call_count)
+                self.assertEqual(0.0, self.clock)
+                self.assertEqual(0, self.observe_patch.call_count)
+                self.assertEqual([], self.texts())
+
+    def test_332_restart_and_repeat_verify_have_one_exit_resume_and_new_process(self):
+        for bypass_marker in (False, True):
+            with self.subTest(bypass_marker=bypass_marker), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                self.client.exit_marker_bypass = bypass_marker
+                ident = self.prepare()
+                self.client.sent.clear()
+                row = self.execute(ident)['targets'][0]
+                self.assertEqual('restarted', row['state'], row)
+                command = m.live.checked.command({'path': '/tmp/owned.proof', 'sha256': 'd'*64})
+                self.assertEqual(['/status', '\x1b', '/exit', command, '/status', '\x1b'], self.texts())
+                stored = self.load(ident)['targets'][0]
+                self.assertEqual(100, stored['restartProof']['native']['pid'])
+                self.assertEqual(200, stored['processObserved']['pid'])
+                self.assertNotIn('owned@example.test', json.dumps(stored))
+                self.client.sent.clear()
+                for unused in range(2):
+                    self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+                self.assertEqual(['/status', '\x1b', '/status', '\x1b'], self.texts())
+
+    def test_observed_319_329_sources_restart_to_installed_332_with_same_account(self):
+        for version in ('2.1.319', '2.1.329'):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                self.client.claude_version = version
+                ident = self.prepare()
+                self.client.sent.clear()
+                self.assertEqual(version, self.load(ident)['targets'][0]['native']['nativeVersion'])
+                row = self.execute(ident)['targets'][0]
+                self.assertEqual('restarted', row['state'], row)
+                stored = self.load(ident)['targets'][0]
+                self.assertEqual(version, Path(stored['restartProof']['native']['process']['executable']['path']).name)
+                self.assertEqual('2.1.332', stored['nativeObserved']['nativeVersion'])
+                self.assertEqual(stored['native']['accountProof'], stored['nativeObserved']['accountProof'])
+                self.assertEqual(1, self.texts().count('/exit'))
+                self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+                self.client.sent.clear()
+                self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+                self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_resumed_legacy_or_changed_query_executable_never_gets_status(self):
+        observed = self.observe_patch.side_effect
+        for change in ('2.1.319', '2.1.329', 'query'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                self.client.claude_version = '2.1.319'
+                ident = self.prepare()
+                self.client.sent.clear()
+                def replaced(*args, **kwargs):
+                    proof = observed(*args, **kwargs)
+                    if self.client.resumed:
+                        path = str(Path.home() / '.local/share/claude/versions' /
+                                   ('2.1.329' if change == 'query' else change))
+                        if change == 'query': proof['queryExecutable']['path'] = path
+                        else: proof['process']['executable']['path'] = path
+                    return proof
+                self.observe_patch.side_effect = replaced
+                row = self.execute(ident)['targets'][0]
+                self.assertEqual('claude-resumed-launch-mismatch', row['reason'])
+                self.assertEqual(1, self.texts().count('/status'))
+                self.assertEqual(1, self.texts().count('/exit'))
+                self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+                sent = list(self.texts())
+                attempt = copy.deepcopy(self.load(ident)['targets'][0]['attempt'])
+                self.assertEqual('uncertain', attempt['state'])
+                self.execute(ident)
+                self.assertEqual(sent, self.texts())
+                self.assertEqual(attempt, self.load(ident)['targets'][0]['attempt'])
+                self.observe_patch.side_effect = observed
+
+    def test_legacy_source_status_executable_mismatch_never_exits(self):
+        self.client.claude_version = '2.1.319'
+        ident = self.prepare()
+        self.client.sent.clear()
+        observed = self.observe_patch.side_effect
+        def mismatch(*args, **kwargs):
+            proof = observed(*args, **kwargs)
+            proof['process']['executable']['path'] = str(Path.home() / '.local/share/claude/versions/2.1.329')
+            return proof
+        self.observe_patch.side_effect = mismatch
+        row = self.execute(ident)['targets'][0]
+        self.assertEqual('claude-restart-source-version-mismatch', row['reason'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_legacy_restart_without_account_proof_stays_manual(self):
+        self.client.claude_version = '2.1.319'
+        original = self.client.call
+        def call(*args):
+            result = original(*args)
+            if args[:2] == ('terminal', 'send') and args[args.index('--text') + 1] == '/status':
+                frame = self.client.frames['term_target']
+                frame['tail'] = [line for line in frame['tail']
+                                 if not any(label in line for label in ('Login method:', 'Organization:', 'Email:'))]
+            return result
+        with patch.object(self.client, 'call', side_effect=call):
+            ident = self.prepare()
+            self.client.sent.clear()
+            row = self.execute(ident)['targets'][0]
+        self.assertEqual('claude-account-unverified', row['reason'])
+        self.assertNotIn('/exit', self.texts())
+
+    def test_332_unverified_launch_or_source_has_no_exit(self):
+        for failure in ('claude-launch-options-unverified', 'claude-launch-environment-mismatch',
+                        'claude-restart-source-version-mismatch'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory)/'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                self.launch_patch.side_effect = m.Deferred(failure)
+                row = self.execute(ident)['targets'][0]
+                self.assertEqual('manual-restart-required', row['state'])
+                self.assertEqual(failure, row['reason'])
+                self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_332_changed_account_never_exits(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        self.client.account = 'different@example.test'
+        row = self.execute(ident)['targets'][0]
+        self.assertEqual('claude-account-mismatch', row['reason'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_332_drift_after_durable_exit_intent_stops_before_transport(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        original = m.Recorder.record
+        def record(recorder, phase, **values):
+            result = original(recorder, phase, **values)
+            if phase == 'sending' and values.get('step') == 'normal-exit':
+                self.launch['environment']['environmentSha256'] = 'c'*64
+            return result
+        with patch.object(m.Recorder, 'record', new=record):
+            row = self.execute(ident)['targets'][0]
+        self.assertEqual('claude-launch-proof-changed', row['reason'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+        self.execute(ident)
+        self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_332_final_mode_is_checked_before_and_after_durable_exit_intent(self):
+        for phase in ('claude-restart-preflight', 'sending'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                original = m.Recorder.record
+                def record(recorder, current, **values):
+                    result = original(recorder, current, **values)
+                    if current == phase and (phase != 'sending' or values.get('step') == 'normal-exit'):
+                        self.client.frames['term_target']['tail'][-1] = '  ⏵⏵ auto mode on (shift+tab to cycle)'
+                    return result
+                with patch.object(m.Recorder, 'record', new=record):
+                    row = self.execute(ident)['targets'][0]
+                self.assertEqual('claude-permissions-unknown', row['reason'])
+                self.assertEqual(['/status', '\x1b'], self.texts())
+                stored = self.load(ident)
+                exit_sending = [e for e in stored['events'] if e['phase'] == 'sending'
+                                and e.get('step') == 'normal-exit']
+                self.assertEqual(1 if phase == 'sending' else 0, len(exit_sending))
+                self.execute(ident)
+                self.assertNotIn('/exit', self.texts())
+
+    def test_332_exit_cursor_uuid_and_fresh_proof_are_durable_before_exit(self):
+        ident = self.prepare()
+        original = self.client.call
+        checked = []
+        def call(*args):
+            if args[:2] == ('terminal', 'send') and args[args.index('--text') + 1] == '/exit':
+                stored = json.loads((self.root / (ident + '.json')).read_text())['batch']
+                planned = [e for e in stored['events'] if e['phase'] == 'native-exit-planned']
+                self.assertEqual(1, len(planned))
+                evidence = planned[0]
+                self.assertEqual(SESSION, evidence['sessionId'])
+                self.assertEqual('2.1.332', evidence['nativeVersion'])
+                self.assertEqual(self.client.frames['term_target']['latestCursor'], evidence['cursor'])
+                self.assertEqual(64, len(evidence['frameSha256']))
+                self.assertIn('nativeProof', evidence)
+                checked.append(True)
+            return original(*args)
+        with patch.object(self.client, 'call', side_effect=call):
+            self.assertEqual('restarted', self.execute(ident)['targets'][0]['state'])
+        self.assertEqual([True], checked)
+
+    def test_332_durable_exit_cursor_or_checked_intent_drift_never_exits(self):
+        for failure in ('cursor', 'intent'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                self.inspect_patch.side_effect = None
+                original = m.Recorder.record
+                def record(recorder, phase, **values):
+                    result = original(recorder, phase, **values)
+                    if phase == 'sending' and values.get('step') == 'normal-exit':
+                        if failure == 'cursor': self.client.frames['term_target']['latestCursor'] = '99999'
+                        else: self.inspect_patch.side_effect = m.live.checked.Refused()
+                    return result
+                with patch.object(m.Recorder, 'record', new=record):
+                    row = self.execute(ident)['targets'][0]
+                expected = 'native-exit-proof-changed' if failure == 'cursor' else 'claude-checked-resume-proof-changed'
+                self.assertEqual(expected, row['reason'])
+                self.assertEqual(['/status', '\x1b'], self.texts())
+                self.execute(ident)
+                self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_332_same_process_or_changed_resumed_process_is_not_restart_proof(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        real_observe = self.observe_patch.side_effect
+        def original_process(*args, **kwargs):
+            proof = real_observe(*args, **kwargs)
+            if self.client.resumed:
+                proof['pid'] = 100
+            return proof
+        self.observe_patch.side_effect = original_process
+        row = self.execute(ident)['targets'][0]
+        self.assertEqual('claude-new-process-unproven', row['reason'])
+        self.assertEqual(1, self.texts().count('/exit'))
+        self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+
+    def test_332_post_resume_status_requires_fresh_exact_new_process_launch_proof(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        original = self.client.call
+        launched = self.launch_patch.side_effect
+        proven = []
+        def selected_launch(adapter, proof):
+            result = launched(adapter, proof)
+            if self.client.resumed:
+                self.assertEqual(SESSION, proof['sessionId'])
+                self.assertEqual(200, proof['pid'])
+                self.assertEqual(200, proof['process']['startTicks'])
+                proven.append(copy.deepcopy(proof))
+            return result
+        def call(*args):
+            if (self.client.resumed and args[:2] == ('terminal', 'send')
+                    and args[args.index('--text') + 1] == '/status'):
+                self.assertEqual(1, len(proven))
+                self.assertEqual(SESSION, self.observe_patch.call_args.kwargs['expected'])
+            return original(*args)
+        self.launch_patch.side_effect = selected_launch
+        with patch.object(self.client, 'call', side_effect=call):
+            self.assertEqual('restarted', self.execute(ident)['targets'][0]['state'])
+        self.assertEqual(2, len(proven))  # Before input and after native/account status.
+
+    def test_332_stale_done_shell_or_failed_launcher_never_gets_status_or_resend(self):
+        observed = self.observe_patch.side_effect
+        for failure in ('stale-done', 'refused', 'crashed'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                intent = {'path': str(Path(directory) / 'owned.proof'), 'sha256': 'd' * 64}
+                self.intent_patch.return_value = intent
+                ident = self.prepare()
+                self.client.sent.clear()
+                original = self.client.call
+                def observe(*args, **kwargs):
+                    if self.client.resumed:
+                        if failure == 'stale-done':
+                            proof = copy.deepcopy(self.native)
+                            proof['pid'] = 100
+                            return proof
+                        raise m.Deferred('exception-live-identity-ambiguous')
+                    return observed(*args, **kwargs)
+                self.observe_patch.side_effect = observe
+                def call(*args):
+                    result = original(*args)
+                    if args[:2] == ('terminal', 'send') and ' --proof ' in args[args.index('--text') + 1]:
+                        self.client.frames['term_target']['tail'] = [
+                            '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+                            'Resume this session with:', 'claude --resume ' + SESSION, '❯']
+                        self.client.agents['term_target']['state'] = 'done'
+                        self.client.agents['term_target']['mainAgent']['state'] = 'done'
+                        self.client.agents['term_target']['programStatus']['state'] = 'done'
+                        if failure == 'refused':
+                            receipt = Path(intent['path'] + '.refused')
+                            receipt.write_text(intent['sha256'])
+                            receipt.chmod(0o400)
+                    return result
+                with patch.object(self.client, 'call', side_effect=call):
+                    row = self.execute(ident)['targets'][0]
+                expected = {'stale-done': 'claude-new-process-unproven',
+                            'refused': 'claude-checked-resume-stopped-before-native-launch',
+                            'crashed': 'exception-live-identity-ambiguous'}[failure]
+                self.assertEqual('failed', row['state'], row)
+                self.assertEqual(expected, row['reason'])
+                command = m.live.checked.command(intent)
+                self.assertEqual(['/status', '\x1b', '/exit', command], self.texts())
+                stored = self.load(ident)
+                attempt = copy.deepcopy(stored['targets'][0]['attempt'])
+                self.assertEqual('uncertain', attempt['state'])
+                events = copy.deepcopy(stored['events'])
+                self.assertTrue(any(e.get('operationId') == attempt['operationId']
+                                    and e['phase'] == 'accepted' and e.get('step') == 'exact-resume'
+                                    for e in events))
+                self.execute(ident)
+                self.assertEqual(['/status', '\x1b', '/exit', command], self.texts())
+                final = self.load(ident)
+                self.assertEqual(attempt, final['targets'][0]['attempt'])
+                self.assertEqual(events, final['events'])
+                verification = self.execute(ident, 'verify')['targets'][0]
+                self.assertEqual('deferred', verification['state'])
+                self.assertEqual(['/status', '\x1b', '/exit', command], self.texts())
+                verified = self.load(ident)
+                self.assertEqual(attempt, verified['targets'][0]['attempt'])
+                self.assertEqual(events, verified['events'][:len(events)])
+                self.assertTrue(all(e['phase'] == 'stopped' for e in verified['events'][len(events):]))
+                self.observe_patch.side_effect = observed
+
+    def test_verify_missing_exit_receipt_or_observation_never_inputs_into_shell(self):
+        observed = self.observe_patch.side_effect
+        for failure in ('receipt', 'observation'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                exited = [False]
+                original = self.client.call
+                record = m.Recorder.record
+                def call(*args):
+                    result = original(*args)
+                    if args[:2] == ('terminal', 'send') and args[args.index('--text') + 1] == '/exit':
+                        exited[0] = True
+                        self.client.frames['term_target']['tail'] = [
+                            '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
+                            'Resume this session with:', 'claude --resume ' + SESSION, '❯']
+                        for key in ('mainAgent', 'programStatus'):
+                            self.client.agents['term_target'][key]['state'] = 'done'
+                        self.client.agents['term_target']['state'] = 'done'
+                        if failure == 'receipt': return {'send': {'accepted': False}}
+                    return result
+                def recorder(recorder, phase, **values):
+                    if failure == 'observation' and phase == 'native-exit-observed':
+                        raise m.Deferred('owned-exit-observation-lost')
+                    return record(recorder, phase, **values)
+                def absent(*args, **kwargs):
+                    if exited[0]: raise m.Deferred('exception-live-identity-ambiguous')
+                    return observed(*args, **kwargs)
+                self.observe_patch.side_effect = absent
+                with patch.object(self.client, 'call', side_effect=call), patch.object(m.Recorder, 'record', new=recorder):
+                    result = self.execute(ident)['targets'][0]
+                self.assertEqual('failed', result['state'])
+                stored = self.load(ident)
+                attempt = copy.deepcopy(stored['targets'][0]['attempt'])
+                self.assertEqual('uncertain', attempt['state'])
+                self.assertFalse(any(e['phase'] == 'native-exit-observed' for e in stored['events']))
+                sent = list(self.texts())
+                self.assertEqual(['/status', '\x1b', '/exit'], sent)
+                result = self.execute(ident, 'verify')['targets'][0]
+                self.assertEqual('exception-live-identity-ambiguous', result['reason'])
+                self.assertEqual(sent, self.texts())
+                self.assertEqual(attempt, self.load(ident)['targets'][0]['attempt'])
+                self.execute(ident)
+                self.assertEqual(sent, self.texts())
+                self.observe_patch.side_effect = observed
+
+    def test_verify_proven_original_without_observed_exit_keeps_restart_pending(self):
+        self.client.claude_version = '2.1.319'
+        ident = self.prepare()
+        self.client.sent.clear()
+        original = m.Recorder.record
+        def record(recorder, phase, **values):
+            if phase == 'native-exit-planned': raise m.Deferred('owned-stopped-before-exit')
+            return original(recorder, phase, **values)
+        with patch.object(m.Recorder, 'record', new=record):
+            self.assertEqual('failed', self.execute(ident)['targets'][0]['state'])
+        stored = self.load(ident)
+        operation = stored['targets'][0]['attempt']['operationId']
+        self.assertIsNotNone(stored['targets'][0]['restartProof'])
+        self.assertFalse(any(e['phase'] == 'native-exit-observed' for e in stored['events']))
+        self.client.sent.clear()
+        row = self.execute(ident, 'verify')['targets'][0]
+        self.assertEqual('live-identity-confirmed-restart-unproven', row['reason'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+        attempt = self.load(ident)['targets'][0]['attempt']
+        self.assertEqual(operation, attempt['operationId'])
+        self.assertEqual('verified-running-restart-pending', attempt['state'])
+
+    def test_332_resume_receipt_loss_or_timeout_keeps_attempt_and_never_resends(self):
+        for failure in ('receipt', 'timeout'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                original = self.client.call
+                def call(*args):
+                    result = original(*args)
+                    if args[:2] == ('terminal', 'send') and ' --proof ' in args[args.index('--text') + 1]:
+                        if failure == 'receipt': return {'send': {'accepted': False}}
+                        raise m.Deferred('owned-resume-timeout')
+                    return result
+                with patch.object(self.client, 'call', side_effect=call):
+                    row = self.execute(ident)['targets'][0]
+                self.assertEqual('failed', row['state'])
+                stored = self.load(ident)['targets'][0]
+                self.assertEqual('uncertain', stored['attempt']['state'])
+                self.assertIn('launchIntent', stored['restartProof'])
+                self.assertEqual(1, self.texts().count('/exit'))
+                self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+                before = list(self.texts())
+                self.execute(ident)
+                self.assertEqual(before, self.texts())
+
+    def test_resumed_launch_mismatch_records_only_fixed_boolean_comparisons(self):
+        selected = self.launch_patch.side_effect
+        observed = self.observe_patch.side_effect
+        for failure in ('environment', 'profile', 'shell', 'shell-executable', 'native-executable', 'query'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                def launch(*args, **kwargs):
+                    result = selected(*args, **kwargs)
+                    if self.client.resumed:
+                        if failure == 'environment': result['environment']['environmentSha256'] = 'private-raw-fixture'
+                        elif failure == 'profile': result['environment']['profileSha256'] = 'private-raw-fixture'
+                        elif failure == 'shell': result['shell']['tty'] += 1
+                        elif failure == 'shell-executable': result['shellExecutable']['path'] = '/private-raw-fixture'
+                    return result
+                def process(*args, **kwargs):
+                    result = observed(*args, **kwargs)
+                    if self.client.resumed:
+                        if failure == 'native-executable': result['process']['executable']['path'] = '/private-raw-fixture'
+                        elif failure == 'query': result['queryExecutable']['path'] = '/private-raw-fixture'
+                    return result
+                self.launch_patch.side_effect = launch
+                self.observe_patch.side_effect = process
+                result = self.execute(ident)['targets'][0]
+                self.assertEqual('claude-resumed-launch-mismatch', result['reason'])
+                stored = self.load(ident)
+                events = [e for e in stored['events'] if e['phase'] == 'claude-launch-comparison']
+                self.assertEqual(1, len(events))
+                fields = {key: value for key, value in events[0].items()
+                          if key not in ('phase', 'targetId', 'operationId', 'at')}
+                self.assertTrue(fields)
+                self.assertTrue(all(type(value) is bool for value in fields.values()))
+                expected = {'environment': 'environmentEqual', 'profile': 'profileEqual',
+                            'shell': 'shellFieldsEqual', 'shell-executable': 'shellExecutableEqual',
+                            'native-executable': 'nativeExecutableEqual', 'query': 'queryExecutableEqual'}[failure]
+                self.assertFalse(fields[expected])
+                self.assertNotIn('private-raw-fixture', json.dumps(stored['events']))
+                self.assertEqual(1, self.texts().count('/status'))  # No unsafe post-resume query.
+                self.assertEqual('uncertain', stored['targets'][0]['attempt']['state'])
+                self.launch_patch.side_effect = selected
+                self.observe_patch.side_effect = observed
+
+    def test_332_changed_account_after_resume_is_not_success(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        original = self.client.call
+        def call(*args):
+            result = original(*args)
+            if args[:2] == ('terminal', 'send') and ' --proof ' in args[args.index('--text') + 1]:
+                self.client.account = 'changed-after-exec@example.test'
+            return result
+        with patch.object(self.client, 'call', side_effect=call):
+            row = self.execute(ident)['targets'][0]
+        self.assertEqual('claude-account-mismatch', row['reason'])
+        self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+        self.execute(ident)
+        self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+
+    def test_332_missing_marker_or_receipt_never_resends(self):
+        for failure in ('marker', 'receipt'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory)/'state'
+                self.client = Claude332Fake()
+                ident = self.prepare()
+                self.client.sent.clear()
+                self.client.bad_marker = failure == 'marker'
+                original = self.client.call
+                def call(*args):
+                    result = original(*args)
+                    if failure == 'receipt' and args[:2] == ('terminal', 'send') and args[args.index('--text')+1] == '/exit':
+                        return {'send': {'accepted': False}}
+                    return result
+                with patch.object(self.client, 'call', side_effect=call), patch.object(m.time, 'monotonic', side_effect=range(1000)):
+                    row = self.execute(ident)['targets'][0]
+                self.assertEqual('failed', row['state'], row)
+                self.assertEqual(['/status', '\x1b', '/exit'], self.texts())
+                self.execute(ident)
+                self.assertEqual(['/status', '\x1b', '/exit'], self.texts())
+
+
+
+class MissingHintClaudeFake(Claude332Fake):
+    """Physical Claude responses remain separate from a missing Orca hint."""
+    def __init__(self):
+        super().__init__()
+        self.terms['term_target']['agentIdentity'] = None
+        self.claude_version = '2.1.329'
+
+    def call(self, *args):
+        if (args[:2] == ('terminal', 'send') and args[args.index('--text') + 1] == '/status'
+                and self.terms[args[args.index('--terminal') + 1]].get('agentIdentity') is None):
+            self.sent.append(args)
+            handle = args[args.index('--terminal') + 1]
+            native = self.identities[handle]
+            frame = self.frames[handle]
+            frame['latestCursor'] = str(int(frame['latestCursor']) + 1)
+            frame['tail'] = ['Settings  Status  Config  Usage  Stats', 'Version: ' + self.claude_version,
+                             'Session ID: ' + native['sessionId'], 'cwd: ' + native['cwd'],
+                             'Login method: Claude Account', 'Organization: Owned fixture',
+                             'Email: ' + self.account, '←/→ to switch · Esc to close']
+            self.modals.add(handle)
+            return {'send': {'accepted': True}, 'mutation': {'requestId': str(uuid.uuid4())}}
+        return super().call(*args)
+
+
+class MissingClaudeProvider(unittest.TestCase):
+    prepare = Restart.prepare
+    execute = Restart.execute
+    load = Restart.load
+    texts = Restart.texts
+
+    def setUp(self):
+        Claude332Restart.setUp(self)
+        self.client = MissingHintClaudeFake()
+        observed = self.observe_patch.side_effect
+        def rich(*args, **kwargs):
+            proof = observed(*args, **kwargs)
+            proof['process'].update(pid=proof['pid'], cwd=proof['cwd'], paneKey=proof['paneKey'])
+            return proof
+        self.observe_patch.side_effect = rich
+        self.recheck = patch.object(m.live, 'recheck').start()
+
+    def context(self):
+        item = self.client.terms['term_target']
+        row = dict(targetId=item['handle'], terminal=m.rr.fingerprint(item), choice='restart',
+                   provider='claude', native=None)
+        return row, item, self.client.inventory()[1]
+
+    def test_missing_hint_prepare_uses_unique_api_without_rewriting_observations(self):
+        terms, agents = copy.deepcopy(self.client.terms), copy.deepcopy(self.client.agents)
+        ident = self.prepare()
+        row = self.load(ident)['targets'][0]
+        self.assertEqual('ready', row['state'], row)
+        self.assertEqual(SESSION, row['native']['sessionId'])
+        self.assertEqual('2.1.329', row['native']['nativeVersion'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+        self.assertEqual(terms, self.client.terms)
+        self.assertEqual(agents, self.client.agents)
+        self.assertIsNone(self.observe_patch.call_args.kwargs['expected'])
+        self.assertGreater(self.recheck.call_count, 2)
+        self.assertNotIn('nativeProvider', json.dumps(self.load(ident)))
+
+    def test_omitted_hint_initial_prepare_locate_verify_and_post_resume_keep_proofs(self):
+        self.client.terms['term_target'].pop('agentIdentity')
+        before = copy.deepcopy(self.client.terms)
+        ident = self.prepare()
+        self.assertEqual('ready', self.load(ident)['targets'][0]['state'])
+        self.assertEqual(before, self.client.terms)
+        self.assertNotIn('agentIdentity', self.client.observe('term_target')[0])
+        self.assertNotIn('agentIdentity', self.client.inventory()[0]['terminals'][1])
+        self.client.sent.clear()
+        self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+        self.client.sent.clear()
+        self.assertEqual('restarted', self.execute(ident)['targets'][0]['state'])
+        self.assertEqual(1, self.texts().count('/exit'))
+        self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+        self.assertNotIn('agentIdentity', self.client.terms['term_target'])
+        self.client.sent.clear()
+        self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+        self.assertNotIn('agentIdentity', self.client.terms['term_target'])
+
+    def test_missing_hint_api_uuid_and_source_must_match_native_status_before_storage(self):
+        for failure in ('uuid', 'source'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                self.root = Path(directory) / 'state'
+                self.client = MissingHintClaudeFake()
+                self.observe_patch.reset_mock()
+                original = self.client.call
+                def call(*args):
+                    result = original(*args)
+                    if args[:2] == ('terminal', 'send') and args[args.index('--text') + 1] == '/status':
+                        frame = self.client.frames['term_target']
+                        if failure == 'uuid':
+                            frame['tail'] = [line.replace(SESSION, '11111111-1111-4111-8111-111111111111')
+                                             for line in frame['tail']]
+                        else: frame['tail'][1] = 'Version: 2.1.332'
+                    return result
+                with patch.object(self.client, 'call', side_effect=call):
+                    ident = self.prepare()
+                row = self.load(ident)['targets'][0]
+                expected = 'native-provider-session-mismatch' if failure == 'uuid' else 'native-provider-source-mismatch'
+                self.assertEqual(expected, row['reason'])
+                self.assertIsNone(row['native'])
+                self.assertEqual('uncertain', self.load(ident)['prepareState'])
+                self.assertEqual(['/status', '\x1b'], self.texts())
+                self.assertEqual(1, self.observe_patch.call_count)
+                self.assertIsNone(self.observe_patch.call_args.kwargs['expected'])
+
+    def test_missing_hint_locate_verify_and_hint_restored_keep_fixed_authority(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        self.observe_patch.reset_mock()
+        self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+        self.assertEqual(1, self.observe_patch.call_count)  # Reuse target; local checks do not rediscover.
+        self.assertEqual(SESSION, self.observe_patch.call_args.kwargs['expected'])
+        row, item, ps = self.context()
+        target = m.target_from(self.client, item, ps, self.self_pane, selected_row=row)
+        self.client.terms['term_target']['agentIdentity'] = 'claude'
+        self.client.sent.clear()
+        self.recheck.reset_mock()
+        m.rr.guard(self.client, m.current_plan(self.client, self.self_pane), target, self.self_pane)
+        self.assertGreater(self.recheck.call_count, 0)
+        self.assertEqual([], self.texts())
+
+    def test_missing_hint_restart_renews_only_from_new_pinned_process_proof(self):
+        ident = self.prepare()
+        self.client.sent.clear()
+        row = self.execute(ident)['targets'][0]
+        self.assertEqual('restarted', row['state'], row)
+        self.assertIsNone(self.client.terms['term_target']['agentIdentity'])
+        self.assertEqual(1, self.texts().count('/exit'))
+        self.assertEqual(1, sum(' --proof ' in text for text in self.texts()))
+        self.client.sent.clear()
+        self.assertEqual('already-running', self.execute(ident, 'verify')['targets'][0]['state'])
+        self.assertEqual(['/status', '\x1b'], self.texts())
+
+    def test_missing_hint_selection_provider_and_ps_negatives_never_input(self):
+        for failure in ('manual', 'unselected', 'codex-row', 'explicit-codex', 'empty-hint', 'absent-unselected', 'absent-ps-codex',
+                        'ps-missing', 'ps-codex', 'self'):
+            with self.subTest(failure=failure):
+                self.client = MissingHintClaudeFake()
+                row, item, ps = self.context()
+                self.observe_patch.reset_mock()
+                if failure == 'manual': row['choice'] = 'manual'
+                elif failure == 'unselected': row = None
+                elif failure == 'codex-row': row['provider'] = 'codex'
+                elif failure == 'explicit-codex': item['agentIdentity'] = 'codex'
+                elif failure == 'empty-hint': item['agentIdentity'] = ''
+                elif failure == 'absent-unselected':
+                    item.pop('agentIdentity')
+                    row = None
+                elif failure == 'absent-ps-codex':
+                    item.pop('agentIdentity')
+                    m.rr.agent_for(ps, item)['agentType'] = 'codex'
+                elif failure == 'ps-missing':
+                    for workspace in ps['worktrees']:
+                        workspace['agents'] = [a for a in workspace['agents'] if a.get('paneKey') != 'tab:target']
+                elif failure == 'ps-codex':
+                    m.rr.agent_for(ps, item)['agentType'] = 'codex'
+                else:
+                    item = self.client.terms['term_self']
+                    item['agentIdentity'] = None
+                    m.rr.agent_for(ps, item)['agentType'] = 'claude'
+                    row['terminal'] = m.rr.fingerprint(item)
+                with self.assertRaises(m.Deferred):
+                    m.target_from(self.client, item, ps, self.self_pane, selected_row=row)
+                self.assertEqual([], self.texts())
+                self.assertEqual(0, self.observe_patch.call_count)
+
+    def test_missing_hint_busy_draft_approval_child_and_wait_guards_are_not_bypassed(self):
+        for omitted in (False, True):
+            for failure in ('busy', 'draft', 'approval', 'child', 'wait', 'unknown-child'):
+                with self.subTest(failure=failure):
+                    self.client = MissingHintClaudeFake()
+                    row, item, ps = self.context()
+                    if omitted: item.pop('agentIdentity')
+                    if failure == 'busy': m.rr.agent_for(ps, item)['programStatus']['state'] = 'working'
+                    elif failure == 'draft': self.client.frames['term_target']['draft'] = 'owned typed draft'
+                    elif failure == 'approval': self.client.frames['term_target']['tail'].append('Allow once')
+                    elif failure == 'child': m.rr.agent_for(ps, item)['children'] = [{'state': 'working'}]
+                    elif failure == 'wait': item['agentWait'] = {'kind': 'approval'}
+                    else: m.rr.agent_for(ps, item)['subagentObservation'] = 'unverifiable'
+                    with self.assertRaises(m.Deferred):
+                        m.target_from(self.client, item, ps, self.self_pane, selected_row=row)
+                    self.assertEqual([], self.texts())
+
+    def test_missing_hint_wrong_uuid_executable_pane_cwd_or_runtime_never_inputs(self):
+        observed = self.observe_patch.side_effect
+        for failure in ('uuid', 'executable', 'query', 'pane', 'cwd', 'process-pane', 'pid', 'runtime'):
+            with self.subTest(failure=failure):
+                self.client = MissingHintClaudeFake()
+                row, item, ps = self.context()
+                row['native'] = {'sessionId': SESSION}
+                def wrong(*args, **kwargs):
+                    proof = observed(*args, **kwargs)
+                    if failure == 'uuid': proof['sessionId'] = str(uuid.uuid4())
+                    elif failure == 'executable': proof['process']['executable']['path'] = '/unsupported/native'
+                    elif failure == 'query': proof['queryExecutable']['path'] = '/unsupported/query'
+                    elif failure == 'pane': proof['paneKey'] = 'tab:other'
+                    elif failure == 'cwd': proof['cwd'] = '/other'
+                    elif failure == 'process-pane': proof['process']['paneKey'] = 'tab:other'
+                    elif failure == 'pid': proof['process']['pid'] += 1
+                    else: self.client.runtime = 'changed-runtime'
+                    return proof
+                self.observe_patch.side_effect = wrong
+                with self.assertRaises(m.Deferred):
+                    m.target_from(self.client, item, ps, self.self_pane, selected_row=row)
+                self.assertEqual([], self.texts())
+                self.observe_patch.side_effect = observed
+
+    def test_missing_hint_fixed_callback_rejects_identity_runtime_process_and_other_provider_drift(self):
+        for failure in ('identity', 'runtime', 'process', 'other-provider', 'proof-edit'):
+            with self.subTest(failure=failure):
+                self.client = MissingHintClaudeFake()
+                self.recheck.side_effect = None
+                row, item, ps = self.context()
+                target = m.target_from(self.client, item, ps, self.self_pane, selected_row=row)
+                if failure == 'identity': target['identity']['ptyId'] = 'changed-in-place'
+                elif failure == 'runtime': self.client.runtime = 'changed-runtime'
+                elif failure == 'process': self.recheck.side_effect = m.Deferred('exception-live-proof-changed')
+                elif failure == 'other-provider': self.client.terms['term_target']['agentIdentity'] = 'codex'
+                else: target['nativeProviderProof']['process']['startTicks'] += 1
+                with self.assertRaises(m.Deferred):
+                    if failure == 'other-provider':
+                        m.rr.passive_guard(self.client, m.current_plan(self.client, self.self_pane), target, self.self_pane)
+                    else: m.rr.native_provider_check(self.client, target)
+                self.assertEqual([], self.texts())
+        self.recheck.side_effect = None
+
+    def test_missing_hint_token_cannot_be_reused_for_another_pane_or_general_refresh(self):
+        row, item, ps = self.context()
+        target = m.target_from(self.client, item, ps, self.self_pane, selected_row=row)
+        token = m.rr.native_provider_check(self.client, target, item)
+        other = self.client.add('other', '/work', 'claude')
+        self.client.terms[other]['agentIdentity'] = None
+        _, ps = self.client.inventory()
+        with self.assertRaises(m.Deferred):
+            m.rr.eligible(self.client.terms[other], self.client.frames[other], ps, self.self_pane,
+                          True, tui_idle=True, verified_provider=token)
+        with self.assertRaises(m.Deferred):
+            m.rr.eligible(item, self.client.frames['term_target'], ps, self.self_pane, True, tui_idle=True)
+        self.assertEqual([], self.texts())
+
+    def test_missing_hint_process_drift_after_durable_status_intent_has_no_transport(self):
+        original = m.Recorder.record
+        def record(recorder, phase, **values):
+            result = original(recorder, phase, **values)
+            if phase == 'sending' and values.get('step') == 'status':
+                self.recheck.side_effect = m.Deferred('exception-live-proof-changed')
+            return result
+        with patch.object(m.Recorder, 'record', new=record):
+            ident = self.prepare()
+        stored = self.load(ident)
+        self.assertEqual('uncertain', stored['prepareState'])
+        self.assertEqual('exception-live-proof-changed', stored['targets'][0]['reason'])
+        self.assertEqual([], self.texts())
+        self.assertTrue(any(e['phase'] == 'sending' for e in stored['events']))
+        self.assertFalse(any(e['phase'] == 'accepted' for e in stored['events']))
 
 
 if __name__ == '__main__':

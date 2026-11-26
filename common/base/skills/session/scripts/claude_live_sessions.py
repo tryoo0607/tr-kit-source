@@ -2,8 +2,10 @@
 """Bounded official Claude agents JSON and Linux identity proof. No terminal I/O.
 
 The caller supplies the existing runtime adapter so errors and native transport
-have one owner. Nothing here reads transcripts, argv or Claude's private registry.
+have one owner. Identity/exception paths never read argv or private transcripts.
+Only the explicitly selected restart launch classifier reads bounded local argv.
 """
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,8 +17,13 @@ import uuid
 
 PRODUCER = '2.1.331'
 EXECUTABLE_VERSIONS = frozenset(('2.1.319', '2.1.329', '2.1.331'))
+PRODUCER_VERSIONS = frozenset((PRODUCER, '2.1.332'))
+EXECUTABLE_VERSIONS = EXECUTABLE_VERSIONS | {'2.1.332'}
 MAX_ROWS = 512
 MAX_JSON = 262144
+_spec = importlib.util.spec_from_file_location('claude_checked_resume', Path(__file__).with_name('claude_checked_resume.py'))
+checked = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(checked)
 
 
 def bounded(path, limit):
@@ -45,12 +52,12 @@ def query_executable(rr, *, home=None):
     command = shutil.which('claude')
     if command is None:
         raise rr.Deferred('exception-producer-unverified')
-    return executable(rr, Path(command).resolve(strict=True), home=home, versions={PRODUCER})
+    return executable(rr, Path(command).resolve(strict=True), home=home, versions=PRODUCER_VERSIONS)
 
 
 def query_identity(rr, query):
     """Recheck the proven file itself; PATH never chooses its replacement."""
-    if executable(rr, query['path'], versions={PRODUCER}) != query:
+    if executable(rr, query['path'], versions=PRODUCER_VERSIONS) != query:
         raise rr.Deferred('exception-live-proof-changed')
 
 
@@ -147,7 +154,7 @@ def observations(rr, cwd, *, absent_uuid=None):
     """A bounded pair of official responses with stable relevant proc identities."""
     try:
         query = query_executable(rr)
-        if query_command(rr, query, ['--version'], cwd).strip() != PRODUCER + ' (Claude Code)':
+        if query_command(rr, query, ['--version'], cwd).strip() != Path(query['path']).name + ' (Claude Code)':
             raise rr.Deferred('exception-producer-unverified')
         rows = parse(rr, query_command(rr, query, ['agents', '--json'], cwd))
         if absent_uuid is not None and any(r['sessionId'] == absent_uuid for r in rows):
@@ -181,7 +188,7 @@ def observe(rr, cwd, pane, *, expected=None):
     chosen = matching[0]
     if chosen['kind'] != 'interactive' or (expected is not None and chosen['sessionId'] != expected):
         raise rr.Deferred('exception-live-identity-mismatch')
-    return {'producerVersion': PRODUCER, 'queryExecutable': query,
+    return {'producerVersion': Path(query['path']).name, 'queryExecutable': query,
             **chosen, 'paneKey': pane, 'process': before[chosen['pid']]}
 
 
@@ -195,7 +202,7 @@ def observe_absent(rr, cwd, pane, *, expected):
     query, _, before = observations(rr, cwd, absent_uuid=expected)
     if any(proof['paneKey'] == pane for proof in before.values()):
         raise rr.Deferred('exception-absent-pane-reused')
-    return {'producerVersion': PRODUCER, 'queryExecutable': query, 'kind': 'absent',
+    return {'producerVersion': Path(query['path']).name, 'queryExecutable': query, 'kind': 'absent',
             'sessionId': expected, 'cwd': cwd, 'paneKey': pane}
 
 
@@ -212,7 +219,7 @@ def validate(rr, identity):
     try:
         if (set(identity) != {'producerVersion', 'queryExecutable', 'pid', 'sessionId', 'cwd',
                              'kind', 'paneKey', 'process'}
-                or identity['producerVersion'] != PRODUCER or identity['kind'] != 'interactive'
+                or identity['producerVersion'] not in PRODUCER_VERSIONS or identity['kind'] != 'interactive'
                 or str(uuid.UUID(identity['sessionId'])) != identity['sessionId']
                 or not rr.token(identity['cwd']) or not identity['cwd'].startswith('/')
                 or not rr.token(identity['paneKey'])
@@ -225,7 +232,7 @@ def validate(rr, identity):
                 or type(process_proof['uid']) is not int or process_proof['uid'] != os.getuid()
                 or not re.fullmatch(r'pid:\[\d+\]', process_proof['pidNamespace'])):
             raise ValueError('invalid process proof')
-        for exe, versions in ((identity['queryExecutable'], {PRODUCER}),
+        for exe, versions in ((identity['queryExecutable'], {identity['producerVersion']}),
                               (process_proof['executable'], EXECUTABLE_VERSIONS)):
             if (set(exe) != {'path', 'device', 'inode', 'uid', 'mode', 'size', 'mtimeNs'}
                     or not isinstance(exe['path'], str) or not exe['path'].startswith('/')
@@ -239,3 +246,96 @@ def validate(rr, identity):
     except (ValueError, TypeError, KeyError, AttributeError):
         raise rr.Deferred('exception-attestation-invalid') from None
     return identity
+
+
+def launch_environment(rr, pid, cwd, *, proc_root=Path('/proc'), version='2.1.332'):
+    """Opaque, local equality proof. Never return environment/config contents.
+
+    Compare the complete inherited environment except shell bookkeeping, rather
+    than guessing which variables a native provider may consume. Config files
+    use bounded stable content/logical metadata; account equality also needs a
+    fresh status-card proof before and after restart.
+    """
+    try:
+        raw = bounded(Path(proc_root) / str(pid) / 'environ', 131072)
+        if not raw.endswith(b'\0'):
+            raise ValueError()
+        values = {}
+        for item in raw[:-1].split(b'\0'):
+            key, separator, value = item.partition(b'=')
+            if not separator or not key or key in values:
+                raise ValueError()
+            values[key] = value
+        return checked.environment_proof(values, cwd, version=version)
+    except (OSError, ValueError, UnicodeError, KeyError, checked.Refused, checked.subprocess.SubprocessError):
+        raise rr.Deferred('claude-launch-environment-unverifiable') from None
+
+
+def selected_launch(rr, proof, *, proc_root=Path('/proc')):
+    """Classify ONLY the selected process. Exception helpers never read argv.
+
+    Raw argv is bounded, used locally, and neither returned nor replayed. Only
+    a supported native319/329/332 direct foreground child of the preserved system zsh is eligible.
+    Any extra option, positional prompt, wrapper or rewritten argv is manual.
+    """
+    recheck(rr, proof)
+    try:
+        pid, cwd, ident = proof['pid'], proof['cwd'], proof['sessionId']
+        if (proof['producerVersion'] != '2.1.332'
+                or Path(proof['process']['executable']['path']).name not in rr.CLAUDE_RESTART_SOURCE_VERSIONS):
+            raise rr.Deferred('claude-restart-source-version-mismatch')
+        raw = bounded(Path(proc_root) / str(pid) / 'cmdline', 16384)
+        if not raw.endswith(b'\0'):
+            raise ValueError()
+        args = raw[:-1].decode('utf-8').split('\0')
+        if args[0] not in ('claude', proof['process']['executable']['path']):
+            raise ValueError()
+        remaining = args[1:]
+        flags = set()
+        while remaining:
+            flag = remaining.pop(0)
+            if flag in flags or flag not in ('--dangerously-skip-permissions', '--resume'):
+                raise ValueError()
+            flags.add(flag)
+            if flag == '--resume' and (not remaining or remaining.pop(0) != ident):
+                raise ValueError()
+        if '--dangerously-skip-permissions' not in flags:
+            raise ValueError()
+        child = rr.proc_process(pid, 'claude-launch-process-unverifiable')
+        parent = rr.proc_process(child['ppid'], 'claude-launch-process-unverifiable')
+        parent_exe = rr.proc_executable(parent['pid'])
+        if (child['starttime'] != proof['process']['startTicks']
+                or child['pid'] != child['pgrp'] or child['pid'] != child['foreground']
+                or child['sid'] != parent['pid'] or parent['sid'] != parent['pid']
+                or parent['pgrp'] != parent['pid'] or child['tty'] == 0
+                or child['tty'] != parent['tty'] or parent['foreground'] != child['pid']
+                or parent['uid'] != os.getuid()
+                or parent_exe['path'] not in {str(Path(p).resolve()) for p in ('/bin/zsh', '/usr/bin/zsh')}
+                or parent_exe['uid'] != 0 or parent_exe['mode'] & 0o022):
+            raise rr.Deferred('claude-launch-process-unverifiable')
+        environment = launch_environment(rr, pid, cwd, proc_root=proc_root,
+                                         version=Path(proof['process']['executable']['path']).name)
+        recheck(rr, proof)
+        return {'environment': environment, 'shell': parent, 'shellExecutable': parent_exe,
+                'argumentClass': 'fixed-bypass-exact-resume' if '--resume' in flags else 'fixed-bypass'}
+    except (OSError, ValueError, UnicodeError, IndexError):
+        raise rr.Deferred('claude-launch-options-unverified') from None
+
+
+def exited(rr, proof, launch, shell):
+    """Original PID/start must be absent and the original shell must be idle."""
+    try:
+        current = rr.proc_process(proof['pid'], 'claude-exit-process-unverifiable')
+    except FileNotFoundError:
+        current = None
+    except (OSError, ValueError):
+        raise rr.Deferred('claude-exit-process-unverifiable') from None
+    if current is not None:
+        # PID reuse also stops: absence is never inferred from a changed PID row.
+        raise rr.Deferred('shell-unconfirmed')
+    expected = launch['shell']
+    if (any(shell['shell'][key] != expected[key] for key in
+            ('pid', 'starttime', 'uid', 'sid', 'pgrp', 'tty'))
+            or shell['executable'] != launch['shellExecutable']):
+        raise rr.Deferred('claude-launch-environment-or-shell-changed')
+    query_identity(rr, proof['queryExecutable'])

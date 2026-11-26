@@ -1,9 +1,14 @@
-name: verify-only
+name: verify and publish
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: tr-kit-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,6 +17,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -46,5 +52,15 @@ jobs:
                   if line.startswith(('FAIL: ', 'ERROR: ', 'Ran ', 'FAILED (')):
                       print(line)
           PY
-      # Deliberately no push trigger, credentials, source fetch/vendor step,
-      # artifact upload, deployment keys or delivery/publishing job.
+      - name: Build and verify both marketplace trees
+        run: |
+          baseline=30604482896d2b3607302abea13923dcc02ff116
+          git merge-base --is-ancestor "$baseline" HEAD
+          revisions=$(git rev-list --first-parent --count "$baseline"..HEAD)
+          python3 -B .github/scripts/build-marketplaces.py "$RUNNER_TEMP/marketplaces" "0.8.$((10 + revisions))"
+      - name: Publish both marketplace trees
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          TR_CODEX_DEPLOY_KEY: ${{ secrets.TR_CODEX_DEPLOY_KEY }}
+          TR_CLAUDE_DEPLOY_KEY: ${{ secrets.TR_CLAUDE_DEPLOY_KEY }}
+        run: bash .github/scripts/publish-marketplaces.sh "$RUNNER_TEMP/marketplaces" "${{ steps.scanner.outputs.path }}"
