@@ -8,7 +8,11 @@
 
 ## 기록과 재검수
 
-- 공식 릴리즈 CLI의 설치 형태가 일반 디렉터리와 다를 때만 snapshot에 `--layout`을 명시한다. `standalone-cli`는 공식 배포에서 단독 실행 파일임을 확인한 CLI에 사용하며 공용 bin 디렉터리의 다른 도구는 포함하지 않는다. `appimage`는 공식 AppImage의 전체 추출 트리를 검사하며 내부 상대 심볼릭 링크와 최대 1 GiB의 파일 합계를 지원한다. 런처를 경유하는 호출은 현재 런처의 설치 대상과 검수된 실행 경로를 대조한다. 일반 설치 디렉터리의 제한은 기존과 같다.
+- 공식 배포의 단독 CLI는 선택한 실행 파일만 최대 256 MiB까지 스트리밍으로 검수한다. 스킬 진입 파일과 일반 설치 디렉터리의 파일 크기 기준은 기존과 같다.
+- Orca의 AppImage 런처를 연결할 때는 선언에 추출 트리 내의 실제 CLI를 지정한다. 검수 근거 파일 `orca-launcher.json`에는 현재 설치본을 가리키는 심볼릭 링크의 절대 경로를 `selector`로, 실제 런처와 중간 런처의 절대 경로 및 SHA256을 `launchers` 객체로 기록한다. 런처가 그 링크를 통해 해당 CLI를 실행하는지 검수 근거와 대조한다.
+- CLI 설치 형태가 일반 디렉터리와 다르면 snapshot에 `--layout`을 명시한다. `standalone-cli`는 공식 릴리즈의 단독 실행 파일에 사용한다. `appimage`는 공식 AppImage의 전체 추출 트리에 사용한다. `cli-package`는 npm 패키지나 uv로 설치한 전용 가상환경에서 런처·실행 파일·설치 의존성을 함께 검사한다. npm 의존성이 패키지 밖에 배치되면 해당 의존성을 포함하는 전용 설치 디렉터리를 선택한다. 외부 인터프리터를 가리키는 가상환경의 링크는 검사에 실패하므로 복사 방식의 전용 가상환경을 사용한다.
+- `appimage`와 `cli-package`는 설치 트리 내 상대 심볼릭 링크를 지원한다. `appimage`는 합계 최대 1 GiB, `cli-package`는 합계 최대 2 GiB와 파일·링크 최대 32,768개를 검사한다. `cli-package`의 개별 파일과 명시 CLI 진입점은 각각 최대 512 MiB다. 런처를 경유하면 실제로 선택한 실행 파일과 호스트 인터프리터를 대조한다. 일반 디렉터리 제한은 그대로 적용한다.
+- 검수된 Python CLI는 버전·도움말 확인부터 `PYTHONDONTWRITEBYTECODE=1`로 실행한다. CLI 실행으로 가상환경에 새 바이트코드가 생기면 다음 검수에서 설치 파일 변경으로 감지되기 때문이다.
 1. `<kit>/scripts/provider-review.py snapshot`에 기존 `--root --declaration --product --id --kind`와 `--installation <외부 설치 root> --method <공식 관리 종류> --source <공식 HTTPS URL> --evidence <설치 근거 파일>`을 전달한다. evidence는 여러 번 지정할 수 있다. stdout만 출력하고 설치·등록·실행·파일 저장을 하지 않는다. 저장은 승인된 로컬 기록 경로에서 수행한다.
 2. 출력은 `pending` 초안이다. evidence의 내용·출처와 실제 선택 버전, 전체 필수 리소스·제품 지원·고유 정책 충돌을 검토한다. 확인한 제품만 `products.<제품>.status=supported`, `basis`에는 실제 근거 위치와 확인 범위를 적는다. 나머지는 unverified/unsupported로 유지한다. 미결이 모두 해소된 경우에만 `unresolved=[]`, `review_status=reviewed`로 기록한다. 이름이나 파일 수를 맞추려고 미결을 지우지 않는다.
 3. 동일 선택 입력과 `verify --review <명시 기록>`으로 entry·전체 리소스·설치 근거의 현재 bytes를 대조한다. 성공은 `review-record-verified`이며 **로컬 검수 기록과 일치**한다는 뜻이다. 검수 작성자 인증·공급망 서명·모델 준수·native 실행 성공은 증명하지 않는다. 문서의 주장과 실제 설치·행동 검증을 따로 보고한다.

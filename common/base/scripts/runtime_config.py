@@ -15,6 +15,10 @@ def canonical(value):
     return path
 
 
+def product_for_root(root):
+    return 'claude' if (Path(root) / '.claude-plugin/plugin.json').is_file() else 'codex'
+
+
 def load(product):
     if product not in ('codex', 'claude'):
         raise ValueError('unsupported runtime product')

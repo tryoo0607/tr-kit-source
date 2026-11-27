@@ -72,7 +72,26 @@ def validate_artifact_policy(root, entry):
 def load_policy(path, repo):
     policy = json.loads(Path(path).read_text())
     root = Path(os.fsdecode(git(repo, 'rev-parse', '--show-toplevel')).strip()).resolve()
-    matches = [r for r in policy['repositories'] if Path(r['path']).resolve() == root]
+    entries = policy['repositories']
+    common = None
+    if any('common_dir' in entry for entry in entries):
+        common = Path(os.fsdecode(git(root, 'rev-parse', '--path-format=absolute',
+                                      '--git-common-dir')).removesuffix('\n')).resolve(strict=True)
+    matches = []
+    for candidate in entries:
+        registered_root = Path(candidate['path']).resolve()
+        if 'common_dir' in candidate:
+            registered_common = Path(candidate['common_dir'])
+            if not registered_common.is_absolute() or registered_common != registered_common.resolve():
+                raise GuardError('invalid registered Git common directory')
+            if registered_common != common:
+                continue
+            validate_artifact_policy(registered_root, candidate)
+            if root != registered_root:
+                candidate = {**candidate, 'allow_artifacts': []}
+        elif registered_root != root:
+            continue
+        matches.append(candidate)
     if len(matches) != 1:
         raise GuardError('repository is not explicitly enrolled')
     scanner = Path(policy['gitleaks'])
@@ -81,8 +100,8 @@ def load_policy(path, repo):
     entry = matches[0]
     validate_artifact_policy(root, entry)
     if 'scanner_sha256' in policy:
-        verify_scanner(scanner)
-        if policy['scanner_sha256'] != hashlib.sha256(scanner.read_bytes()).hexdigest():
+        _, verified_hash = scanner_proof(scanner)
+        if policy['scanner_sha256'] != verified_hash:
             raise GuardError('registered scanner changed; operation blocked')
     return root, policy, entry
 
@@ -430,8 +449,8 @@ def supported_result_tool(name):
     return isinstance(name, str) and (name in RESULT_TOOLS or bool(re.fullmatch(r'mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_.-]+', name)))
 
 
-def verify_scanner(scanner):
-    """Verify an explicitly selected official provision receipt; no installation."""
+def scanner_proof(scanner):
+    """Return the exact scanner path and pin checked against the official receipt."""
     try:
         import tomllib
     except ImportError:
@@ -447,13 +466,19 @@ def verify_scanner(scanner):
     if (prefix / 'provisioned.json').is_symlink():
         raise GuardError('scanner receipt must be a regular file')
     receipt = json.loads((prefix / 'provisioned.json').read_text())
+    actual_hash = hashlib.sha256(scanner.read_bytes()).hexdigest()
     if (not isinstance(receipt, dict) or not isinstance(receipt.get('version'), str) or
             receipt['version'].lstrip('v') != version or
             receipt.get('archive_sha256') != config['linux_x64_sha256'] or
-            receipt.get('binary_sha256') != hashlib.sha256(scanner.read_bytes()).hexdigest() or
+            receipt.get('binary_sha256') != actual_hash or
             not os.access(scanner, os.X_OK)):
         raise GuardError('trusted scanner identity failed; operation blocked')
-    return scanner
+    return scanner, actual_hash
+
+
+def verify_scanner(scanner):
+    """Verify an explicitly selected official provision receipt; no installation."""
+    return scanner_proof(scanner)[0]
 
 
 def trusted_scanner():

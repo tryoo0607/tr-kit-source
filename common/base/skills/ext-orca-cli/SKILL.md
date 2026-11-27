@@ -13,8 +13,8 @@ metadata:
 
 ## 수행 방법과 절차
 
-1. 실행 파일을 한 번 선택한다. ORCA_CLI_COMMAND가 있으면 그 값, 없고 ORCA_DEV_REPO_ROOT가 있는 개발 환경이면 orca-dev, 그 외 Linux의 Orca 밖에서는 orca-ide, 나머지는 orca다. Linux의 GNOME 화면 읽기 프로그램을 잘못 실행하지 않는다. 선택 파일이 실패하면 다른 실행 파일로 자동 전환하지 않는다.
-2. [공통 외부 연결](../../references/external-connection.md)에서 위에서 선택한 CLI에 대응하는 항목을 확인한다. 기본 ID는 선택한 명령에 따라 `orca-cli`, `orca-ide-cli`, `orca-dev-cli`다. 명시 실행 파일은 그 호스트에서 해당 파일에 연결한 ID를 사용한다. AppImage 런처로 선택된 경우 현재 런처가 가리키는 설치본이 검수된 설치본과 일치하는지 먼저 확인한다. 확인할 수 없거나 설치본이 바뀌면 중단한다. 검수가 반환한 절대 실행 경로에서 `skills get orca-cli`로 버전에 맞는 가이드를 조회하고 필요한 절만 읽는다. 이후 조작도 같은 실행 경로를 사용한다. 같은 호스트·설치본의 가이드를 재사용하고, 가이드 미지원이면 읽기 전용 도움말로 확인한다.
+1. `python3 -B <kit-root>/common/base/scripts/orca_connection.py --product <codex 또는 claude>`로 현재 호스트의 Orca 실행 파일을 확인한다. 이 실행기는 [공통 외부 연결](../../references/external-connection.md)의 설치본 검수를 수행하며 `session`의 직접 호출도 같은 코드를 쓴다. `orca`, `orca-ide`, `orca-dev`에 각각 `orca-cli`, `orca-ide-cli`, `orca-dev-cli`를 연결한다. 기본 명령과 이름이 다른 명시 실행 파일은 `orca-cli` 항목으로 검수한다. 검수 실패 시 다른 파일로 전환하지 않는다.
+2. 검수에서 반환한 절대 실행 경로로 `skills get orca-cli`를 호출하고 필요한 가이드 절만 읽는다. 이어지는 조작도 같은 경로를 사용한다. 설치본을 바꾸거나 별도 작업에서 다시 사용할 때는 1단계를 다시 확인한다. 같은 호스트·설치본의 가이드를 재사용하고, 가이드 미지원이면 읽기 전용 도움말로 확인한다.
 3. 기존 공간 ID와 실제 경로/수신자를 확인한다. 등록과 외부 공간 인식은 해당 guide의 repo/worktree 조회 절차, 실행은 기존 공간의 agent launch, 전달은 정확한 수신 핸들 하나를 사용한다. 인식 실패를 worktree create로 해결하지 않는다.
 4. 일반 세션 위임은 agent launch 또는 확인한 수신 핸들에 send하고, read로 그 요청의 실제 응답을 확인한다. 입력 접수와 완료를 구별하고 이미 시작한 작업을 다시 보내지 않는다. 응답 대기·진행 확인·같은 대화에 결과 반환만으로 orchestration을 선택하지 않는다. 호출자가 공식 작업 배정·완료 추적 기능을 명시적으로 요청했을 때만 같은 실행 파일의 `skills get orchestration`과 필요한 원격 placement guide를 적용한다. 해당 기능 실패를 일반 전달로 자동 전환하지 않는다. 실행 호스트·수신자·승인 범위를 검증하며 자체 위임기나 SSH 명령 대행으로 독립 작업자를 대체하지 않는다.
 5. 동일 전달/실행의 재시도 식별자를 보존하고 응답 지연만으로 새 실행이나 재전송을 하지 않는다. 실제 ID/경로와 receipt, 턴 시작 여부와 미결을 반환한다.

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode=True
@@ -38,6 +39,14 @@ class Routes(unittest.TestCase):
             result=self.resolve(product)
             self.assertEqual(result['entry'],str(self.original));self.assertEqual(result['product_status'],'entry-pin-verified')
             self.assertIn('provenance',result['limits'])
+
+    def test_large_cli_bound_is_distinct_from_skill_bound(self):
+        with patch.object(links, 'MAX_SKILL_BYTES', 1), patch.object(links, 'MAX_CLI_BYTES', 128):
+            with self.assertRaisesRegex(ValueError, 'unsupported external entry'):
+                self.resolve()
+            self.entry['kind'] = 'cli'
+            self.save()
+            self.assertEqual(str(self.original), self.resolve(kind='cli')['entry'])
 
     def test_unselected_missing_provider_does_not_block_runtime(self):
         self.save([self.entry,{**self.entry,'id':'unused','entry':str(self.base/'absent')}])

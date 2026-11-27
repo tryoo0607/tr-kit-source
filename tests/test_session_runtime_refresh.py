@@ -1459,9 +1459,24 @@ class RuntimeRefreshTests(unittest.TestCase):
         with patch.dict(os.environ, {'ORCA_CLI_COMMAND': '/custom/orca'}):
             client = m.Orca()
         response = json.dumps({'ok': True, 'result': {}, '_meta': {'runtimeId': 'r'}})
-        with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, response, '')) as run:
+        connection = Mock()
+        connection.checked_entry.return_value = '/verified/orca'
+        with patch.object(m, 'OrcaConnection', return_value=connection) as setup, \
+                patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, response, '')) as run:
             client.call('terminal', 'list')
-        self.assertEqual('/custom/orca', run.call_args.args[0][0])
+            connection.checked_entry.side_effect = ValueError('launcher target changed')
+            with self.assertRaisesRegex(m.Deferred, 'orca-external-connection-unverified'):
+                client.call('terminal', 'list')
+        setup.assert_called_once_with('/custom/orca')
+        run.assert_called_once()
+        self.assertEqual('/verified/orca', run.call_args.args[0][0])
+
+    def test_cli_does_not_run_without_an_installation_review(self):
+        with patch.object(m, 'OrcaConnection', side_effect=ValueError('review missing')), \
+                patch.object(subprocess, 'run') as run:
+            with self.assertRaisesRegex(m.Deferred, 'orca-external-connection-unverified'):
+                m.Orca().call('terminal', 'list')
+        run.assert_not_called()
 
     def test_unknown_journal_blocks_new_operation(self):
         self.client.fail = 'timeout'
@@ -2079,6 +2094,24 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertNotIn('SECRET', json.dumps(result))
         self.assertEqual([['--version'], ['plugin', 'list', '--json']], [call.args[1] for call in native.call_args_list])
 
+    def test_native_inventory_binds_both_queries_to_selected_review(self):
+        reviewed = '/fixture/reviewed/codex'
+        config = {'providers': '/fixture/providers.json', 'provider_reviews': {'codex-cli': '/fixture/review.json'}}
+        with patch.object(m.runtime_config, 'load', return_value=(None, config)), \
+             patch.object(m.provider_review, 'verify', return_value={'entry': reviewed}) as verify, \
+             patch.object(m, 'native_command', side_effect=['codex-cli 0.172.0', '{"installed":[]}']) as native:
+            result = REAL_PLUGIN_INVENTORY('codex', '/work')
+            self.assertEqual('observed', result['state'])
+            verify.assert_called_once_with(m.ROOT, config['providers'], 'codex', 'codex-cli', 'cli',
+                                           config['provider_reviews']['codex-cli'])
+            self.assertEqual([{'executable': reviewed}] * 2, [call.kwargs for call in native.call_args_list])
+        with patch.object(m.runtime_config, 'load', return_value=(None, config)), \
+             patch.object(m.provider_review, 'verify', side_effect=ValueError('fixture drift')), \
+             patch.object(m, 'native_command') as native:
+            result = REAL_PLUGIN_INVENTORY('codex', '/work')
+            self.assertEqual('native-cli-external-connection-unverified', result['reason'])
+            native.assert_not_called()
+
     def test_claude_dependency_manifest_and_diagnostic_contract(self):
         root = Path(self.temp.name)
         entries = []
@@ -2505,20 +2538,27 @@ class RuntimeRefreshTests(unittest.TestCase):
         self.assertNotIn('SECRET', json.dumps(result))
 
     def test_cli_failures_never_echo_private_output(self):
+        def client():
+            result = m.Orca()
+            result.connection = SimpleNamespace(checked_entry=lambda: '/verified/orca')
+            return result
+
         for output in ('not JSON SECRET', '[]', '{"ok":false,"error":"SECRET"}', '{"ok":true,"result":{}}'):
             with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, output, 'SECRET')):
                 with self.assertRaises(m.Deferred) as error:
-                    m.Orca().call('terminal', 'list')
+                    client().call('terminal', 'list')
                 self.assertNotIn('SECRET', str(error.exception))
         with patch.object(subprocess, 'run', side_effect=subprocess.TimeoutExpired('orca', 1)):
             with self.assertRaisesRegex(m.Deferred, 'timeout'):
-                m.Orca().call('terminal', 'list')
+                client().call('terminal', 'list')
 
     def test_cli_uses_fixed_executable_no_shell(self):
         response = json.dumps({'ok': True, 'result': {}, '_meta': {'runtimeId': 'r'}})
+        client = m.Orca('host; touch /tmp/pwned')
+        client.connection = SimpleNamespace(checked_entry=lambda: '/verified/orca')
         with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, response, '')) as run:
-            m.Orca('host; touch /tmp/pwned').call('terminal', 'list')
-        self.assertEqual(m.Orca().executable, run.call_args.args[0][0])
+            client.call('terminal', 'list')
+        self.assertEqual('/verified/orca', run.call_args.args[0][0])
         self.assertNotIn('shell', run.call_args.kwargs)
 
 

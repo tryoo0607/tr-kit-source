@@ -1,4 +1,6 @@
 import importlib.util
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -33,6 +35,24 @@ class AssetsTests(unittest.TestCase):
             self.assertTrue((scope / 'extracted').is_dir())
             with self.assertRaises(ValueError): assets.owned(scope, '../escape')
             with self.assertRaises(ValueError): assets.scope_path(tmp, 'project', '../x', 'app')
+
+    def test_cli_extract_uses_reviewed_docling_and_defers_without_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = ['assets.py', 'extract', '--scope', tmp, '--relative', 'design.pdf']
+            entry = str(Path(sys.executable).resolve(strict=True))
+            with patch.object(sys, 'argv', command), redirect_stdout(io.StringIO()), \
+                    patch('provider_review.verify_configured', return_value={'entry': entry}) as verify, \
+                    patch.object(assets, 'extract', return_value={'status': 'fresh'}) as extract:
+                assets.main()
+            verify.assert_called_once_with(ROOT, 'docling', 'cli', None)
+            extract.assert_called_once_with(tmp, 'design.pdf', [entry], [])
+
+            with patch.object(sys, 'argv', command), redirect_stdout(io.StringIO()) as output, \
+                    patch('provider_review.verify_configured', side_effect=ValueError('missing review')), \
+                    patch.object(assets, 'extract') as extract:
+                assets.main()
+            extract.assert_not_called()
+            self.assertEqual('docling-external-connection-unverified', json.loads(output.getvalue())['error'])
 
     def test_atomic_conversion_and_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

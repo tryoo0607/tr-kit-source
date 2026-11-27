@@ -2,7 +2,11 @@
 
 ## 입력과 전제
 
-repo 루트와 검사할 경로, 고정한 로컬 rule 파일을 확인한다. `semgrep --version`을 [선택 버전](../../../scripts/security-tools.toml)과 대조하고 실행 파일이 없거나 버전이 다르면 설치 담당으로 돌려준다. Community Edition은 함수나 파일 경계를 넘는 분석에 한계가 있다.
+repo 루트와 검사할 경로, 고정한 로컬 rule 파일을 확인한다. Community Edition은 함수나 파일 경계를 넘는 분석에 한계가 있다.
+
+[공통 외부 연결](../../../references/external-connection.md)의 `semgrep` (종류 `cli`) 설치본을 확인한다. 검수로 반환된 절대 경로를 아래 모든 `semgrep` 호출에 사용한다. 설치본 검수가 미완료면 스캐너 실행을 보류한다.
+
+검수된 경로의 `--version`을 [선택 버전](../../../scripts/security-tools.toml)과 대조한다. 실행 파일이 없거나 버전이 다르면 설치 담당으로 돌려준다.
 
 격리 toolchain이 이미 설정돼 있으면 확인한 해당 환경을 사용한다. 도구 준비가 별도로 요청된 경우만 [공식 도구 준비·확인](../../../references/toolchain.md)의 명시 계획/설치/검증을 연결한다. 일반 검사 요청에서 자동 설치하거나 env.sh를 source하지 않는다. 검사로 생성되는 settings·log·출력 경로는 승인 범위에 포함되는지 확인한다. 읽기 전용 홈 경로 오류를 더 강한 권한이나 전역 설정 변경으로 우회하지 않는다.
 

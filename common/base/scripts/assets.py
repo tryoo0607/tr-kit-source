@@ -112,9 +112,11 @@ def extract(scope, relative, command, options=None):
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         before = digest(source)
-        version = subprocess.run([*command, '--version'], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
+        offline = dict(os.environ, HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
+                       HF_HUB_DISABLE_TELEMETRY='1', PYTHONDONTWRITEBYTECODE='1')
+        version = subprocess.run([*command, '--version'], capture_output=True, text=True,
+                                 check=True, env=offline, timeout=30).stdout.strip()
         with tempfile.TemporaryDirectory(prefix='.convert-', dir=output.parent) as work:
-            offline = dict(os.environ, HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1')
             result = subprocess.run([*command, 'convert', str(source), '--to', 'md', '--output', work, *(options or [])],
                                     capture_output=True, text=True, env=offline, timeout=600)
             candidates = list(Path(work).rglob('*.md'))
@@ -176,7 +178,7 @@ def state_path(scope):
     return fixed(base / key)
 
 
-def qmd_connection(scope):
+def qmd_connection(scope, executable='qmd'):
     scope = fixed(scope)
     key = hashlib.sha256(str(scope).encode()).hexdigest()[:16]
     # A dedicated config AND dedicated named index isolate qmd update from all other collections.
@@ -185,16 +187,20 @@ def qmd_connection(scope):
             raise ValueError('QMD state directories must not be symlinks')
     env = dict(os.environ, QMD_CONFIG_DIR=str(state_path(scope) / 'config'),
                XDG_CACHE_HOME=str(state_path(scope) / 'cache'))
-    return ['qmd', '--index', 'tr-assets-' + key], env
+    return [executable, '--index', 'tr-assets-' + key], env
 
 
-def index(scope):
+def index(scope, qmd_entry=None):
     scope = fixed(scope)
     if not (scope / 'originals').is_dir() or not (scope / 'extracted').is_dir():
         return {'status': 'unavailable'}
-    if not shutil.which('qmd'):
+    if callable(qmd_entry):
+        qmd_entry = qmd_entry()
+    if qmd_entry is False:
+        return {'status': 'not_configured', 'fallback': 'original paths', 'error': 'qmd-external-connection-unverified'}
+    if qmd_entry is None and not shutil.which('qmd'):
         return {'status': 'not_configured', 'fallback': 'original paths'}
-    command, env = qmd_connection(scope)
+    command, env = qmd_connection(scope, qmd_entry or 'qmd')
     # Publish verified fresh output; retain older corpus entries until deletion is confirmed.
     stage = state_path(scope) / 'corpus'
     stage.mkdir(parents=True, exist_ok=True)
@@ -220,7 +226,7 @@ def index(scope):
     return {'status': 'indexed' if wanted else ('stale' if corpus_files else 'empty'), 'count': len(wanted)}
 
 
-def search(scopes, query, limit=5):
+def search(scopes, query, limit=5, qmd_entry=None):
     if type(limit) is not int or limit < 1 or not isinstance(query, str) or not query:
         raise ValueError('nonempty query and positive limit required')
     reports, results, seen = [], [], set()
@@ -245,8 +251,10 @@ def search(scopes, query, limit=5):
                 except (OSError, ValueError, TypeError, AttributeError) as exc:
                     indexed = False
                     search_error = type(exc).__name__
-            if indexed and shutil.which('qmd'):
-                command, env = qmd_connection(scope)
+            if indexed and callable(qmd_entry):
+                qmd_entry = qmd_entry()
+            if indexed and qmd_entry is not False and (qmd_entry or shutil.which('qmd')):
+                command, env = qmd_connection(scope, qmd_entry or 'qmd')
                 try:
                     proc = subprocess.run(command + ['search', query, '-c', 'assets', '--format', 'json', '--full-path'],
                                           env=env, capture_output=True, text=True, timeout=60)
@@ -272,7 +280,8 @@ def search(scopes, query, limit=5):
                     search_error = type(exc).__name__
             elif indexed:
                 indexed = False
-                search_error = 'QMD is unavailable; filename/path fallback only'
+                search_error = ('qmd-external-connection-unverified; filename/path fallback only'
+                                if qmd_entry is False else 'QMD is unavailable; filename/path fallback only')
             for relative, state in statuses.items():
                 if query.casefold() in relative.casefold():
                     matches.add(relative)
@@ -327,7 +336,8 @@ def main():
     p.add_argument('--group'); p.add_argument('--project')
     p.add_argument('--apply', action='store_true')
     p.add_argument('--relative'); p.add_argument('--query'); p.add_argument('--limit', type=int, default=5)
-    p.add_argument('--docling-command', nargs='+', default=['docling'])
+    p.add_argument('--product', choices=('codex', 'claude'))
+    p.add_argument('--docling-command', nargs='+')
     p.add_argument('--docling-args', default='[]', help='JSON array of explicit Docling convert options; no automatic model downloads')
     a = p.parse_args()
     default_config = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'tr-kit/config.toml'
@@ -335,6 +345,9 @@ def main():
     scopes = a.scope or [str(configured_scope(selected_config, a.ownership, a.group, a.project, a.root))]
     if len(scopes) > 1 and a.action != 'search':
         p.error('multiple scopes are supported only for sequential search')
+    root = Path(__file__).resolve().parents[3]
+    if a.action in ('extract', 'index', 'search'):
+        from provider_review import verify_configured
     if a.action == 'scope': result = {'scope': scopes[0]}
     elif a.action == 'prepare': result = prepare(scopes[0], a.apply)
     elif a.action == 'extract':
@@ -342,12 +355,30 @@ def main():
         options = json.loads(a.docling_args)
         if not isinstance(options, list) or any(not isinstance(x, str) for x in options): p.error('--docling-args must be a JSON string array')
         if any(x in {'--output','--to'} or x.startswith(('--output=','--to=')) for x in options): p.error('output and format are owned by the helper')
-        result = extract(scopes[0], a.relative, a.docling_command, options)
-    elif a.action == 'index': result = index(scopes[0])
+        try:
+            entry = verify_configured(root, 'docling', 'cli', a.product)['entry']
+            command = a.docling_command or [entry]
+            selected = shutil.which(command[0])
+            if selected is None or str(Path(selected).resolve(strict=True)) != entry:
+                raise ValueError('explicit Docling command differs from reviewed executable')
+        except (OSError, ValueError, RuntimeError):
+            result = {'status': 'unavailable', 'error': 'docling-external-connection-unverified'}
+        else:
+            result = extract(scopes[0], a.relative, [entry, *command[1:]], options)
     else:
-        if not a.query: p.error('--query required')
-        if a.limit < 1: p.error('--limit must be positive')
-        result = search(scopes, a.query, a.limit)
+        if a.action == 'search':
+            if not a.query: p.error('--query required')
+            if a.limit < 1: p.error('--limit must be positive')
+        def reviewed_qmd():
+            try:
+                return verify_configured(root, 'qmd', 'cli', a.product)['entry']
+            except (OSError, ValueError, RuntimeError):
+                return False
+
+        if a.action == 'index':
+            result = index(scopes[0], reviewed_qmd)
+        else:
+            result = search(scopes, a.query, a.limit, reviewed_qmd)
     print(json.dumps(result, indent=2))
 
 

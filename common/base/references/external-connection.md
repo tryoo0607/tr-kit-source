@@ -14,11 +14,15 @@
 
 ## 수행 방법과 절차
 
+Git hook의 Gitleaks는 호스트 external 선언을 추가로 요구하지 않는다. 기존 `secret_guard.py`의 scanner 검수가 공식 릴리즈 pin, 설치 기록과 실제 바이너리 해시를 대조하며, 등록된 Git 정책에서는 같은 결과를 등록 당시 해시와 대조한다.
+
 1. `python3 -B <kit-root>/common/base/scripts/provider_links.py --root <kit-root> --declaration <명시 JSON> --product <제품> --id <wrapper가 지정한 ID> --kind <skill 또는 cli>`로 선택 entry의 현재 pin을 확인한다. 호출이 성공하면 entry 경로와 pin만 확인된 것이다. 다른 미선택 외부 연결의 부재로 이번 업무를 막지 않는다.
 2. 실제 수행 전 [설치본 검수](external-review.md)로 선택 entry의 설치 근거·필수 리소스·현재 제품 계약을 대조한다. 기존 검수 기록은 현재 파일에 유효한지 확인해 재사용한다. snapshot 생성이나 entry 검사만으로 공식 설치·실행 준비 완료로 올리지 않는다. 단순 연결 조사에서 실제 수행을 하지 않는 경우 미확인 상태로 기록하고 검수 문서 전체를 매번 읽지 않는다.
 3. skill 연결이면 반환된 공식 SKILL.md로 진입한다. bare path·reference·script·template·placeholder는 **공식 skill 자신의 실제 root** 기준으로 해석하고 해당 지침의 선택·렌더·실패 계약을 따른다. 자체 wrapper의 root를 공식 root로 넣거나 공식 내부 파일을 kit 경로로 고정하지 않는다. CLI 연결이면 반환된 실행 파일의 버전과 필요한 명령의 `--help`를 확인해 그 실제 지원 범위로 수행한다. 이름이 help라는 이유로 무부작용 실행이라 단정하지 않는다.
 4. 호출 wrapper의 입력·제약·필요 결과를 전달한다. 공식 지침의 단계·실패·검증을 직접 복제하거나 편집·append·치환하지 않는다. 공식 기능이 단계 전환/렌더로 새 지침을 제공해도 고유 승인·자료·사실/추론 구분은 작업 입력으로 유지한다. 이는 원본 workflow 파일을 바꾸는 동작이 아니다.
 5. 요청된 공식 절차·결과와 자체 완료 기준을 대조하고 실제 실행·미실행·미확인·미지원·검사 오류를 구분한다.
+
+호스트의 runtime 설정에 연결과 검수 기록이 이미 있으면 `python3 -B <kit-root>/common/base/scripts/provider_review.py configured --root <kit-root> --product <제품> --id <ID> --kind <skill 또는 cli>`로 선택한 항목을 확인할 수 있다. 성공 시 반환된 `entry`를 사용한다.
 
 ## 제약과 주의점
 

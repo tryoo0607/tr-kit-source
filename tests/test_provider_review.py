@@ -13,6 +13,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'common/base/scripts'))
 import provider_review as review
+import orca_connection
 
 
 class Review(unittest.TestCase):
@@ -94,6 +95,14 @@ class Review(unittest.TestCase):
             {**self.provider, 'id': 'missing', 'entry': str(self.base / 'absent')}]}))
         self.assertEqual(self.verify()['id'], 'example')
 
+    def test_configured_route_requires_review_and_returns_pinned_entry(self):
+        config = {'providers': str(self.declaration), 'provider_reviews': {}}
+        with mock.patch.object(review.runtime_config, 'load', return_value=(None, config)):
+            with self.assertRaisesRegex(ValueError, 'review missing'):
+                review.verify_configured(self.kit, 'example', 'skill', 'codex')
+            config['provider_reviews']['example'] = str(self.path)
+            self.assertEqual(str(self.entry), review.verify_configured(self.kit, 'example', 'skill', 'codex')['entry'])
+
     def test_symlink_resource_not_followed(self):
         (self.install / 'alias').symlink_to(self.receipt)
         with self.assertRaises(ValueError): self.verify()
@@ -128,6 +137,59 @@ class Review(unittest.TestCase):
                     link.symlink_to('../' + self.receipt.name)
                     with self.assertRaisesRegex(ValueError, 'unsupported installation link'):
                         review.verify(self.kit, self.declaration, 'codex', 'example', 'cli', self.path)
+
+    def test_orca_launcher_checked_again_before_execution(self):
+        selector = self.base / 'installed'
+        launcher = self.base / 'orca'
+        launcher.write_text(f'#!/bin/sh\nexec "{selector}" "$@"\n')
+        launcher.chmod(0o700)
+        selector.symlink_to(self.entry)
+        evidence = self.base / 'orca-launcher.json'
+        evidence.write_text(json.dumps({
+            'selector': str(selector),
+            'launchers': {str(launcher): review.digest(launcher.read_bytes())},
+        }))
+        cli = {**self.provider, 'id': 'orca-cli', 'kind': 'cli'}
+        self.declaration.write_text(json.dumps({'version': 1, 'providers': [cli]}))
+        doc = review.snapshot(self.kit, self.declaration, 'codex', 'orca-cli', 'cli', self.install,
+                              'official-release', 'https://example.invalid/release', [evidence], 'appimage')
+        doc.update(review_status='reviewed', unresolved=[],
+                   products={'codex': {'status': 'supported', 'basis': 'Synthetic fixture.'}})
+        self.path.write_text(json.dumps(doc))
+        config = {'providers': str(self.declaration), 'provider_reviews': {'orca-cli': str(self.path)}}
+        with mock.patch.object(orca_connection, 'ROOT', self.kit), \
+                mock.patch.object(orca_connection.runtime_config, 'load', return_value=(None, config)):
+            connection = orca_connection.OrcaConnection(str(launcher), 'codex')
+            self.assertEqual(str(self.entry), connection.checked_entry())
+            selector.unlink()
+            selector.symlink_to(self.resource)
+            with self.assertRaisesRegex(ValueError, 'launcher target changed'):
+                connection.checked_entry()
+
+    def test_cli_package_tracks_nested_binary_and_internal_links(self):
+        self.provider['kind'] = 'cli'
+        self.declaration.write_text(json.dumps({'version': 1, 'providers': [self.provider]}))
+        alias = self.install / 'alias'
+        alias.symlink_to(self.resource.name)
+        def snapshot(method='npm'):
+            return review.snapshot(self.kit, self.declaration, 'codex', 'example', 'cli', self.install,
+                                   method, 'https://example.invalid/package', [self.receipt], 'cli-package')
+        with self.assertRaisesRegex(ValueError, 'incompatible'):
+            snapshot('official-release')
+        doc = snapshot()
+        doc.update(review_status='reviewed', unresolved=[],
+                   products={'codex': {'status': 'supported', 'basis': 'Synthetic fixture.'}})
+        self.path.write_text(json.dumps(doc))
+        def verify():
+            return review.verify(self.kit, self.declaration, 'codex', 'example', 'cli', self.path)
+        self.assertEqual(3, verify()['files'])
+        self.resource.write_text('changed nested resource')
+        with self.assertRaisesRegex(ValueError, 'resources or evidence changed'):
+            verify()
+        alias.unlink()
+        alias.symlink_to('../' + self.receipt.name)
+        with self.assertRaisesRegex(ValueError, 'unsupported installation link'):
+            verify()
 
     def test_own_root_and_unrelated_installation_rejected(self):
         for path in (self.kit, self.base / 'missing'):

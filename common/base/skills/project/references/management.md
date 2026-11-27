@@ -12,7 +12,7 @@
 
 1. 작업할 대상과 필요한 정보를 확인한다. 이미 제공된 실제 경로와 기존 정보로 충분하면 재사용한다.
 2. 관리 등록의 경로나 workspace 목록이 필요할 때만 아래 도구 연결을 적용한다. 경로가 없거나 로컬 접근이 실패했다는 이유만으로 관리 조회로 전환하지 않는다.
-3. 접근 가능한 checkout에서 Git 최상위 경로, .git의 디렉터리 또는 파일 유형, common dir, branch 또는 detached HEAD와 변경 상태를 읽기 전용으로 확인한다. branch 이름만으로 시작 commit이 있다고 판단하지 않으며, 아직 commit이 없는 unborn repo면 그 상태도 구분해 반환한다. 상위 Git에 속하는 폴더를 독립 repo로 분류하지 않는다. 경로와 symlink, worktree 연결도 대조하며 로컬 정보로 Orca 등록 상태를 추측하지 않는다. 다른 호스트는 허용된 접근 수단을 따른다.
+3. 접근 가능한 checkout에서 Git 최상위 경로, .git의 디렉터리 또는 파일 유형, common dir, branch 또는 detached HEAD와 변경 상태를 읽기 전용으로 확인한다. branch 이름만으로 시작 commit이 있다고 판단하지 않으며, 아직 commit이 없는 unborn repo면 그 상태도 구분해 반환한다. 상위 Git에 속하는 폴더를 독립 repo로 분류하지 않는다. 경로와 symlink, worktree 연결도 대조하며 로컬 정보로 Orca 등록 상태를 추측하지 않는다. Git guard가 등록된 저장소에서 worktree를 사용할 때는 [대상 worktree의 검사 범위](../../security-scan/references/gitleaks.md#등록상태복귀)를 확인한다. 다른 호스트는 허용된 접근 수단을 따른다.
 4. 사용할 실제 경로, 확인한 근거와 부족한 정보를 반환한다. 불명확한 대상은 질문하고 비슷한 경로로 자동 대체하지 않는다.
 
 ### 연결과 공간 준비

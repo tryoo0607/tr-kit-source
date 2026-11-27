@@ -22,15 +22,16 @@ def main():
     a=p.parse_args()
     try:
         if a.action in ('status','rollback'):
-            if any((a.repo,a.gitleaks,a.local_only,a.allow_artifact,a.expect_plan)):
-                p.error('status/rollback accepts only --state')
-            result=installer.status(a.state,a.action=='rollback')
+            if any((a.gitleaks,a.local_only,a.allow_artifact,a.expect_plan)) or (a.action=='rollback' and a.repo):
+                p.error('status accepts --state and optional --repo; rollback accepts only --state')
+            result=installer.status(a.state,a.action=='rollback',repo=a.repo)
         else:
             if not a.repo or not a.gitleaks:p.error('--repo and --gitleaks required')
             if a.action=='apply' and not a.expect_plan:p.error('apply requires the reviewed --expect-plan')
             report=installer.plan(a.repo,a.state,a.gitleaks,a.local_only,a.allow_artifact)
             result=installer.apply(report,a.expect_plan) if a.action=='apply' else installer.public(report)
-        print(json.dumps(result,indent=2));return 0
+        print(json.dumps(result,indent=2))
+        return 2 if a.action=='status' and a.repo and result['status']!='active' else 0
     except (installer.InstallError,installer.guard.GuardError) as error:
         # Own messages contain fixed diagnoses, never raw scanner/Git output.
         print(json.dumps({'status':'unavailable','reason':str(error)}))

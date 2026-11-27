@@ -8,6 +8,10 @@
 
 대상 호스트에서 기존 Linux 계정과 native config 환경으로 실행한다. 선택할 현재 terminal handle과 입력을 받지 않을 예외 handle, 요청 세션의 `ORCA_PANE_KEY`가 필요하다. 자신을 유일하게 찾지 못하거나 원격 환경·다른 machine/profile이면 보류한다. 다른 호스트의 기존 수신자에게 전달할 때는 session 본문의 위임 분기를 사용하고 수신자가 자기 호스트 가드를 확인한다.
 
+Orca를 실제로 호출하는 작업은 `ext-orca-cli`와 같은 외부 설치본 검수를 사용한다. 검수 기록이 없거나 런처가 다른 설치본을 가리키면 입력 전에 `orca-external-connection-unverified`로 보류한다. 저장된 목록 조회처럼 Orca 호출이 없는 작업에는 적용하지 않는다.
+
+현재 제품의 runtime 설정에 `codex-cli` 또는 `claude-cli` 설치 검수를 등록한 경우, native 버전과 플러그인 목록은 [공통 외부 연결](../../../references/external-connection.md)이 확인한 절대 경로로 조회한다. 등록 기록이 유효하지 않으면 조회를 보류한다. 등록 항목이 없는 호스트에서는 기존 native 조회를 사용한다. 설치본 검수와 실행 중인 프로세스 및 재개 권한의 증명은 각각 확인한다.
+
 배치의 machine/profile은 machine-id의 hash, uid, home, Codex/Claude config 경로와 Orca profile/dev 환경에 묶인다. 인증정보는 읽거나 저장하지 않는다. 이 값은 native 로그인 계정의 인증 증명이 아니다. 별도 managed account, 계정 전환 또는 launch 환경이 원래 계정과 다르다는 징후가 있으면 자동 복원하지 않는다. Windows/macOS와 미확인 계정 계약은 보류한다.
 
 ## 수행 방법과 절차

@@ -131,7 +131,8 @@ def plan(repo, state, scanner, local_only=(), allow_artifacts=(), python=None):
     python = Path(python or sys.executable).resolve(strict=True)
     if not python.is_absolute() or not os.access(python, os.X_OK):
         raise InstallError('Python executable unavailable')
-    entry = {'path': str(root), 'local_only': list(local_only), 'allow_artifacts': list(allow_artifacts)}
+    entry = {'path': str(root), 'common_dir': ctx['common_dir'],
+             'local_only': list(local_only), 'allow_artifacts': list(allow_artifacts)}
     guard.validate_artifact_policy(root, entry)
     policy = {'schema_version': 1, 'gitleaks': str(scanner), 'scanner_sha256': scanner_hash,
               'repositories': [entry]}
@@ -168,7 +169,8 @@ def plan_id(report):
 
 
 def public(report):
-    return {k: report[k] for k in ('schema_version','repository','state','hooks','scanner','scanner_sha256')} | {
+    return {k: report[k] for k in ('schema_version','repository','common_dir','state','hooks','scanner','scanner_sha256')} | {
+        'scope': 'shared-worktrees',
         'plan_id': plan_id(report), 'files': [
             {'path':f['path'], 'preserves_original':f['before'] is not None,
              'sha256':digest(base64.b64decode(f['after']['bytes']))} for f in report['files']]}
@@ -273,7 +275,7 @@ def read_receipt(state):
     return state,receipt
 
 
-def status(state, rollback=False):
+def status(state, rollback=False, *, repo=None):
     state,receipt=read_receipt(state);report=receipt['plan'];hooks=Path(report['hooks'])
     if receipt['phase']=='rolled-back':
         return {'status':'rolled-back','repository':report['repository']}
@@ -295,7 +297,22 @@ def status(state, rollback=False):
                 raise InstallError('scanner changed')
         except (OSError,ValueError,KeyError,TypeError):
             return {'status':'unavailable','reason':'registered scanner unavailable'}
-        return {'status':receipt['phase'],'repository':report['repository']}
+        result = {'status':receipt['phase'],'repository':report['repository']}
+        if receipt['phase'] != 'active':
+            return result
+        policy_path = state/'policy.json'
+        entry, = json.loads(policy_path.read_text())['repositories']
+        result['scope'] = 'shared-worktrees' if 'common_dir' in entry else 'checkout-only'
+        if repo is not None:
+            target = context(repo)
+            if target['hooks'] != report['hooks']:
+                return {**result, 'status': 'uncovered', 'reason': 'worktree uses different hooks'}
+            covered = (target['common_dir'] == entry['common_dir'] if 'common_dir' in entry
+                       else target['repository'] == entry['path'])
+            if not covered:
+                return {**result, 'status': 'uncovered', 'reason': 'worktree is outside the active Git guard policy'}
+            result['worktree'] = target['repository']
+        return result
     lock=lock_hooks(hooks)
     try:
         if changed_context(report):raise InstallError('rollback hooks conflict')
@@ -312,30 +329,32 @@ def status(state, rollback=False):
 
 
 def run_hook(state,event,argv):
-    """Shared hooks preserve unenrolled worktrees and original arguments/stdin."""
+    """Check the invoking worktree and preserve original hook arguments/stdin."""
     try:
         state,receipt=read_receipt(state);report=receipt['plan']
         if event not in EVENTS or receipt['phase']!='active':raise InstallError('guard not ready')
         p=subprocess.run(['git','rev-parse','--show-toplevel'],capture_output=True,timeout=30)
         if p.returncode:raise InstallError('cannot identify hook repository')
         root=Path(os.fsdecode(p.stdout).strip()).resolve()
-        enrolled=str(root)==report['repository']
+        policy = state/'policy.json'
+        expected_policy = next(f['after'] for f in report['files'] if f['path'] == str(policy))
+        if snapshot(policy) != expected_policy:
+            raise InstallError('Git guard policy changed')
         payload=sys.stdin.buffer.read() if event=='pre-push' else None
         command=[report['python'],'-B',str(state/'scripts/check-git-secrets.py'),
                  'push' if event=='pre-push' else 'index','--repo',str(root),
-                 '--policy',str(state/'policy.json')]
+                 '--policy',str(policy)]
         def inspect():
             return subprocess.run(command,input=payload).returncode
-        if enrolled:
-            code=inspect()
-            if code:return code
+        code=inspect()
+        if code:return code
         original=Path(report['hooks'])/(event+'.tr-kit-original')
         expected=next((f['after'] for f in report['files'] if f['path']==str(original)),None)
         if snapshot(original)!=expected:raise InstallError('original hook changed')
         if expected is not None and expected['mode'] & 0o111:
             code=subprocess.run([str(original),*argv],input=payload).returncode
             if code:return code
-            if enrolled:return inspect()
+            return inspect()
         return 0
     except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError):
         print('tr-kit: Git guard unavailable; operation blocked',file=sys.stderr)

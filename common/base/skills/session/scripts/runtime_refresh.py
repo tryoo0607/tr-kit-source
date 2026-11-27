@@ -16,6 +16,14 @@ import sys
 import time
 import uuid
 
+sys.dont_write_bytecode = True
+_script_root = Path(__file__).resolve().parents[3] / 'scripts'
+_common_scripts = _script_root / 'lib/common'
+sys.path.insert(0, str(_common_scripts if _common_scripts.is_dir() else _script_root))
+from orca_connection import ROOT, OrcaConnection, select_command
+import provider_review
+import runtime_config
+
 
 class Deferred(Exception):
     def __init__(self, reason, *, diagnostic=None):
@@ -64,14 +72,19 @@ class Orca:
     def __init__(self, environment=None, timeout=15):
         self.environment = environment or os.environ.get('ORCA_ENVIRONMENT')
         self.remote_configured = bool(self.environment or os.environ.get('ORCA_PAIRING_CODE'))
-        configured = os.environ.get('ORCA_CLI_COMMAND', '').strip()
-        self.executable = configured or ('orca-dev' if os.environ.get('ORCA_DEV_REPO_ROOT') else
-                                         'orca-ide' if sys.platform == 'linux' and not os.environ.get('ORCA_PANE_KEY') else 'orca')
+        self.executable = select_command()
+        self.connection = None
         self.timeout = timeout
         self.runtime = None
 
     def call(self, *args):
-        command = [self.executable, *args, '--json']
+        try:
+            if self.connection is None:
+                self.connection = OrcaConnection(self.executable)
+            executable = self.connection.checked_entry()
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+            raise Deferred('orca-external-connection-unverified') from None
+        command = [executable, *args, '--json']
         if self.environment:
             command += ['--environment', self.environment]
         try:
@@ -680,16 +693,38 @@ def project_context(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def inventory_executable(provider):
+    product = runtime_config.product_for_root(ROOT)
+    try:
+        _, config = runtime_config.load(product)
+    except FileNotFoundError:
+        if 'TR_KIT_RUNTIME_CONFIG' in os.environ:
+            raise Deferred('native-cli-external-connection-unverified') from None
+        return None
+    except (OSError, ValueError, TypeError):
+        raise Deferred('native-cli-external-connection-unverified') from None
+    connection_id = provider + '-cli'
+    review = config['provider_reviews'].get(connection_id)
+    if review is None:
+        return None
+    try:
+        return provider_review.verify(ROOT, config['providers'], product, connection_id, 'cli', review)['entry']
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        raise Deferred('native-cli-external-connection-unverified') from None
+
+
 def plugin_inventory(provider, cwd):
     """Read native installed metadata only, never infer running-session consumption."""
     base = {'provider': provider, 'scope': 'caller-config-at-cwd', 'cwd': cwd,
             'source': 'native-plugin-list', 'consumption': 'unverified'}
     try:
-        version = native_command(provider, ['--version'], cwd).strip()
+        executable = inventory_executable(provider)
+        options = {'executable': executable} if executable is not None else {}
+        version = native_command(provider, ['--version'], cwd, **options).strip()
         match = re.fullmatch(r'(?:codex-cli\s+)?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9_.-]+)?)(?:\s+\(Claude Code\))?', version)
         if not match:
             raise Deferred('native-version-unknown')
-        data = json.loads(native_command(provider, ['plugin', 'list', '--json'], cwd))
+        data = json.loads(native_command(provider, ['plugin', 'list', '--json'], cwd, **options))
         entries = array(obj(data).get('installed')) if provider == 'codex' else array(data)
         plugins = []
         dependencies_ready = True

@@ -19,6 +19,8 @@ PDF, 이미지, 문서 같은 실제 원본을 보관, 정리하거나 현재 �
 
 검증 기준은 organize-tool 3.3.0이다. 공식 [설정](https://tfeldmann.github.io/organize/configuration/), [동작](https://tfeldmann.github.io/organize/actions/)과 설치 CLI 도움말을 사용한다. 별도 앱/MCP는 필요하지 않으며 설치는 이 절의 실행에 포함하지 않는다.
 
+[공통 외부 연결](../../../../references/external-connection.md)의 `organize` (종류 `cli`)를 확인하고 반환된 절대 경로로 버전·도움말과 아래 조작을 수행한다. 검수 기록이 없으면 해당 조작을 보류한다.
+
 - `organize --version`과 실제 실행 경로를 확인하고 명시한 YAML과 작업 경로로 `organize check <config>`, `organize sim <config>`, 승인된 `organize run <config>`를 사용한다. shell/Python 실행 규칙은 sim에서도 부작용이 가능하므로 검토 없이 실행하지 않는다.
 - 보관 규칙은 복사와 비파괴적 충돌 처리부터 선택한다. copy의 기본 rename_new는 재실행 중복 방지를 보장하지 않는다. skip은 기존 보관본과 다른 내용의 갱신본을 구별하지 않으므로 위 충돌 절차를 생략하지 않는다.
 - 기존 3.3.0 검토에서 `pdftotext` 부재 시 PDF fallback 실패가 기록됐으나 이관에서는 실제 CLI로 재검증하지 않았다. PDF 내용 기반 규칙은 추출 도구와 샘플 추출을 확인하고, 미지원이면 해당 규칙을 보류한다. OCR은 별도다.
