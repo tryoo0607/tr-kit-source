@@ -8,9 +8,18 @@
 
 대상 호스트에서 기존 Linux 계정과 native config 환경으로 실행한다. 선택할 현재 terminal handle과 입력을 받지 않을 예외 handle, 요청 세션의 `ORCA_PANE_KEY`가 필요하다. 자신을 유일하게 찾지 못하거나 원격 환경·다른 machine/profile이면 보류한다. 다른 호스트의 기존 수신자에게 전달할 때는 session 본문의 위임 분기를 사용하고 수신자가 자기 호스트 가드를 확인한다.
 
+Orca를 실제로 호출하는 작업은 `ext-orca-cli`와 같은 외부 설치본 검수를 사용한다. 검수 기록이 없거나 런처가 다른 설치본을 가리키면 입력 전에 `orca-external-connection-unverified`로 보류한다. 저장된 목록 조회처럼 Orca 호출이 없는 작업에는 적용하지 않는다.
+
+현재 제품의 runtime 설정에 `codex-cli` 또는 `claude-cli` 설치 검수를 등록한 경우, native 버전과 플러그인 목록은 [공통 외부 연결](../../../references/external-connection.md)이 확인한 절대 경로로 조회한다. 등록 기록이 유효하지 않으면 조회를 보류한다. 등록 항목이 없는 호스트에서는 기존 native 조회를 사용한다. 설치본 검수와 실행 중인 프로세스 및 재개 권한의 증명은 각각 확인한다.
+
 배치의 machine/profile은 machine-id의 hash, uid, home, Codex/Claude config 경로와 Orca profile/dev 환경에 묶인다. 인증정보는 읽거나 저장하지 않는다. 이 값은 native 로그인 계정의 인증 증명이 아니다. 별도 managed account, 계정 전환 또는 launch 환경이 원래 계정과 다르다는 징후가 있으면 자동 복원하지 않는다. Windows/macOS와 미확인 계정 계약은 보류한다.
 
 ## 수행 방법과 절차
+
+### 단축 입력
+
+- `tr:save`는 현재 호스트에서 후보를 확인하고 사용자에게 기록할 세션과 예외를 선택받는다. 이미 명확히 고른 대상이 있으면 그 선택을 사용한다. 아래 `prepare`가 반환한 배치 ID와 준비 결과를 공유한다. 이 입력의 범위는 준비와 기록까지다.
+- `tr:restore`는 먼저 `list`로 저장된 배치와 각 행의 `targetId`를 조회한다. 사용자가 배치와 복원할 세션을 지정하면 `restore --batch <UUID> --target <targetId>`를 사용한다. 여러 세션은 `--target`을 반복한다. 배치 전체를 명시적으로 선택한 경우에만 `--target`을 생략한다. 대상 선택이 비어 있거나 모호하면 목록과 함께 선택을 요청한다. 실행과 검증은 아래 기존 복원 절차를 따른다. 미선택 pane에 입력해야만 같은 workspace의 세션 신원을 구분할 수 있으면 복원을 보류한다.
 
 1. 현재 skill의 `scripts/session_restart.py`를 Python 3으로 실행한다. `prepare --target <handle> [--target <handle> ...] [--exclude <handle> ...]`는 선택 목록·예외와 호출자의 native 세션을 먼저 저장하고, 안전한 선택 대상에만 새 `/status`를 보내 UUID/cwd/권한을 채운다. `/exit`·resume은 보내지 않는다. 명시 예외와 self는 상태 입력도 받지 않는다. 관리용 shell은 native 수동 재시작 대상으로 표시하지 않는다. 준비 중 첫 실패 뒤 나머지 상태 입력도 멈춘다.
 2. 출력 `batchId`를 보존한다. `list [--batch <UUID>]`는 runtime 또는 대화를 열지 않고 저장 목록을 읽는다. 기록이 없으면 빈 목록이며 디렉터리·key를 만들지 않는다. 준비된 UUID, ready/deferred 및 수동 대상의 host/workspace/provider/tab/leaf/가능한 sessionId/사유를 확인한다. 예외의 UUID가 불명이면 null을 유지하고 추측하지 않는다. 업데이트 전에 전체 선택과 UUID가 보존된 배치를 확보하고 미확인 대상을 해소하거나 명시 예외로 둔다.
@@ -28,7 +37,7 @@ Claude `/status`는 명령 전에 기존 `claude_permission` 문법으로 권한
 
 ### runtime 교체 뒤 현재 관리 helper 증명
 
-원래 배치의 runtime이 바뀌고 현재 호출자의 pane이 선택 대상과 같은 workspace에 있을 때만, native 대화가 아닌 자기 관리 Python helper를 별도로 증명할 수 있다. 명시 예외와 원래 native self의 보호를 먼저 적용하며, UUID가 없는 예외의 이동 가능성을 이 증명으로 무시하지 않는다. 후보 terminal 목록의 순서와 무관하게 첫 native 조회 전에 현재 self를 유일하게 찾고, 완전한 local list/ps·새 show/screen에서 fingerprint·접근·연결·대기 없음·draft 없음을 확인한다. 전체 ps의 관측된 `paneKey` 또는 `parentPaneKey`가 self와 연결된 agent/child가 없어야 한다. provider hint가 null이거나 화면이 비어 있다는 사실만으로는 충분하지 않으며, 실행 중인 helper에 빈 shell prompt가 보일 필요는 없다.
+원래 배치의 runtime이 바뀌고 현재 호출자의 pane이 선택 대상과 같은 workspace에 있을 때만, native 대화가 아닌 자기 관리 Python helper를 별도로 증명할 수 있다. 명시 예외와 원래 native self의 보호를 먼저 적용하며, UUID가 없는 예외의 이동 가능성을 이 증명으로 무시하지 않는다. 후보 terminal 목록의 순서와 무관하게 첫 native 조회 전에 현재 self를 유일하게 찾고, 완전한 local list/ps·새 show/screen에서 fingerprint·접근·연결·대기 없음·draft 없음을 확인한다. 전체 ps의 관측된 `paneKey` 또는 `parentPaneKey`가 self와 연결된 agent/child가 없어야 한다. 외부 연결 hint가 null이거나 화면이 비어 있다는 사실만으로는 충분하지 않으며, 실행 중인 helper에 빈 shell prompt가 보일 필요는 없다.
 
 독립 증거는 Linux `/proc/<pid>/stat`와 실행 파일 metadata다. 현재 Python3 실행 파일의 helper가 자기 process group의 leader이자 controlling TTY의 foreground group이어야 하고, 그 group에는 helper 하나만 있어야 한다. 직접 부모는 같은 계정·같은 TTY의 session leader인 system bash/zsh/dash 실행 파일이어야 한다. `/bin` 또는 `/usr/bin`의 해당 shell로 해석되는 root 소유·group/other 쓰기 불가 실행 파일만 지원하며 comm 표시로 shell을 판단하지 않는다. helper/부모 PID와 starttime·pgrp/sid/TTY/foreground 및 실행 파일 identity를 고정한다. stdin이 heredoc이어도 controlling TTY로 증명할 수 있지만, controlling TTY 없는 native agent tool subprocess·추가 foreground group 구성원·다른 부모·미지원 OS/shell·proc 권한 거부나 잘못된 자료는 보류한다. 스캔 중 사라진 다른 PID만 별도로 취급한다. 같은 TTY를 쓰는 별도 background group은 있을 수 있으며, foreground 소유 증명은 모든 background 작업 부재를 증명하지 않는다.
 
@@ -38,7 +47,7 @@ Claude `/status`는 명령 전에 기존 `claude_permission` 문법으로 권한
 
 관측 `terminal.agentIdentity`가 생략됐거나 명시적 null이고 complete local ps가 그 pane을 명시 Claude로 보고할 때만, signed 선택 행의 `restart/claude`·cwd·fingerprint에 한정해 기존 공식332 agents API와 Linux process proof를 얻을 수 있다. native 준비 전에는 선택 pane의 고유 API UUID를 발견하고, 준비된 행은 기존 UUID를 요구한다. query332·지원된 source319/329/332·pane/cwd/PID와 source 실행체를 검증하며, terminal/ps 원문은 바꾸지 않는다.
 
-고정 runtime/fingerprint/proof는 mutable target/row와 독립된 snapshot으로 유지한다. callback은 모든 full/passive guard와 status/모달 키의 durable 전후에서 fixed query/process를 로컬 재검사하고, terminal fingerprint에 고정된 immutable typed authority만 `eligible`에 전달한다. 이 authority와 ps의 명시 Claude가 함께 있어야 optional hint를 해석할 수 있다. 생략/null만으로 provider를 추론하지 않는다. 다른 명시 provider·증명 없는 생략/null·빈 문자열·manual/self/미선택·일반 refresh·Codex에는 적용하지 않는다. busy/draft/approval/child/mode 등 기존 가드는 그대로다. fresh native status는 API UUID/cwd와 process executable 버전까지 같아야 준비 결과로 저장하며, 같은 PID에서 `/clear` 등으로 UUID가 달라도 재기준화하지 않는다.
+고정 runtime/fingerprint/proof는 mutable target/row와 독립된 snapshot으로 유지한다. callback은 모든 full/passive guard와 status/모달 키의 durable 전후에서 fixed query/process를 로컬 재검사하고, terminal fingerprint에 고정된 immutable typed authority만 `eligible`에 전달한다. 이 authority와 ps의 명시 Claude가 함께 있어야 optional hint를 해석할 수 있다. 생략/null만으로 외부 연결을 추론하지 않는다. 다른 명시 외부 연결·증명 없는 생략/null·빈 문자열·manual/self/미선택·일반 refresh·Codex에는 적용하지 않는다. busy/draft/approval/child/mode 등 기존 가드는 그대로다. fresh native status는 API UUID/cwd와 process executable 버전까지 같아야 준비 결과로 저장하며, 같은 PID에서 `/clear` 등으로 UUID가 달라도 재기준화하지 않는다.
 
 정상 종료 뒤 원 PID authority는 새 process에 재사용하지 않는다. exact resume 뒤 fresh exact UUID/newPID/pinned332 proof를 얻은 경우에만 authority를 명시 재결합하며, 그 증명이 없으면 status 없이 중단한다. hint가 다시 Claude로 복원돼도 살아 있는 authority의 fixed process 재검사는 계속 적용한다. 이 지원은 native 권한/모드/flags를 늘리지 않는다.
 

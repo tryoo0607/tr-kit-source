@@ -2,7 +2,7 @@
 
 ## 적용 범위와 경계
 
-- MCP 연결 준비·진단 또는 worker 시작·중단을 명시적으로 요청한 경우만 이 안내를 읽는다. 경험 검색은 기존 [mem-search](../skills/mem-search/SKILL.md)와 공식 검색 skill이 소유한다. 검색 실패를 설치·시작·자료 수집 승인으로 확대하지 않는다.
+- MCP 연결 준비·진단 또는 worker 시작·중단을 명시적으로 요청한 경우만 이 안내를 읽는다. 경험 검색은 기존 [ext-mem-search](../skills/ext-mem-search/SKILL.md)와 공식 검색 skill이 소유한다. 검색 실패를 설치·시작·자료 수집 승인으로 확대하지 않는다.
 - `scripts/claude-mem.py`는 kit 자체 연결·수명 관리 코드다. 외부 서버·검색/DB 엔진·공식 loader를 복제하거나 수정하지 않는다. 공식 설치본의 MCP stdio entry를 직접 실행한다.
 - source 기준은 Claude-Mem **15.2.1**, revision `d9b36b66dc68da92af9df238e4c4debab587ba62`다. [공식 package](https://github.com/thedotmack/claude-mem/blob/d9b36b66dc68da92af9df238e4c4debab587ba62/package.json), [worker](https://github.com/thedotmack/claude-mem/blob/d9b36b66dc68da92af9df238e4c4debab587ba62/src/services/worker-service.ts), [MCP 서버](https://github.com/thedotmack/claude-mem/blob/d9b36b66dc68da92af9df238e4c4debab587ba62/src/servers/mcp-server.ts)를 기준으로 한다. 다른 버전은 호환성을 검토한 뒤 지원한다.
 
@@ -10,14 +10,14 @@
 
 - 명시 binding JSON 파일 하나를 사용한다. 기본 경로 탐색·호스트 설정 병합·원격 fallback은 없다.
 - 새 실행용 필드: `schema_version: 2`, `providers`, `node`, `bun`, `data_dir`, `state_dir`, `port`, `profile: "manual-local-worker"`, `reviews`.
-  - `reviews`는 `claude-mem-mcp`, `claude-mem-worker` 각각을 명시 [설치본 검수](provider-review.md) 기록의 canonical 절대 경로에 연결한다. plan에 기록 hash를 포함하고 start/MCP 실행 직전에 entry·설치 리소스·근거·제품 검수를 다시 대조한다. 미결·누락·drift는 data/state 생성과 외부 실행 전에 보류한다.
+  - `reviews`는 `claude-mem-mcp`, `claude-mem-worker` 각각을 명시 [설치본 검수](external-review.md) 기록의 canonical 절대 경로에 연결한다. plan에 기록 hash를 포함하고 start/MCP 실행 직전에 entry·설치 리소스·근거·제품 검수를 다시 대조한다. 미결·누락·drift는 data/state 생성과 외부 실행 전에 보류한다.
   - 기존 schema1은 plan/doctor/render·health와 소유 worker의 stop 검사를 유지하지만 새 start/MCP는 허용하지 않는다. schema 숫자만 바꾸거나 검수 상태를 자동 승인해 전환하지 않는다.
   - 파일·디렉토리·실행 파일 경로는 canonical 절대 경로다. data/state는 서로 분리하고 source/공식 설치본 밖의 기존 parent 아래에 둔다.
   - `providers`는 [공통 외부 연결](external-connection.md) 규격이다. `claude-mem-mcp`, `claude-mem-worker` 두 CLI entry를 같은 공식 설치본의 `scripts/mcp-server.cjs`, `scripts/worker-service.cjs`로 명시한다. 지원 제품·15.2.1·entry hash를 기록한다.
   - Node와 Bun은 명시 실행 파일을 선택한다. 지원 버전은 pin 파일의 Node engine·Bun minimum을 따른다. metadata 진단과 실제 runtime 버전 실행을 구분한다.
   - schema2에는 선택 `claude_bin` 디렉토리를 명시할 수 있다. 이 디렉토리의 공식 `claude` launcher가 가리키는 실행 파일을 hash로 묶고 실행 전 identity를 대조한다. 선택한 디렉토리만 격리 PATH에 추가하며 호스트 PATH·shell 설정·인증을 복사하지 않는다. 공식 npm의 launcher symlink는 실제 대상으로 해석해 확인한다. 이 입력은 Claude observer의 CLI 부재를 해결할 수 있지만 로그인·AI 작업 성공을 보장하지 않는다. Node/Bun의 기존 경로 계약은 유지한다.
   - `port`는 1024~65535 중 선택한 loopback 포트다. 기본 포트나 기존 worker를 자동 발견하지 않는다.
-- entry hash·manifest 일치는 공식 배포 출처·전체 resource·실제 동작 인증이 아니다. 실행 전에 공식 설치 관리 수단·취득 revision/버전·의존 resource를 별도로 확인한다. 비교용 checkout·구 kit 동봉본을 실행 provider로 쓰지 않는다.
+- entry hash·manifest 일치는 공식 배포 출처·전체 resource·실제 동작 인증이 아니다. 실행 전에 공식 설치 관리 수단·취득 revision/버전·의존 resource를 별도로 확인한다. 비교용 checkout·구 kit 동봉본을 실행 외부 연결로 쓰지 않는다.
 
 ## 동작과 실제 효과
 

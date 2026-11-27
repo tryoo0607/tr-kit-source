@@ -62,6 +62,7 @@ def native_layout(files):
             content = content.replace('common/base/instructions.md', 'instructions.md')
             if source_path.endswith('.md'):
                 content = content.replace('common/base/skills', 'skills')
+                content = content.replace('common/base/references/', 'references/')
             content = content.replace('adapters/{product}/scripts', 'scripts/product/{product}')
             content = content.replace('adapters/$product/scripts', 'scripts/product/$product')
             content = content.replace('adapters/{product}/hooks', 'hooks/templates/{product}')
@@ -101,9 +102,25 @@ def native_files(root,product,files,options):
         path=root/filename
         if path.is_symlink() or not path.is_file():raise ValueError('own distribution notice missing')
     manifest['skills'] = './skills/'
-    return wrap_native_files(product,native_layout(files),manifest,{'hooks':hooks},profile,
+    readme_path = root / 'common/base/marketplace-readme.md.template'
+    if readme_path.is_symlink() or not readme_path.is_file():
+        raise ValueError('own marketplace README template required')
+    template = readme_path.read_bytes()
+    cli = product
+    install = 'add' if product == 'codex' else 'install'
+    scope = ' --scope user' if product == 'claude' else ''
+    readme = (template.decode()
+              .replace('{{NAME}}', name)
+              .replace('{{PRODUCT}}', 'Codex' if product == 'codex' else 'Claude Code')
+              .replace('{{REGISTER}}', f'{cli} plugin marketplace add tryoo0607/{name}')
+              .replace('{{INSTALL}}', f'{cli} plugin {install} {name}@{name}{scope}')
+              .replace('{{LIST}}', f'{cli} plugin list'))
+    result = wrap_native_files(product,native_layout(files),manifest,{'hooks':hooks},profile,
         ['native hook trust and new-session verification','official external providers/resources (G7)',
-         'upstream binding and pinned Gitleaks for guarded profile'], source_files=files)
+         'upstream binding and pinned Gitleaks for guarded profile'],
+        source_files={**files, str(readme_path.relative_to(root)): template})
+    result['README.md'] = readme.encode()
+    return result
 
 
 def wrap_native_files(product,files,manifest,hooks,profile,requires,*,source_files=None):

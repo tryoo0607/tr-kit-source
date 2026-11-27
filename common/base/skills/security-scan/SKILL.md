@@ -2,7 +2,7 @@
 name: security-scan
 description: Semgrep로 코드 취약 패턴을, Trivy로 이미지와 의존성 및 IaC를, Gitleaks로 커밋과 전송 대상 비밀 및 등록된 산출물을 검사한다. 명시한 저장소의 Git guard 등록·상태 확인·복귀도 다룬다. 일반 코드 리뷰와 배포 실행은 담당하지 않는다.
 metadata:
-  tr-role: external-wrapper
+  tr-role: policy
 ---
 
 # security-scan

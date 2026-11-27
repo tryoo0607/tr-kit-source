@@ -16,9 +16,19 @@ import sys
 import time
 import uuid
 
+sys.dont_write_bytecode = True
+_script_root = Path(__file__).resolve().parents[3] / 'scripts'
+_common_scripts = _script_root / 'lib/common'
+sys.path.insert(0, str(_common_scripts if _common_scripts.is_dir() else _script_root))
+from orca_connection import ROOT, OrcaConnection, select_command
+import provider_review
+import runtime_config
+
 
 class Deferred(Exception):
-    pass
+    def __init__(self, reason, *, diagnostic=None):
+        super().__init__(reason)
+        self.diagnostic = diagnostic
 
 
 CODEX_RESUME_VERSIONS = ('0.167.1', '0.167.2', '0.171.0', '0.172.0')
@@ -62,14 +72,19 @@ class Orca:
     def __init__(self, environment=None, timeout=15):
         self.environment = environment or os.environ.get('ORCA_ENVIRONMENT')
         self.remote_configured = bool(self.environment or os.environ.get('ORCA_PAIRING_CODE'))
-        configured = os.environ.get('ORCA_CLI_COMMAND', '').strip()
-        self.executable = configured or ('orca-dev' if os.environ.get('ORCA_DEV_REPO_ROOT') else
-                                         'orca-ide' if sys.platform == 'linux' and not os.environ.get('ORCA_PANE_KEY') else 'orca')
+        self.executable = select_command()
+        self.connection = None
         self.timeout = timeout
         self.runtime = None
 
     def call(self, *args):
-        command = [self.executable, *args, '--json']
+        try:
+            if self.connection is None:
+                self.connection = OrcaConnection(self.executable)
+            executable = self.connection.checked_entry()
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+            raise Deferred('orca-external-connection-unverified') from None
+        command = [executable, *args, '--json']
         if self.environment:
             command += ['--environment', self.environment]
         try:
@@ -480,8 +495,17 @@ def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False, *,
     if a.get('parentPaneKey') or a.get('children') or a.get('subagents'):
         raise Deferred('child-work')
     main = obj(a.get('mainAgent'))
-    missing_claude_program = provider == 'claude' and a.get('programStatus') is None
-    program = {} if missing_claude_program else obj(a.get('programStatus'))
+    raw_program = a.get('programStatus')
+    missing_claude_program = provider == 'claude' and raw_program is None
+    diagnostic = None
+    if not isinstance(raw_program, dict):
+        diagnostic = {'stage': 'idle-check', 'field': 'programStatus',
+                      'expected': 'object with state idle or done',
+                      'actual': ('missing' if 'programStatus' not in a else
+                                 'null' if raw_program is None else 'non-object')}
+        if not missing_claude_program:
+            raise Deferred('invalid-json-shape', diagnostic=diagnostic)
+    program = {} if missing_claude_program else raw_program
     claude_completion = (missing_claude_program and tui_idle and
                          a.get('state') == main.get('state') == 'done')
     observation = a.get('subagentObservation')
@@ -493,7 +517,7 @@ def eligible(t, read, ps, self_pane, self_found, tui_idle=False, modal=False, *,
     if observation != 'live' and not omitted_empty_native:
         raise Deferred('child-state-unknown')
     if a.get('state') not in ('idle', 'done') or main.get('state') not in ('idle', 'done') or (program.get('state') not in ('idle', 'done') and not claude_completion):
-        raise Deferred('busy-or-state-unknown')
+        raise Deferred('busy-or-state-unknown', diagnostic=diagnostic if missing_claude_program and not claude_completion else None)
     if read.get('draft') not in (None, ''):
         raise Deferred('draft')
     if not modal:
@@ -669,16 +693,38 @@ def project_context(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def inventory_executable(provider):
+    product = runtime_config.product_for_root(ROOT)
+    try:
+        _, config = runtime_config.load(product)
+    except FileNotFoundError:
+        if 'TR_KIT_RUNTIME_CONFIG' in os.environ:
+            raise Deferred('native-cli-external-connection-unverified') from None
+        return None
+    except (OSError, ValueError, TypeError):
+        raise Deferred('native-cli-external-connection-unverified') from None
+    connection_id = provider + '-cli'
+    review = config['provider_reviews'].get(connection_id)
+    if review is None:
+        return None
+    try:
+        return provider_review.verify(ROOT, config['providers'], product, connection_id, 'cli', review)['entry']
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        raise Deferred('native-cli-external-connection-unverified') from None
+
+
 def plugin_inventory(provider, cwd):
     """Read native installed metadata only, never infer running-session consumption."""
     base = {'provider': provider, 'scope': 'caller-config-at-cwd', 'cwd': cwd,
             'source': 'native-plugin-list', 'consumption': 'unverified'}
     try:
-        version = native_command(provider, ['--version'], cwd).strip()
+        executable = inventory_executable(provider)
+        options = {'executable': executable} if executable is not None else {}
+        version = native_command(provider, ['--version'], cwd, **options).strip()
         match = re.fullmatch(r'(?:codex-cli\s+)?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9_.-]+)?)(?:\s+\(Claude Code\))?', version)
         if not match:
             raise Deferred('native-version-unknown')
-        data = json.loads(native_command(provider, ['plugin', 'list', '--json'], cwd))
+        data = json.loads(native_command(provider, ['plugin', 'list', '--json'], cwd, **options))
         entries = array(obj(data).get('installed')) if provider == 'codex' else array(data)
         plugins = []
         dependencies_ready = True
@@ -783,6 +829,8 @@ def inspect(client, self_pane):
         except Deferred as e:
             row['state'] = 'deferred'
             row['reason'] = str(e)
+            if e.diagnostic is not None:
+                row['diagnostic'] = e.diagnostic
         rows.append(row)
     structured = []
     for w in array(ps.get('worktrees')):
@@ -1771,7 +1819,10 @@ def claude_plugin_listing(text, inventory, native_version=None):
             if (not stripped or re.fullmatch(r'(?:⎿\s*)?Installed plugins:', stripped) or
                     (not expected and stripped == 'No plugins installed.')):
                 continue
-            raise Deferred('claude-runtime-plugin-list-unknown')
+            raise Deferred('claude-runtime-plugin-list-unknown', diagnostic={
+                'stage': 'plugin-list', 'line': index + 1,
+                'expected': 'plugin row or recognized footer', 'actual': 'unrecognized line',
+            })
         if len(ids) != 1 or ids[0] not in expected or ids[0] in found:
             raise Deferred('claude-runtime-plugin-list-mismatch')
         ident = ids[0]
@@ -1962,6 +2013,8 @@ def apply(client, plan, self_pane, journal_root):
             except (Deferred, OSError) as e:
                 reason = str(e) if isinstance(e, Deferred) else 'journal-or-local-io-failed'
                 result['stopped'] = reason
+                if isinstance(e, Deferred) and e.diagnostic is not None:
+                    result['diagnostic'] = e.diagnostic
                 result['recovery'] = {'journal': str(journal.path), 'handle': target['handle'],
                                       'identity': target['identity'], 'action': 'inspect-before-any-resend'}
                 try:

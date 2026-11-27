@@ -110,7 +110,7 @@ class InstallTests(GuardFixture):
         self.assertEqual(original,after)
         self.git('push','fixture',':refs/heads/main')
 
-    def test_custom_hooks_linked_worktree_does_not_inherit_enrollment(self):
+    def test_custom_hooks_scan_linked_worktree_and_preserve_original(self):
         self.stage('clean','benign');self.commit()
         linked=self.base/'linked';self.git('worktree','add','-q',str(linked))
         hooks=self.base/'custom hooks';hooks.mkdir();self.git('config','core.hooksPath',str(hooks))
@@ -120,10 +120,63 @@ class InstallTests(GuardFixture):
         report=self.enroll();self.assertEqual(str(hooks),report['hooks'])
         (linked/'other').write_text(self.key)
         subprocess.run(['git','-C',str(linked),'add','--','other'],check=True)
-        p=subprocess.run(['git','-C',str(linked),'commit','-qm','test: not enrolled'],capture_output=True)
-        self.assertEqual(0,p.returncode,p.stderr);self.assertEqual('ran',log.read_text())
+        p=subprocess.run(['git','-C',str(linked),'commit','-qm','test: linked finding'],capture_output=True)
+        self.assertNotEqual(0,p.returncode);self.assertIn(b'finding',p.stdout+p.stderr)
+        self.assertFalse(log.exists())
+        (linked/'other').write_text('benign')
+        subprocess.run(['git','-C',str(linked),'add','--','other'],check=True)
+        subprocess.run(['git','-C',str(linked),'commit','-qm','test: linked clean'],check=True)
+        self.assertEqual('ran',log.read_text())
+        foreign=self.base/'foreign'
+        subprocess.run(['git','init','-q',str(foreign)],check=True)
+        subprocess.run(['git','-C',str(foreign),'config','core.hooksPath',str(hooks)],check=True)
+        self.assertEqual('uncovered',installer.status(self.state,repo=foreign)['status'])
+        blocked=subprocess.run([str(hooks/'pre-commit')],cwd=foreign,capture_output=True)
+        self.assertNotEqual(0,blocked.returncode)
+        self.assertEqual('ran',log.read_text())
         self.assertEqual(str(hooks),self.git('config','--get','core.hooksPath').stdout.decode().strip())
         self.assertEqual('rolled-back',installer.status(self.state,True)['status'])
+
+    def test_new_linked_worktree_checks_its_index_and_outgoing_refs_on_demand(self):
+        self.stage('base','benign');self.commit()
+        self.stage('main-only',self.key)
+        self.enroll(local_only=['evidence/**'])
+        linked=self.base/'new-linked';self.git('worktree','add','-qb','new-linked',str(linked))
+        remote=self.base/'linked-remote.git'
+        subprocess.run(['git','init','--bare','-q',str(remote)],check=True)
+
+        def child(*args, input=None, check=True):
+            return subprocess.run(['git','-C',str(linked),*args],input=input,capture_output=True,check=check)
+
+        status=json.loads(self.cli('status','--repo',str(linked)).stdout)
+        self.assertEqual(('active','shared-worktrees',str(linked)),
+                         (status['status'],status['scope'],status['worktree']))
+        (linked/'clean').write_text('benign')
+        child('add','clean');child('commit','-qm','test: linked clean')
+        child('push',str(remote),'HEAD:refs/heads/main')
+        self.assertIn(b'main-only',self.git('diff','--cached','--name-only').stdout)
+
+        (linked/'secret').write_text(self.key)
+        child('add','secret')
+        bad=child('commit','-qm','test: linked secret',check=False)
+        self.assertNotEqual(0,bad.returncode);self.assertIn(b'finding',bad.stdout+bad.stderr)
+        tree=child('write-tree').stdout.decode().strip()
+        tip=child('commit-tree',tree,'-p','HEAD',input=b'test: outgoing synthetic fixture\n').stdout.decode().strip()
+        pushed=child('push',str(remote),tip+':refs/heads/blocked',check=False)
+        self.assertNotEqual(0,pushed.returncode);self.assertIn(b'finding',pushed.stdout+pushed.stderr)
+        self.assertNotIn(self.key.encode(),bad.stderr+pushed.stderr)
+        child('rm','--cached','secret')
+        artifact=linked/'evidence/run.txt';artifact.parent.mkdir();artifact.write_text('benign')
+        child('add','evidence/run.txt')
+        violation=child('commit','-qm','test: linked artifact',check=False)
+        self.assertNotEqual(0,violation.returncode);self.assertIn(b'policy_violation',violation.stdout+violation.stderr)
+
+        self.git('config','extensions.worktreeConfig','true')
+        hooks=self.base/'different-hooks';hooks.mkdir()
+        child('config','--worktree','core.hooksPath',str(hooks))
+        uncovered=self.cli('status','--repo',str(linked))
+        self.assertEqual(2,uncovered.returncode)
+        self.assertEqual('worktree uses different hooks',json.loads(uncovered.stdout)['reason'])
 
     def test_relative_missing_hooks_directory_and_recovery(self):
         self.hooks=self.repo/'custom hooks';self.git('config','core.hooksPath','custom hooks')
@@ -199,6 +252,11 @@ class InstallTests(GuardFixture):
         backup=self.base/'tr-local-docs';self.repo.rename(backup);self.repo=backup;self.hooks=backup/'.git/hooks'
         self.enroll(local_only=['_bmad-output/**'],allow_artifacts=['_bmad-output/**'])
         self.stage('_bmad-output/report.md','benign');self.git('commit','-qm','test: backup allowed')
+        linked=self.base/'other-backup';self.git('worktree','add','-qb','other-backup',str(linked))
+        (linked/'_bmad-output/report.md').write_text('changed')
+        subprocess.run(['git','-C',str(linked),'add','--','_bmad-output/report.md'],check=True)
+        rejected=subprocess.run(['git','-C',str(linked),'commit','-qm','test: linked backup denied'],capture_output=True)
+        self.assertNotEqual(0,rejected.returncode);self.assertIn(b'policy_violation',rejected.stdout+rejected.stderr)
         self.stage('_bmad-output/secret.md',self.key)
         p=self.git('commit','-qm','test: backup secret',check=False)
         self.assertNotEqual(0,p.returncode);self.assertIn(b'finding',p.stdout+p.stderr)

@@ -4,6 +4,9 @@ import json
 import re
 from pathlib import Path
 
+MAX_SKILL_BYTES = 64_000_000
+MAX_CLI_BYTES = 512 * 1024 * 1024
+
 
 class LinkError(ValueError):
     pass
@@ -44,8 +47,21 @@ def verify(root, declaration, product, *, selected=None):
             continue
         path=path.resolve(strict=True)
         if path==root or root in path.parents:raise LinkError('external provider is inside kit')
-        if not path.is_file() or path.stat().st_size>64_000_000:raise LinkError('unsupported external entry')
-        actual=hashlib.sha256(path.read_bytes()).hexdigest()
+        limit = MAX_CLI_BYTES if entry['kind'] == 'cli' else MAX_SKILL_BYTES
+        if not path.is_file() or path.stat().st_size > limit:
+            raise LinkError('unsupported external entry')
+        with path.open('rb') as stream:
+            pin = hashlib.sha256()
+            remaining = limit
+            while remaining:
+                chunk = stream.read(min(remaining, 1024 * 1024))
+                if not chunk:
+                    break
+                pin.update(chunk)
+                remaining -= len(chunk)
+            if stream.read(1):
+                raise LinkError('external entry exceeds byte limit')
+        actual = pin.hexdigest()
         if actual!=entry['sha256']:raise LinkError('provider bytes changed; review before use')
         results.append({'id':entry['id'],'kind':entry['kind'],'entry':str(path),
                         'version':entry['version'],'source':entry['source'],'sha256':actual,

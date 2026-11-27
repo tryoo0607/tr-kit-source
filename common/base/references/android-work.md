@@ -6,7 +6,7 @@ Android 전문 연결을 선택한 경우 공통 입력·범위·실행·완료 
 
 - 실제 프로젝트·모듈/source set·현재 구조/DI·version catalog/Gradle 설정·오류/로그와 요청을 먼저 확인한다. 이미 제공된 자료·승인은 재사용한다. 분석만 요청됐으면 실제 SDK/기기/패키지 탐색을 추가하지 않는다.
 - 원문 예제·최신 버전·기존 작업의 선택과 현재 프로젝트의 pin/요구를 구분한다. 최신 버전 확인은 업그레이드 승인이 아니다. version을 알아내기 위해 의존성을 자동 resolve/download하지 않는다.
-- 공식 설치본의 사용 가능성과 실제 실행 환경은 별도로 확인한다. 원문 대조용 checkout이나 구 kit의 동봉·치환본을 공식 실행 provider로 등록하지 않는다.
+- 공식 설치본의 사용 가능성과 실제 실행 환경은 별도로 확인한다. 원문 대조용 checkout이나 구 kit의 동봉·치환본을 공식 실행 외부 연결로 등록하지 않는다.
 
 ## 수행 방법과 절차
 
@@ -15,7 +15,7 @@ Android 전문 연결을 선택한 경우 공통 입력·범위·실행·완료 
 - 기존 구조·DI·테스트 스택·pin을 현재 근거로 사용한다. 모듈·domain/use-case 계층·Hilt·LiveData 전환·Horologist 이전·도구 버전 변경을 전문 skill을 읽었다는 이유로 수행하지 않는다. 필요성이 확인되면 영향과 대안을 제시하고 기존 승인 범위와 대조한다.
 - 필요한 공식 기능 하나와 실제 요청에 맞는 절차를 적용한다. 원문의 필수 설치/업그레이드/기기 변경이나 미제공 reference가 요청과 충돌하면 해당 수행을 보류한다. 사용자의 범위·기존 pin은 작업 입력으로 전달하며 원문을 고치거나 필수 절차를 몰래 생략해 공식 workflow를 완료했다고 주장하지 않는다.
 - 다른 기능과의 연결은 선택과 수행을 구분한다. BMAD build가 구현·검증의 작업 정본을 소유하며 전문 skill은 그 입력/결과를 보조한다. 전문 skill 부재를 BMAD를 생략하거나 공식 작업 완료를 꾸미는 근거로 쓰지 않는다.
-- 버전/API가 불명확하거나 예제가 맞지 않으면 [find-docs](../skills/find-docs/SKILL.md)에 정확한 library·pin·질문을 전달해 허용된 공식 문서/소스를 확인한다. 기존 근거가 충분하면 재조회하지 않는다. 확인하지 못한 API/의존 버전을 호환된다고 보고하거나 예제 import를 강제로 복사하지 않는다.
+- 버전/API가 불명확하거나 예제가 맞지 않으면 [ext-find-docs](../skills/ext-find-docs/SKILL.md)에 정확한 library·pin·질문을 전달해 허용된 공식 문서/소스를 확인한다. 기존 근거가 충분하면 재조회하지 않는다. 확인하지 못한 API/의존 버전을 호환된다고 보고하거나 예제 import를 강제로 복사하지 않는다.
 
 ### 실행과 데이터 변경
 
@@ -35,12 +35,12 @@ Android 전문 연결을 선택한 경우 공통 입력·범위·실행·완료 
 
 | 요청 | 선택 조건 | 읽을 reference |
 | --- | --- | --- |
-| Android 구조·DI 설계/검토 | 모듈/레이어/상태/DI 판단이 요청됨 | [android-architecture](../skills/android-architecture/SKILL.md) |
-| Wear Compose 화면·컴포넌트·이전 | 해당 Wear 작업이 요청됨 | [wear-compose-m3](../skills/wear-compose-m3/SKILL.md) |
-| 테스트 전략·기반 선택 | 테스트 종류·도구/인프라 전략이 요청됨 | [testing-setup](../skills/testing-setup/SKILL.md) |
-| Compose 테스트 골격 | 해당 테스트 클래스·상태·rule·검증 흐름이 요청됨 | [structuring-a-compose-test](../skills/structuring-a-compose-test/SKILL.md) |
-| instrumented runner 구성 | source set/runner/import/의존 연결 문제가 요청됨 | [running-instrumented-tests-with-androidjunit4](../skills/running-instrumented-tests-with-androidjunit4/SKILL.md) |
-| ADB 테스트 실행·출력 판정 | 기존 runner를 통한 해당 실행/출력 분석이 요청됨 | [running-instrumented-tests-via-adb](../skills/running-instrumented-tests-via-adb/SKILL.md) |
+| Android 구조·DI 설계/검토 | 모듈/레이어/상태/DI 판단이 요청됨 | [ext-android-architecture](../skills/ext-android-architecture/SKILL.md) |
+| Wear Compose 화면·컴포넌트·이전 | 해당 Wear 작업이 요청됨 | [ext-wear-compose-m3](../skills/ext-wear-compose-m3/SKILL.md) |
+| 테스트 전략·기반 선택 | 테스트 종류·도구/인프라 전략이 요청됨 | [ext-testing-setup](../skills/ext-testing-setup/SKILL.md) |
+| Compose 테스트 골격 | 해당 테스트 클래스·상태·rule·검증 흐름이 요청됨 | [ext-structuring-a-compose-test](../skills/ext-structuring-a-compose-test/SKILL.md) |
+| instrumented runner 구성 | source set/runner/import/의존 연결 문제가 요청됨 | [ext-running-instrumented-tests-with-androidjunit4](../skills/ext-running-instrumented-tests-with-androidjunit4/SKILL.md) |
+| ADB 테스트 실행·출력 판정 | 기존 runner를 통한 해당 실행/출력 분석이 요청됨 | [ext-running-instrumented-tests-via-adb](../skills/ext-running-instrumented-tests-via-adb/SKILL.md) |
 
 이미 이 기준에서 선택한 wrapper에 진입했으면 그 wrapper가 다시 링크하는 공통 기준은 읽은 결과를 재사용한다. 분기표를 다시 평가해 같은 wrapper를 재귀 호출하지 않는다.
 

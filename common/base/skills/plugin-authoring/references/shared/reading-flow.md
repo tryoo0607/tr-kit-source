@@ -35,7 +35,7 @@
   ```
 
 - cases는 기존 JSON 배열 또는 `schema_version: 1`, `cases`와 선택 `discovery`를 갖는 객체다. 각 case의 `name`, `before`, `after`를 선언한다. 읽기 항목은 root 상대 `path`와 선택한 `section` 제목이다. `SKILL.md`는 전체만 허용하며 reference의 절은 제목·하위 절을 포함해 다음 동급/상위 제목 전까지 센다. 대상 밖 경로·파일/제목 부재·중복 제목은 측정 오류다. 누락 항목을 자동으로 제외하거나 0으로 처리하지 않는다.
-- 발견 metadata는 기본적으로 `common/base/skills` 또는 기존 flat `skills` 중 하나의 name/description을 별도로 센다. 둘 다 있으면 cases의 `discovery.before/after` 또는 `--before-skills/--after-skills`로 scope를 명시한다. 디렉토리/entry 부재는 오류이며 “발견 비용0”으로 성공 처리하지 않는다. 네이티브 제품이 실제 발견/주입한 목록이나 전체 외부 provider 목록의 실측으로 확대하지 않는다.
+- 발견 metadata는 기본적으로 `common/base/skills` 또는 기존 flat `skills` 중 하나의 name/description을 별도로 센다. 둘 다 있으면 cases의 `discovery.before/after` 또는 `--before-skills/--after-skills`로 scope를 명시한다. 디렉토리/entry 부재는 오류이며 “발견 비용0”으로 성공 처리하지 않는다. 네이티브 제품이 실제 발견/주입한 목록이나 전체 외부 연결 목록의 실측으로 확대하지 않는다.
 - 문자 수는 UTF-8을 해석한 Unicode code point 수다. 파일의 CRLF를 보존하며 metadata는 YAML이 해석한 name/description 값을 센다. 정확히 같은 구간의 재독뿐 아니라 같은 canonical 파일의 전체/절 겹침도 중복으로 센다. 다른 파일의 유사 문구·의미 중복을 추정하지 않는다. 각 read의 source hash를 남기며 측정 중 파일/경로 변경은 오류다.
 - 절 선택은 ATX `#` 제목과 backtick/tilde fenced code 구분을 지원하는 source 측정용 부분 parser다. Markdown 전체 renderer가 아니며 Setext 제목·복합 container/HTML block의 렌더 의미까지 검증하지 않는다. 그런 형식이면 전체 파일을 선언하거나 별도로 확인하고 unsupported 범위를 남긴다.
 - `unmeasured`는 양쪽 공통 미측정, `unmeasured_before/after`는 한쪽 미측정을 적는다. 외부 공식 지침·실제 CLI guide/반환·작업 데이터·환경 주입을 포함했는지 명시한다. 예제 `scripts/context-cases.json`은 새 source의 부분 경로5개이며 모든 요청/필수 지침을 자동 포괄하는 정본이 아니다. 조건이나 경로가 달라지면 실제 읽기 목록을 확인해 별도 선언한다. 외부 자료를 측정하려고 kit에 복사하지 않는다.

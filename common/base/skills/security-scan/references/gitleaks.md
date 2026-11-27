@@ -14,6 +14,7 @@
 - index/outgoing 검사의 필수 정책·scanner·검사용 임시 파일 쓰기 조건을 충족하지 못하면 해당 검사를 미실행/검사 불가로 보고한다. 원본 파일을 읽을 수 있거나 같은 Gitleaks 바이너리가 있다는 이유로 `stdin`·직접 `git`/`dir` 모드 등 다른 호출로 정해진 검사를 대체하지 않는다. 임시 파일 생성도 제외한 요청이면 그 경계를 유지하고, 독립적으로 가능한 등록 plan만 계속할 수 있다.
 - `local_only`와 예외는 저장소 상대 Python fnmatch 패턴이다. `*`는 `/`도 포함한다. `runs/`를 이름만으로 금지하지 않는다. 백업 예외는 사용자가 승인한 실제 `tr-local-docs` Git root에 한정하고 패턴 끝 두 요소가 정확히 `_bmad-output/**`여야 한다. 상대경로의 빈 요소·점·상위 경로·역슬래시는 거부한다. 등록기와 engine 모두 검사하며 원격·공유 승인까지 확인한 것으로 확대하지 않는다. 예외 파일도 비밀 검사를 수행한다.
 - 관리기가 생성하는 정책은 `scanner_sha256`을 포함한다. 매 Git 검사 시 명시 scanner의 provision receipt·pin·binary hash와 등록 당시 hash를 확인한다. 기존 수동 검사 정책의 호환 입력에는 이 필드가 선택이지만 공식 설치/신뢰 확인 책임은 유지한다.
+- Gitleaks는 [외부 설치본 확인](../../../references/external-connection.md)의 Gitleaks 경로에 따라 기존 scanner 검수를 재사용한다. Git hook과 검사기는 대화 지침이나 호스트 external 등록에 의존하지 않는다.
 
 ## 수행 방법과 절차
 
@@ -28,11 +29,14 @@
 - 단순 검사와 별개 요청이다. 승인받은 실제 repo·scanner 절대경로와 worktree/Git/hooks 밖 신규 state를 받는다. state의 부모 디렉토리는 존재해야 한다. 실제 기존 hook과 변경 범위·공유 hooks 영향을 먼저 대조한다.
 - kit root에서 `python3 -B scripts/git-guard-install.py plan --repo /absolute/repo --state /absolute/new-state --gitleaks /absolute/provision/bin/gitleaks`를 사용한다. 필요한 저장소별 패턴만 `--local-only 'evidence/**'`처럼 명시한다. 백업 예외는 승인된 경우에만 `--allow-artifact 'project/_bmad-output/**'`로 추가한다. pattern은 shell 확장을 막도록 인용한다.
 - plan은 파일을 쓰지 않고 경로·변경 hash·plan_id를 출력한다. 승인 범위와 확인된 변경이 맞으면 같은 인자를 사용하는 `apply`에 `--expect-plan <plan_id>`를 추가한다. 입력·source·기존 hook/설정이 달라지면 거부한다. 매 명령마다 새 사용자 승인을 요구한다는 뜻이 아니다.
-- `python3 -B scripts/git-guard-install.py status --state /absolute/state`로 소유 파일·hook 설정과 scanner 상태를 확인한다. `active`는 등록 상태이며 실제 모든 제품·인프라 안전 판정이 아니다.
+- `python3 -B scripts/git-guard-install.py status --state /absolute/state`로 소유 파일·hook 설정과 scanner 상태를 확인한다. `scope`가 `checkout-only`면 기존 checkout 한 곳, `shared-worktrees`면 등록된 Git common dir의 공유 훅이 적용 범위다. `--repo /absolute/worktree`를 추가하면 실제 대상의 Git common dir과 유효 훅 경로를 대조한다. 다른 `core.hooksPath`를 사용하면 `uncovered`로 표시한다.
 - `rollback --state /absolute/state`는 소유 변경을 기존 bytes/mode로 되돌린다. 사후 편집·경로/설정 변경이면 강제 덮어쓰지 않는다. 이미 복귀한 receipt는 다시 적용하지 않으며 재등록은 새 계획/state로 처리한다.
-- 원래 hook이 있으면 argv·pre-push stdin·실패를 유지하고 실행 전후에 등록 root를 검사한다. 실행 불가 mode의 원래 hook은 실행하지 않는다. 기존 hook이 staged 내용을 바꿨다가 재검사에서 실패해도 staged 변경을 자동 복구하지 않는다.
-- 알려진 외부 hook manager·기존 tr-kit 등록·symlink·점유 backup은 거부한다. Git 설정을 바꾸거나 다른 worktree를 자동 등록하지 않는다. 공유 hooks를 쓰는 다른 worktree에서는 기존 hook만 유지한다. 임의 hook의 `$0`/자체 파일명 의존은 이 연결로 호환을 보장하지 않는다.
+- 등록된 Git common dir의 공유 훅은 커밋·푸시할 때 실제 호출한 worktree의 index·outgoing 범위만 검사한다. 등록에서 worktree 목록을 미리 돌거나 index·이력을 검사하지 않는다. `local_only`는 같은 저장소의 worktree에 적용하고, 백업 산출물 예외는 명시 등록한 `tr-local-docs` checkout에 한정한다.
+- 원래 hook이 있으면 argv·pre-push stdin·실패를 유지하고 실행 전후에 같은 작업의 범위를 검사한다. 실행 불가 mode의 원래 hook은 실행하지 않는다. 기존 hook이 staged 내용을 바꿨다가 재검사에서 실패해도 staged 변경을 자동 복구하지 않는다.
+- 알려진 외부 hook manager·기존 tr-kit 등록·symlink·점유 backup은 거부한다. Git 설정 변경이나 개별 worktree 추가 등록은 이 절차에서 수행하지 않는다. 임의 hook의 `$0`/자체 파일명 의존은 이 연결로 호환을 보장하지 않는다.
 - 부분 실패는 write journal·원래 bytes/mode로 복귀하며 충돌/복구 불가를 알린다. 정상 복귀 뒤 로컬 receipt는 남는다. 원래 hook 사본을 포함하므로 receipt를 source/공유 로그에 커밋하지 않는다. 외부 scanner가 사라져도 소유 파일에 충돌이 없으면 복귀할 수 있다.
+
+기존 설치의 실행기는 state에 복사돼 있다. `checkout-only` 설치를 갱신할 때는 승인된 대상의 커밋·푸시를 멈춘 상태에서 기존 상태와 등록 정책을 확인하고, `rollback`으로 원래 훅을 복원한 뒤 기존 패턴과 동일한 scanner로 새 state에 `plan`·`apply`를 실행한다. 중간에는 관리 훅이 빠져 있으므로 새 등록과 사용할 worktree의 `status --repo` 확인을 마친 뒤 작업을 재개한다.
 
 ## 제약과 주의점
 

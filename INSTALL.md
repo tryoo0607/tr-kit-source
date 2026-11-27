@@ -25,13 +25,23 @@
 }
 ```
 
-- SessionStart는 공통 원칙과 위 설정·provider 선언 위치만 전달한다. 전체 provider 본문·검수 기록을 주입하지 않는다. 선택한 provider는 기존 resolver/provider-review로 entry와 resource를 확인한다. 설정 파일 존재만으로 공식 설치·실행 성공을 주장하지 않는다.
+- SessionStart는 공통 원칙과 위 설정·외부 연결 선언 위치만 전달한다. 전체 외부 연결 본문·검수 기록을 주입하지 않는다. 선택한 외부 연결의 진입 파일과 필수 리소스를 확인한다. 설정 파일 존재만으로 공식 설치·실행 성공을 주장하지 않는다.
 - upstream hook은 명시한 `TR_KIT_UPSTREAM_BINDING`이 있으면 이를 우선하며, 없을 때만 runtime 설정의 `upstream_binding`을 사용한다. binding의 `root`, `catalog`, `scope`와 실제 scope에 등록한 kit component/artifact가 보호 대상이다. 새 worktree와 다른 프로젝트를 자동 등록하지 않는다. 잘못된 명시 binding을 다른 설정으로 대체하지 않는다.
-- 설정이 없거나 잘못되면 시작 context는 not-ready, upstream Pre는 deny를 반환한다. 활성화 전에 실제 호스트 설정과 공식 provider, 대상 scope·scanner 및 제품별 callback을 검증한다. 셸 설정·실행기 수정이나 개인 자료 수집은 이 연결에 포함되지 않는다.
+- 설정이 없거나 잘못되면 시작 context는 not-ready, upstream Pre는 deny를 반환한다. 활성화 전에 실제 호스트 설정과 공식 외부 연결, 대상 scope·scanner 및 제품별 callback을 검증한다. 셸 설정·실행기 수정이나 개인 자료 수집은 이 연결에 포함되지 않는다.
 
 - Codex: [공식 패키징 문서](https://developers.openai.com/plugins/build/plugins)와 현재 `codex plugin --help`를 따른다. `plugin marketplace add <package>` 후 `plugin add tr-codex@tr-codex`; 제거는 `plugin remove tr-codex@tr-codex`와 해당 `plugin marketplace remove tr-codex`다. hook trust는 native UI에서 검토한다. 신뢰 DB 편집·Trust all 자동 수행은 하지 않는다.
 - Claude: [공식 plugin CLI](https://code.claude.com/docs/en/plugins/cli-reference)의 `plugin marketplace add <package>`, `plugin install tr-claude@tr-claude --scope user`를 따른다. 제거 시 `plugin uninstall ... --scope user --keep-data`로 data 보존을 명시한다. marketplace 제거와 runtime/data 제거는 다르다.
 - 설치/갱신한 파일·등록 상태, hook trust, 새 세션의 초기 지침·실제 native callback/차단과 공식 업무 실행은 별도로 확인한다. root CLAUDE.md/AGENTS.md 파일 존재를 초기 주입 근거로 사용하지 않는다.
+
+### 스킬 이름
+
+설치본의 `ext-*`는 외부 기능에 수행을 연결하는 **wrapping 스킬**이다. **kit 자체스킬**은 업무 이름을 쓰고, 필요한 단계에서 wrapping 스킬을 호출할 수 있다. 호스트 설정의 `providers`, `provider_reviews` 키와 공식 외부 기능 ID는 기존 값을 사용한다.
+
+### 대화 단축 입력
+
+플러그인의 SessionStart 지침을 받은 대화에서 `tr:now`, `tr:short`, `tr:save`, `tr:restore`를 일반 메시지로 보낸다. 작업 중 `tr:now`를 보낼 때는 클라이언트가 현재 작업에 메시지를 전달하는 방식으로 보낸다. 대기열로 보낸 입력은 현재 작업이 끝난 뒤 처리될 수 있다.
+
+`tr:ask`나 “이 흐름을 같이 논의하자”로 Ask me를 시작할 수 있다. 질문과 답을 주고받으며 시나리오와 전체 흐름을 갱신하고, 시작과 종료를 각각 한 줄로 알린다. 사용하려면 현재 제품에 Matt Pocock의 `grilling` 설치본에 대한 외부 연결이 필요하다.
 
 ## 이번 G5의 격리 실행기
 
@@ -39,7 +49,7 @@
 
 - install: 새 prefix만 허용하고 native manager로 등록/설치한다. source 밖 검증된 package를 그대로 사용한다.
 - update: 해당 prefix의 managed installed receipt와 새 package를 대조한다. 기존 package는 보존하고 제거→marketplace 교체→설치한다. native 캐시의 payload hash를 대조한다.
-- rollback: 직전 보존 package를 다시 fresh 검사하고 공식 manager로 재설치한다. 기존 세션 context·외부 provider·실자료/worker를 복원했다는 뜻이 아니다.
+- rollback: 직전 보존 package를 다시 fresh 검사하고 공식 manager로 재설치한다. 기존 세션 context·외부 연결·실자료/worker를 복원했다는 뜻이 아니다.
 - remove: 공식 manager로 plugin/marketplace만 제거하고, 같은 제품의 plugin list --json에서 대상 등록의 부재를 확인한다. 목록 부재/오류·알 수 없는 형식·대상 잔존은 완료로 보지 않는다. 제품이 보존한 version cache는 cache_retained로 별도 보고하며 강제 삭제하지 않는다. prefix의 기록·원래 package·개인 데이터·worker·timer를 삭제하지 않는다.
 - 실패: 완료한 단계와 partial receipt를 남기며 성공으로 보고하지 않는다. partial 상태에서 같은 설치를 맹목 재전송하지 않는다. 관측과 native 상태에 따른 복귀 계획을 따로 검토한다. 조용한 자동 정리·force·개인 파일 덮어쓰기는 없다.
 

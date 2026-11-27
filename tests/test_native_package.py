@@ -42,24 +42,41 @@ class NativePackage(unittest.TestCase):
         for product in ('codex','claude'):
             out=self.build(product,name=product);report=package.verify(out,product)
             payload=Path(report['payload']);self.assertFalse(report['operational_ready']);self.assertFalse(report['mcp_registered'])
-            self.assertTrue((payload/'skills/mem-search/SKILL.md').is_file())
+            self.assertTrue((payload/'skills/ext-mem-search/SKILL.md').is_file())
             self.assertFalse((payload/'common').exists())
             self.assertFalse((payload/'adapters').exists())
             self.assertFalse((payload/'CLAUDE.md').exists())
             self.assertFalse((payload/'.mcp.json').exists())
             self.assertTrue((payload/'scripts/mcp'/product).is_dir())
-            wiki = payload/'skills/wiki/SKILL.md'
-            link = f'../../references/products/{product}/skills/wiki/references/provider.md'
+            wiki = payload/'skills/ext-wiki/SKILL.md'
+            link = f'../../references/products/{product}/skills/ext-wiki/references/external.md'
             self.assertIn(link, wiki.read_text())
             self.assertTrue((wiki.parent/link).is_file())
 
     def test_export_excludes_verification_inventory(self):
-        package_dir = self.build()
-        _, files = package.verified_package(package_dir, 'codex')
-        output = self.base/'marketplace'
-        delivery.export(package_dir, output, files)
-        self.assertEqual({p.name for p in output.iterdir()}, {'.agents', 'plugins', 'release.json'})
-        self.assertTrue((output/'plugins/tr-codex/skills/wiki/SKILL.md').is_file())
+        for product in ('codex', 'claude'):
+            with self.subTest(product=product):
+                name = f'tr-{product}'
+                package_dir = self.build(product, name=f'package-{product}')
+                _, files = package.verified_package(package_dir, product)
+                output = self.base/f'marketplace-{product}'
+                delivery.export(package_dir, output, files)
+                metadata = '.agents' if product == 'codex' else '.claude-plugin'
+                self.assertEqual({p.name for p in output.iterdir()},
+                                 {metadata, 'plugins', 'release.json', 'README.md'})
+                self.assertEqual([name], [p.name for p in (output/'plugins').iterdir()])
+                payload = output/'plugins'/name
+                manifest = '.codex-plugin' if product == 'codex' else '.claude-plugin'
+                self.assertEqual({p.name for p in payload.iterdir() if p.is_dir()},
+                                 {manifest, 'skills', 'references', 'hooks', 'scripts'})
+                self.assertTrue((payload/'skills/ext-wiki/SKILL.md').is_file())
+                self.assertTrue((payload/'INSTALL.md').is_file())
+                readme = (output/'README.md').read_text()
+                install = 'add' if product == 'codex' else 'install'
+                scope = ' --scope user' if product == 'claude' else ''
+                self.assertIn(f'{product} plugin marketplace add tryoo0607/{name}', readme)
+                self.assertIn(f'{product} plugin {install} {name}@{name}{scope}', readme)
+                self.assertNotIn('{{', readme)
 
     def test_session_restart_readonly_cli_preserves_both_payloads_without_bytecode(self):
         for product in ('codex','claude'):

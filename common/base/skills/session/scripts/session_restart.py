@@ -740,7 +740,7 @@ def blocked_by_exception(batch, item, runtime):
     return False
 
 
-def locate(client, batch, row, self_pane, log=None, proofs=None):
+def locate(client, batch, row, self_pane, log=None, proofs=None, *, target_ids=()):
     """Reacquire handles, never use a saved shell/PTY as launch authorization."""
     terms, ps = snapshot(client, self_pane)
     old = row['terminal']
@@ -764,7 +764,8 @@ def locate(client, batch, row, self_pane, log=None, proofs=None):
             raise Deferred('management-self-changed')
         client.management_self = proof
     rr.management_self_check(client, terms, ps)
-    allowed = [r for r in batch['targets'] if r['choice'] == 'restart' and r.get('native') is not None]
+    allowed = [r for r in batch['targets'] if r['choice'] == 'restart' and r.get('native') is not None
+               and (not target_ids or r['targetId'] in target_ids)]
     def selected(item):
         return any(r['terminal']['worktreeId'] == item.get('worktreeId')
                    and (rr.pane(r['terminal']) == rr.pane(item)
@@ -1049,7 +1050,7 @@ def cleanup_status_modals(client, targets, self_pane, log, runtime):
     return complete
 
 
-def owned_launch(client, batch, row, self_pane, log, installation):
+def owned_launch(client, batch, row, self_pane, log, installation, *, target_ids=()):
     runtime = client.runtime
     # Verify original workspace membership on THIS runtime, with a complete view.
     terms, ps = snapshot(client, self_pane)
@@ -1060,7 +1061,7 @@ def owned_launch(client, batch, row, self_pane, log, installation):
     # Close the discovery/launch gap as far as the non-atomic Orca API permits.
     proofs = []
     try:
-        if locate(client, batch, row, self_pane, log, proofs=proofs) is not None:
+        if locate(client, batch, row, self_pane, log, proofs=proofs, target_ids=target_ids) is not None:
             raise Deferred('session-appeared-before-launch')
         current_installation = rr.installation_guard({'provider': row['provider'], 'identity': old,
                                                     'installation': installation})
@@ -1466,7 +1467,7 @@ def verify_preparation(client, store, batch, self_pane):
     return report(batch)
 
 
-def execute(client, store, batch_id, self_pane, mode):
+def execute(client, store, batch_id, self_pane, mode, *, target_ids=()):
     # A reused client never inherits a previous invocation's exception authority.
     client.target_shell_proof = None
     client.management_self = None
@@ -1476,6 +1477,18 @@ def execute(client, store, batch_id, self_pane, mode):
     if mode not in ('restart', 'restore', 'verify'):
         raise Deferred('invalid-operation')
     batch = store.load(batch_id)
+    rows = batch['targets']
+    if target_ids:
+        requested = set(target_ids)
+        selected = [row for row in rows if row['targetId'] in requested
+                    and row['choice'] == 'restart' and row.get('native') is not None]
+        if mode != 'restore' or len(selected) != len(target_ids):
+            raise Deferred('restore-target-invalid')
+        if any(row['targetId'] not in requested and row.get('attempt')
+               and row['attempt']['state'] not in ('complete', 'not-submitted', 'verified-running-restart-pending')
+               for row in rows):
+            raise Deferred('unresolved-attempt-verify-before-any-recovery')
+        rows = selected
     if batch['binding'] != binding():
         raise Deferred('machine-or-profile-mismatch')
     if batch.get('prepareState') != 'complete':
@@ -1487,7 +1500,7 @@ def execute(client, store, batch_id, self_pane, mode):
     client.recovery_exception_check = lambda *args, **kwargs: check_exception_proofs(
         client, batch, self_pane, *args, **kwargs)
     snapshot(client, self_pane)
-    for index, row in enumerate(batch['targets']):
+    for index, row in enumerate(rows):
         if row['choice'] == 'manual':
             continue
         if row.get('native') is None:
@@ -1501,7 +1514,7 @@ def execute(client, store, batch_id, self_pane, mode):
         prior = row.get('attempt')
         if prior and prior.get('state') not in ('complete', 'not-submitted', 'verified-running-restart-pending') and mode != 'verify':
             row.update(state='deferred', reason='unresolved-attempt-verify-before-any-recovery')
-            defer_later(batch, index)
+            defer_later(rows, index)
             store.save(batch)
             break
         operation = str(uuid.uuid4())
@@ -1511,7 +1524,7 @@ def execute(client, store, batch_id, self_pane, mode):
         log = Recorder(store, batch, row, operation)
         client.claude_launch_comparison = None
         try:
-            found = locate(client, batch, row, self_pane, log)
+            found = locate(client, batch, row, self_pane, log, target_ids=target_ids)
             needs_resume = ((found is None and mode == 'restore') or
                             (found is not None and mode == 'restart' and not (prior and prior.get('state') == 'complete')))
             if needs_resume:
@@ -1545,7 +1558,7 @@ def execute(client, store, batch_id, self_pane, mode):
             if found is None:
                 if mode != 'restore':
                     raise Deferred('session-absent-use-explicit-restore')
-                target = owned_launch(client, batch, row, self_pane, log, installation)
+                target = owned_launch(client, batch, row, self_pane, log, installation, target_ids=target_ids)
                 after = rr.native_status(client, current_plan(client, self_pane), target, self_pane, log)
                 equal_identity(resume_basis(batch, row), after, resumed=True)
                 state = 'restarted'
@@ -1563,7 +1576,7 @@ def execute(client, store, batch_id, self_pane, mode):
                         row.update(state='deferred', reason='live-identity-confirmed-restart-unproven',
                                    nativeObserved=before, currentTerminal=target['identity'])
                         prior['state'] = 'verified-running-restart-pending'
-                        defer_later(batch, index)
+                        defer_later(rows, index)
                         log.record('verified-running-only')
                         break
                     equal_identity(resume_basis(batch, row), before, resumed=True)
@@ -1647,7 +1660,7 @@ def execute(client, store, batch_id, self_pane, mode):
             row.update(state='failed' if sent else 'deferred', reason=reason(error))
             if row.get('attempt') and mode != 'verify':
                 row['attempt']['state'] = 'uncertain' if sent else 'not-submitted'
-            defer_later(batch, index)
+            defer_later(rows, index)
             # If persistence failed, the previous durable sending record remains
             # authoritative. Never perform another action to repair the receipt.
             try:
@@ -1663,11 +1676,14 @@ def execute(client, store, batch_id, self_pane, mode):
             except (Deferred, OSError):
                 row['reason'] = 'storage-failed-inspect-existing-record'
             break
-    return report(batch)
+    result = report(batch)
+    if target_ids:
+        result['targets'] = [row for row in result['targets'] if row['targetId'] in requested]
+    return result
 
 
-def defer_later(batch, index):
-    for row in batch['targets'][index+1:]:
+def defer_later(rows, index):
+    for row in rows[index+1:]:
         if row['choice'] == 'restart' and row.get('native') is not None:
             row.update(state='deferred', reason='previous-target-failed')
 
@@ -1703,7 +1719,9 @@ def main(argv=None):
             raise Deferred('continuation-not-admissible')
         if args.mode == 'identify-exception' and (len(args.target) != 1 or args.exclude):
             raise Deferred('exception-target-invalid')
-        if args.mode not in ('prepare', 'continue-prepare', 'identify-exception') and (args.target or args.exclude):
+        if args.mode == 'restore' and args.exclude:
+            raise Deferred('restore-target-invalid')
+        if args.mode not in ('prepare', 'continue-prepare', 'identify-exception', 'restore') and (args.target or args.exclude):
             raise Deferred('choices-are-prepare-only')
         if args.mode == 'prepare' and args.batch:
             raise Deferred('prepare-creates-new-batch')
@@ -1734,7 +1752,8 @@ def main(argv=None):
             else:
                 if not args.batch:
                     raise Deferred('batch-id-required')
-                result = execute(rr.Orca(), store, args.batch, os.environ.get('ORCA_PANE_KEY'), args.mode)
+                result = execute(rr.Orca(), store, args.batch, os.environ.get('ORCA_PANE_KEY'),
+                                 args.mode, target_ids=args.target)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 2 if any(t['state'] in ('failed', 'deferred') for t in result.get('targets', [])) else 0
     except (Deferred, OSError, ValueError, TypeError, KeyError):

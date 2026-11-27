@@ -4,7 +4,7 @@
 
 - 기존에 선택한 Context7 CLI·Playwright CLI/engine/Python·Semgrep·Trivy·Gitleaks를 명시한 새 prefix에 준비하고 결과를 검증한다. 외부 설치본을 kit 구성요소로 복제/동봉하거나 원문을 변형하지 않는다.
 - 공식 npm·uv·release archive·Playwright browser 설치를 연결하는 자체 glue다. 새 runtime·scanner·브라우저를 구현하거나 agent 업무 절차를 대체하지 않는다.
-- source 구현·계획 출력, 실제 취득/설치, env 적용, provider 등록, Git hook 활성화와 운영 배포는 각각 다른 상태다. 도구 부재나 일반 검사 요청을 설치 승인으로 취급하지 않는다.
+- source 구현·계획 출력, 실제 취득/설치, env 적용, 외부 연결 등록, Git hook 활성화와 운영 배포는 각각 다른 상태다. 도구 부재나 일반 검사 요청을 설치 승인으로 취급하지 않는다.
 
 ## 입력과 전제
 
@@ -41,7 +41,7 @@
 - 생성한 env.sh는 명시 source용이다. shell startup/profile, 현재 agent 환경·Git 설정·hook·MCP·서비스를 자동 변경하지 않는다. 어떤 작업 환경에 실제 적용할지 확인한 후 연결한다.
 - probe는 자신이 연 고유 Playwright session만 close한다. close-all/kill-all이나 기존 사용자 browser 정리는 하지 않는다. timeout과 scoped cleanup 실패를 보고하고 고아 process 부재를 증거 없이 보장하지 않는다.
 - 실제 Chromium은 Unix socket 경로 길이 제한을 받을 수 있다. 긴 prefix에서 도구 설치가 성공해도 긴 evidence/tmp 때문에 실행이 실패할 수 있으므로, 시험 evidence는 `/var/tmp` 아래의 명시한 짧은 새 경로를 사용할 수 있다. 실패한 evidence는 보존한다. CLI의 file URL 제한을 끄지 않으며, 로컬 시험은 합성 HTML 하나만 응답하는 임시127.0.0.1 서버를 사용하고 해당 서버도 종료한다. 파일 디렉토리 공개·외부 bind·공개 게시를 하지 않는다.
-- 공식 diagram 도구의 외부 self-check/export script는 이 kit에 동봉하지 않는다. 이전 검증기의 bundled diagram 호출은 공식 provider 연결 검증으로 별도 유지할 대상이며 이 준비기의 브라우저 시험으로 대체 완료하지 않는다.
+- 공식 diagram 도구의 외부 self-check/export script는 이 kit에 동봉하지 않는다. 이전 검증기의 bundled diagram 호출은 공식 외부 연결 연결 검증으로 별도 유지할 대상이며 이 준비기의 브라우저 시험으로 대체 완료하지 않는다.
 
 ## 결과와 완료 판단
 

@@ -19,12 +19,12 @@ description: 세션 재개, 재시작 목록·선택 복원과 세션 보존을 
 
 | 요청 | 선택 조건 | 읽을 reference |
 |---|---|---|
-| 재시작 목록 준비·조회, 선택 재시작·복원·검증 또는 세션 보존을 포함한 native CLI 업데이트 연결 | 해당 요청이 포함됨 | [session-restart.md](references/session-restart.md) |
+| 재시작 목록 준비·조회, 선택 재시작·복원·검증 또는 세션 보존을 포함한 native CLI 업데이트 연결 | 해당 요청 또는 `tr:save`, `tr:restore` | [session-restart.md](references/session-restart.md) |
 | 같은 작업의 세션 전환·재개 또는 이전 대화 원문 조회 | 진단을 요청한 재개 실패가 아님 | [continuity.md](references/continuity.md) |
 | 다른 세션, 에이전트, 사람에게 작업 위임 | 해당 요청이 포함됨 | [delegation.md](references/delegation.md) |
 | 열린 세션 플러그인 반영 조회, 보류 목록 또는 갱신 | 해당 요청이 포함됨 | [runtime-refresh.md](references/runtime-refresh.md) |
 | 세션 무응답, 연결 이상, 재개 실패 | 해당 요청이 포함됨 | [recovery.md](references/recovery.md) |
-| Orca의 기존 공간에서 에이전트 시작, 조회 또는 입력 전달 | 위 인계/위임/진단 절차 없이 해당 조작만 요청됨 | [orca-cli wrapper](../orca-cli/SKILL.md), 확인한 호스트/기존 공간/수신자와 승인 범위를 전달 |
+| Orca의 기존 공간에서 에이전트 시작, 조회 또는 입력 전달 | 위 인계/위임/진단 절차 없이 해당 조작만 요청됨 | [ext-orca-cli wrapper](../ext-orca-cli/SKILL.md), 확인한 호스트/기존 공간/수신자와 승인 범위를 전달 |
 
 같은 요청의 행은 위에서부터 평가해 처음 일치한 하나만 읽는다. 별도 추가 요청이 함께 있으면 각 요청에서 선택한다. 선택하지 않은 reference는 읽지 않는다. 다른 skill 연결은 해당 reference의 `연계와 의존`에서 요청, 입력과 필요한 결과를 확인한다. 대상은 현재 환경에서 확인한 식별자로 찾고 그 SKILL.md의 요청별 분기와 공통 제약을 적용한다. 대상 내부 reference 경로를 추측하거나 직접 고정하지 않는다. 이미 확인한 규칙과 결과는 변경되거나 불명확할 때 다시 조회한다.
 

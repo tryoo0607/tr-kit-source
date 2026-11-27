@@ -36,7 +36,7 @@ description: Orca 호스트 목록에서 대상을 선택해 서버나 로컬 �
 
 | 대상 | 적용 조건과 입력 | 필요한 결과 | 의존과 부재 시 동작 |
 |---|---|---|---|
-| [orca-cli](../orca-cli/SKILL.md) | 호스트 목록, status, 기존 workspace와 shell 접근. 요청 조작, 실제 host selector, workspace/terminal 식별자와 승인 범위를 전달한다 | 호스트 식별, 버전 일치 guide, 읽기 결과, 명령 수락 receipt와 실제 완료 출력 | 필수. 부재나 미지원은 해당 접근을 보류하며 임의 API나 내부 DB 조작으로 대체하지 않는다 |
+| [ext-orca-cli](../ext-orca-cli/SKILL.md) | 호스트 목록, status, 기존 workspace와 shell 접근. 요청 조작, 실제 host selector, workspace/terminal 식별자와 승인 범위를 전달한다 | 호스트 식별, 버전 일치 guide, 읽기 결과, 명령 수락 receipt와 실제 완료 출력 | 필수. 부재나 미지원은 해당 접근을 보류하며 임의 API나 내부 DB 조작으로 대체하지 않는다 |
 | 제품과 OS의 기존 업데이트 수단 | 대상에서 확인한 설치 형태와 공식 release, 실행 권한과 업데이트 범위 | 교체 결과, 서비스 상태와 복구 가능한 이전 파일 | 변경에 필수. 권한 거부나 지원 절차 부재는 해당 대상 중단. 다른 호스트의 sudo 설정이나 연결 정책을 바꾸지 않는다 |
 | [session](../session/SKILL.md) | 재시작 목록 보존·선택 restart/재부팅 후 restore 또는 세션 보존을 포함한 native CLI 업데이트 요청. 대상 호스트, 선택·예외, 업데이트 전 batchId와 승인 범위 | UUID 배치, 별도 native CLI 관리자·버전/canary 결과, 수동·보류 목록, 재연결 후 새 handle에서 identity 및 재시작 결과 | 해당 요청에만 적용. session 본문의 재시작 배치 분기로 진입해 native CLI 관리자의 단일 연결 계약을 따른다. Orca 업데이트 검증 뒤 배치를 재검증하고 이후 명시 실행 요청에서 수행한다. 미해결 호스트 뒤의 진행은 보류 |
 

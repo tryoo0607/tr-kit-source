@@ -568,6 +568,65 @@ class Restart(unittest.TestCase):
         self.assertEqual([], self.client.created)
         self.assertEqual('term_replacement', self.client.sent[0][self.client.sent[0].index('--terminal')+1])
 
+    def test_restore_selection_leaves_unselected_row_untouched(self):
+        self.client.add('other', '/other')
+        ident = self.prepare(['term_target', 'term_other'])
+        saved = self.load(ident)['targets']
+        self.client.sent.clear()
+        output = io.StringIO()
+        with patch.object(m.rr, 'Orca', return_value=self.client), \
+                patch.dict(os.environ, {'ORCA_PANE_KEY': self.self_pane}), redirect_stdout(output):
+            self.assertEqual(0, m.main(['restore', '--state', str(self.root), '--batch', ident,
+                                       '--target', saved[1]['targetId']]))
+        report = json.loads(output.getvalue())
+        self.assertEqual([saved[1]['targetId']], [row['targetId'] for row in report['targets']])
+        self.assertEqual('already-running', report['targets'][0]['state'])
+        self.assertEqual(saved[0], self.load(ident)['targets'][0])
+        self.assertEqual({'term_other'}, {a[a.index('--terminal')+1] for a in self.client.sent})
+
+    def test_restore_selection_rejects_manual_unknown_and_duplicate_ids(self):
+        self.client.add('other', '/other')
+        ident = self.prepare(excluded=['term_other'])
+        saved = self.load(ident)
+        ready = next(row for row in saved['targets'] if row['choice'] == 'restart')
+        manual = next(row for row in saved['targets'] if row['choice'] == 'manual')
+        self.client.sent.clear()
+        with m.Store(self.root) as store:
+            for ids in ([manual['targetId']], [str(uuid.uuid4())], [ready['targetId']] * 2):
+                with self.assertRaisesRegex(m.Deferred, 'restore-target-invalid'):
+                    m.execute(self.client, store, ident, self.self_pane, 'restore', target_ids=ids)
+        self.assertEqual(saved, self.load(ident))
+        self.assertFalse(self.client.sent)
+        self.assertFalse(self.client.created)
+
+    def test_restore_selection_never_queries_an_unselected_candidate_in_same_workspace(self):
+        self.client.add('other', '/work')
+        ident = self.prepare(['term_target', 'term_other'])
+        initial = self.load(ident)['targets']
+        self.client.sent.clear()
+        with m.Store(self.root) as store:
+            result = m.execute(self.client, store, ident, self.self_pane, 'restore',
+                               target_ids=[initial[0]['targetId']])
+        self.assertEqual('unselected-or-uncertain-native-candidate', result['targets'][0]['reason'])
+        self.assertEqual(initial[1], self.load(ident)['targets'][1])
+        self.assertFalse(self.client.sent)
+        self.assertFalse(self.client.created)
+
+    def test_restore_selection_launches_only_the_chosen_absent_session(self):
+        self.client.add('other', '/work')
+        ident = self.prepare(['term_target', 'term_other'])
+        saved = self.load(ident)['targets']
+        self.client.remove('term_target')
+        self.client.remove('term_other')
+        self.client.runtime = 'new-runtime'
+        self.client.sent.clear()
+        with m.Store(self.root) as store:
+            result = m.execute(self.client, store, ident, self.self_pane, 'restore',
+                               target_ids=[saved[0]['targetId']])
+        self.assertEqual('restarted', result['targets'][0]['state'])
+        self.assertEqual(1, len(self.client.created))
+        self.assertEqual(saved[1], self.load(ident)['targets'][1])
+
     def test_both_products_restore_absent_uuid_only_in_new_owned_terminal(self):
         for provider in ('codex', 'claude'):
             with self.subTest(provider=provider):

@@ -81,15 +81,15 @@ class Assembly(unittest.TestCase):
 
     def test_only_selected_product_adapter_skills_are_shipped(self):
         for product in ('codex','claude'):
-            p=self.root/f'adapters/{product}/skills/artifact-publish/references/provider.md'
+            p=self.root/f'adapters/{product}/skills/artifact-publish/references/external.md'
             p.parent.mkdir(parents=True);p.write_text('Own '+product+' provider connection')
         for product,other in (('codex','claude'),('claude','codex')):
             self.output=self.base/product;self.save_scope();self.build(product)
-            self.assertTrue((self.output/f'adapters/{product}/skills/artifact-publish/references/provider.md').is_file())
+            self.assertTrue((self.output/f'adapters/{product}/skills/artifact-publish/references/external.md').is_file())
             self.assertFalse((self.output/f'adapters/{other}').exists())
 
     def test_product_adapter_reference_symlink_is_not_vendored(self):
-        p=self.root/'adapters/codex/skills/artifact-publish/references/provider.md'
+        p=self.root/'adapters/codex/skills/artifact-publish/references/external.md'
         p.parent.mkdir(parents=True);p.symlink_to(self.external)
         with self.assertRaises(ValueError):self.build()
         self.assertFalse(self.output.exists())

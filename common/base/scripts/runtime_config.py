@@ -15,6 +15,10 @@ def canonical(value):
     return path
 
 
+def product_for_root(root):
+    return 'claude' if (Path(root) / '.claude-plugin/plugin.json').is_file() else 'codex'
+
+
 def load(product):
     if product not in ('codex', 'claude'):
         raise ValueError('unsupported runtime product')
@@ -66,10 +70,10 @@ def load(product):
 def note(path, data):
     return ('\n호스트 runtime 설정: '+str(path)+'\n'
             '현재 제품: '+data['product']+'\n'
-            '명시 provider 선언: '+data['providers']+'\n'
-            '선택 provider의 검수 기록은 위 runtime 설정의 provider_reviews[ID]를 사용한다. '
+            '명시 외부 연결 선언: '+data['providers']+'\n'
+            '선택한 외부 연결의 검수 기록은 위 runtime 설정의 provider_reviews[ID]를 사용한다. '
             '선언 경로나 파일 존재는 공식 설치·실행 성공의 증거가 아니다. '
-            '선택 entry와 resource 검증은 기존 resolver/provider-review 절차를 따른다.\n'
+            '선택한 진입 파일과 필수 리소스는 외부 연결 및 설치본 검수 절차를 따른다.\n'
             '원문 보호 binding: '+data['upstream_binding']+'\n'
             '실제 보호 대상은 binding이 참조한 scope의 등록 component/artifact다. '
             'kit 소스가 아닌 프로젝트를 자동 편입하거나 설정을 자동 변경하지 않는다.\n')

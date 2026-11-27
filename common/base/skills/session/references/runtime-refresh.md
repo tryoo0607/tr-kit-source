@@ -51,7 +51,7 @@ native cwd의 정확한 `~` 또는 `~/safe/path`만 수신자 프로세스의 ab
 
 ### 정상 종료 뒤 NAS zsh 빈 shell 증명
 
-기존 absolute cwd로 끝나는 `$`/`#` prompt 판정은 유지한다. 추가 지원은 마지막 비어 있지 않은 화면 행이 정확히 `❯`인 Linux local zsh뿐이다. glyph·comm 이름·이력·경과 시간·남은 provider hint를 단독 증거로 사용하지 않는다. 기존 empty draft, 연결·쓰기·incarnation/runtime·self·설치·wait와 agent/main/program/child guard, `/exit` 직전 cursor 이후의 같은 native UUID 종료 안내가 모두 필요하다. glyph 분기는 완전한 local list/ps와 유일한 target pane 및 그 pane을 부모로 연결한 child가 없음도 확인한다.
+기존 absolute cwd로 끝나는 `$`/`#` prompt 판정은 유지한다. 추가 지원은 마지막 비어 있지 않은 화면 행이 정확히 `❯`인 Linux local zsh뿐이다. glyph·comm 이름·이력·경과 시간·남은 외부 연결 hint를 단독 증거로 사용하지 않는다. 기존 empty draft, 연결·쓰기·incarnation/runtime·self·설치·wait와 agent/main/program/child guard, `/exit` 직전 cursor 이후의 같은 native UUID 종료 안내가 모두 필요하다. glyph 분기는 완전한 local list/ps와 유일한 target pane 및 그 pane을 부모로 연결한 child가 없음도 확인한다.
 
 `runtime_refresh.target_shell_process_proof`는 호출자 관리 helper의 증명과 별개로 실제 `/proc`를 읽는다. 같은 UID·controlling TTY의 root 소유 system bash/dash/zsh session leader 중 `ORCA_PANE_KEY`가 target tab/leaf와 정확히 같은 후보가 하나여야 하며, 그 유일 후보가 zsh여야 한다. 다른 shell이나 다른 cwd의 exact-pane 후보를 버리고 남은 zsh의 증명을 빌리지 않는다. UID·session/TTY·지원 실행 파일로 후보를 좁힌 뒤 bounded environ에서 pane key만 읽어 판정하며, 관련 증거를 읽을 수 없으면 거부한다. `/bin/zsh` 또는 `/usr/bin/zsh`의 해석된 실행 파일은 root 소유 regular file이고 group/other 쓰기가 불가능해야 한다. PID/starttime·sid/pgrp·controlling TTY·foreground가 확인되며, shell 자신이 session/process group leader이자 그 foreground group의 유일한 구성원이어야 한다. proc cwd는 원 absolute workspace 경로와 정확히 같아야 한다. 두 전체 관측과 선택 PID/executable/cwd 재조회가 일치해야 하며, 잘못되거나 읽을 수 없는 proc·중복 후보·다른 foreground/native/REPL·cwd/pane/executable/process membership drift는 입력 없이 거부한다. 별도 background group의 존재만으로는 단독 foreground 조건을 위반하지 않는다.
 
