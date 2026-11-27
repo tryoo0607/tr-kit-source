@@ -22,8 +22,8 @@
     },
     {
       "name": "Worktrunk 호출 준비의 자체 연결",
-      "before": [{"path": "common/base/skills/worktrunk/SKILL.md"}],
-      "after": [{"path": "common/base/skills/worktrunk/SKILL.md"}],
+      "before": [{"path": "common/base/skills/ext-worktrunk/SKILL.md"}],
+      "after": [{"path": "common/base/skills/ext-worktrunk/SKILL.md"}],
       "unmeasured": ["공식 설치 CLI의 요청별 help·실행 출력, repo/호스트의 적용 지침과 사용자 작업 데이터"]
     },
     {
@@ -31,13 +31,13 @@
       "before": [
         {"path": "common/base/skills/project/SKILL.md"},
         {"path": "common/base/skills/project/references/management.md", "section": "연결과 공간 준비"},
-        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/skills/ext-orca-cli/SKILL.md"},
         {"path": "common/base/references/external-connection.md"}
       ],
       "after": [
         {"path": "common/base/skills/project/SKILL.md"},
         {"path": "common/base/skills/project/references/management.md", "section": "연결과 공간 준비"},
-        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/skills/ext-orca-cli/SKILL.md"},
         {"path": "common/base/references/external-connection.md"}
       ],
       "unmeasured": ["project management의 공통 전제/결과 절, 실제 provider 선언·공식 Orca guide·명령 출력·환경 주입"]
@@ -46,12 +46,12 @@
       "name": "Orca 기존 공간 agent 실행의 자체 연결",
       "before": [
         {"path": "common/base/skills/session/SKILL.md"},
-        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/skills/ext-orca-cli/SKILL.md"},
         {"path": "common/base/references/external-connection.md"}
       ],
       "after": [
         {"path": "common/base/skills/session/SKILL.md"},
-        {"path": "common/base/skills/orca-cli/SKILL.md"},
+        {"path": "common/base/skills/ext-orca-cli/SKILL.md"},
         {"path": "common/base/references/external-connection.md"}
       ],
       "unmeasured": ["위임/인계 없는 직접 조작 경로만 선언. 실제 provider·Orca guide·명령 출력·호스트 및 승인 자료는 제외"]

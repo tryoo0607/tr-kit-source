@@ -20,7 +20,7 @@ metadata:
 ## 수행 방법과 절차
 
 1. 완성본을 재사용하고 필요한 표현만 다듬는다. 여러 도표는 각각의 의미·탐색을 유지한다. 새 도표가 필요하면 아래 담당에 실제 근거·독자·형식만 전달한다. 일반 파일 초안이면 여기서 외부 게시 경로를 시작하지 않는다.
-2. 현재 제품에 맞는 아래 adapter reference를 실제 kit root에서 읽는다. 두 제품 자료를 합치거나 공통 references/provider.md가 자동 생성된 것으로 가정하지 않는다. 자료/제품/게시 수단 부재는 파일을 보존하고 게시 미실행으로 알린다.
+2. 현재 제품에 맞는 아래 adapter reference를 실제 kit root에서 읽는다. 두 제품 자료를 합치거나 공통 references/external.md가 자동 생성된 것으로 가정하지 않는다. 자료/제품/게시 수단 부재는 파일을 보존하고 게시 미실행으로 알린다.
 3. 실제 전송할 파일·패키지를 확정하고 security-scan의 선택 산출물 전송 검사를 적용한다. Git index 검사만으로 untracked HTML을 검사했다고 말하지 않는다. 결과/파일이 바뀌면 같은 실제 전송 범위로 재검사하며 실패·불완전 검사를 성공으로 취급하지 않는다. 패키징이 파일 집합을 바꾸면 확장된 실제 payload도 대조한다.
 4. 적용 중인 호스트 고정 가드가 있으면 해당 규칙으로 docs.sync를 검사한다. capability 허용은 계정·내용·공유 범위의 승인이 아니다. DENY/실패를 다른 제품/호스트로 우회하지 않는다. 호스팅 인프라 변경은 별도 capability·승인 범위로 분리한다.
 5. adapter가 연결한 공식 수단으로 게시하고 실제 URL·배포 상태·접근 범위를 대조한다. 가능한 경우 핵심 렌더·탐색을 확인한다. 생성·저장·배포·계정 보호·로그인 화면 렌더는 각각 판정한다.
@@ -31,8 +31,8 @@ metadata:
 
 | 요청 | 선택 조건 | 읽을 reference |
 | --- | --- | --- |
-| 계정 전용 새 게시/기존 갱신 | 현재 제품이 Codex | `<kit-root>/adapters/codex/skills/artifact-publish/references/provider.md` |
-| 계정 전용 새 게시/기존 갱신 | 현재 제품이 Claude Code | `<kit-root>/adapters/claude/skills/artifact-publish/references/provider.md` |
+| 계정 전용 새 게시/기존 갱신 | 현재 제품이 Codex | `<kit-root>/adapters/codex/skills/artifact-publish/references/external.md` |
+| 계정 전용 새 게시/기존 갱신 | 현재 제품이 Claude Code | `<kit-root>/adapters/claude/skills/artifact-publish/references/external.md` |
 | 계정 전용 새 게시/기존 갱신 | 그 외 또는 제품 미확인 | 게시 보류·현재 지원 범위 보고 |
 
 ## 연계와 의존
@@ -41,7 +41,7 @@ metadata:
 | --- | --- | --- |
 | 위에서 선택한 제품 adapter | 완성본·제목·기존 URL/ID·제품·실제 kit root·계정/공유 범위. 결과는 실제 게시 URL/상태·접근/렌더 근거·미결 | 게시에 필수. 파일/도구/권한 부재·거부는 해당 게시 보류. 암묵 병합·임의 업로더 없음 |
 | [security-scan](../security-scan/SKILL.md)의 산출물 전송 검사 | 실제 최소 전송 폴더와 저장/공유 승인 범위. 결과는 현재 bytes의 pass/finding/unavailable와 검사 한계 | 전송 전 필수. 부재·실패 시 전송하지 않음. 검사 성공이 공유 허가를 대신하지 않음 |
-| [archify](../archify/SKILL.md) / [diagram-design](../diagram-design/SKILL.md) | 필요 시 실제 구조 또는 수치/업무 데이터·독자·형식 | 도표 추가/변경이 필요한 경우만. 기존 결과는 재생성하지 않으며 부재 시 해당 표현 미실행 |
+| [ext-archify](../ext-archify/SKILL.md) / [ext-diagram-design](../ext-diagram-design/SKILL.md) | 필요 시 실제 구조 또는 수치/업무 데이터·독자·형식 | 도표 추가/변경이 필요한 경우만. 기존 결과는 재생성하지 않으며 부재 시 해당 표현 미실행 |
 
 ## 제약과 주의점
 

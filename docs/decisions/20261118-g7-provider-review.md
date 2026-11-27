@@ -32,7 +32,7 @@ private/common/base/scripts/
 
 ## 실제 확인과 미결
 
-현재 명시 선언의 Context7 0.8.2와 Playwright CLI 0.1.22는 npm 공식 registry metadata·archive SRI·기존 lock을 대조했고, 설치 package 파일 10개/16개가 각각 archive 전체 파일과 일치했다. 전이 의존·Node/브라우저·native workflow는 이 대조로 완료되지 않았다. snapshot은 pending으로 유지했다. 상세 현재 지원/설치 경로는 [공식 연결 현황](../provider-status.md), 실제 시험은 verification.md에 연결한다.
+현재 명시 선언의 Context7 0.8.2와 Playwright CLI 0.1.22는 npm 공식 registry metadata·archive SRI·기존 lock을 대조했고, 설치 package 파일 10개/16개가 각각 archive 전체 파일과 일치했다. 전이 의존·Node/브라우저·native workflow는 이 대조로 완료되지 않았다. snapshot은 pending으로 유지했다. 상세 현재 지원/설치 경로는 [공식 연결 현황](../external-status.md), 실제 시험은 verification.md에 연결한다.
 
 private의 source-bundle-v1 계약은 G1 이전120파일에서 G1~G7의150파일 source로 검토해 갱신한다. 양 제품 각각 추가30·변경11·삭제0을 기록하고 G1~G6 검증과 새 provider 계약을 대조했다. exact inventory·추가 파일 거부·제품별 pin을 유지한다. 이 변경은 scratch 계약이며 호스트 config.common_root를 이관하지 않는다. native marketplace payload를 source bundle인 것처럼 수용하는 변경은 하지 않았다.
 

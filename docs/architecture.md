@@ -267,7 +267,7 @@ common/base/
 
 공통 source에 doc-coauthoring·github-readme-generator·archify·diagram-design·artifact-publish의 자체 SKILL.md5개를 추가했다. 기존 업무 owner와 공식 외부 설치본의 책임을 유지하고 common/base/references/external-connection.md를 재사용한다. 전체 자체 skill은44개다.
 
-게시의 공통 판단은 base에, Sites/native Artifact 차이는 adapters/{codex,claude}/skills/artifact-publish/references/provider.md에 둔다. 실제 제품으로 하나를 선택하며 reference 자동 합성/병합을 하지 않는다. assemble.py는 선택 제품의 자체 adapter/skills 경로만 보존한다.
+게시의 공통 판단은 base에, Sites/native Artifact 차이는 adapters/{codex,claude}/skills/artifact-publish/references/external.md에 둔다. 실제 제품으로 하나를 선택하며 reference 자동 합성/병합을 하지 않는다. assemble.py는 선택 제품의 자체 adapter/skills 경로만 보존한다.
 
 전송 검사 진입점 scripts/check-artifact-secrets.py는 security-scan이 소유한 references/artifacts.md로 연결하며 기존 common/base/scripts/secret_guard.py의 scan을 호출한다. 일반 payload의 비밀 검사와 kit 외부 원문 gate는 별개다. 파일 트리·수행 흐름·공식 참조·한계는 [5번 기록](decisions/20261117-migration-5.md)에 있다.
 
@@ -277,7 +277,7 @@ common/base/
 
 assets.py·git-excludes.py는 기존 자체 연결을 보완한 helper다. profile_config.py는 기존 profile-setup 규격의 순수 필드 검사를 공유하고 assets가 사용한다. 실제 sync 실행이나 소속/Git boundary 검증을 구현한 것은 아니다. 전역 제외/정확한 백업 예외는 profile-setup의 조건부 references/git-excludes.md가 소유한다.
 
-Wiki의 의미/승인은 공통, 공식 제품 entry 차이는 adapters/{codex,claude}/skills/wiki/references/provider.md에 둔다. 조회는 공식 read-only wiki-query, 관리만 해당 제품 wiki/wiki-manager에 연결한다. 기존 bundled records.py·외부 binding/원문/runtime은 가져오지 않는다. 파일 구조와 읽기/실행 흐름·미이관은 [6번 기록](decisions/20261117-migration-6.md)에 구분했다.
+Wiki의 의미/승인은 공통, 공식 제품 entry 차이는 adapters/{codex,claude}/skills/ext-wiki/references/external.md에 둔다. 조회는 공식 read-only wiki-query, 관리만 해당 제품 wiki/wiki-manager에 연결한다. 기존 bundled records.py·외부 binding/원문/runtime은 가져오지 않는다. 파일 구조와 읽기/실행 흐름·미이관은 [6번 기록](decisions/20261117-migration-6.md)에 구분했다.
 
 ### 7번 이관 당시 추가 구성
 
@@ -336,7 +336,7 @@ common/base/scripts (own)
   claude_mem ──실행──> 명시 Node/Bun + 선택 claude_bin → 공식 MCP/worker (종료)
 ```
 
-Claude-Mem은 schema2 binding의 두 review를 plan hash에 묶고 start/MCP 전에 재검사한다. 검수 부재/리소스 변동 시 신규 실행 전에 보류하며 기존 소유 worker의 stop은 별도 소유 검사로 유지한다. private common_links가 같은 공통 검사 CLI를 호출하며 구현을 복사하지 않는다. private source pin은 검토한150파일 source-bundle-v1이고 native 포장과 분리한다. 구조와 지원 현황·미결은 [G7 결정](decisions/20261118-g7-provider-review.md)과 [provider 현황](provider-status.md)에 연결한다.
+Claude-Mem은 schema2 binding의 두 review를 plan hash에 묶고 start/MCP 전에 재검사한다. 검수 부재/리소스 변동 시 신규 실행 전에 보류하며 기존 소유 worker의 stop은 별도 소유 검사로 유지한다. private common_links가 같은 공통 검사 CLI를 호출하며 구현을 복사하지 않는다. private source pin은 검토한150파일 source-bundle-v1이고 native 포장과 분리한다. 구조와 지원 현황·미결은 [G7 결정](decisions/20261118-g7-external-review.md)과 [provider 현황](external-status.md)에 연결한다.
 
 
 ### 명시 수동 예외 후 미조회 준비 계속 — 2026-11-24

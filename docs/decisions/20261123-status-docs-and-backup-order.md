@@ -11,7 +11,7 @@
 | architecture.md | private native 구현 설명과 ‘아직 미결’, 초기39/44/47개 트리와 ‘현재’ 표현이 혼재 | 현재 책임/남은 범위와 단계별 구조 이력 분리. 초기 트리·수치·미실행은 당시 기록으로 보존. private source/native 별도 계약과 실제 package/lifecycle 파일 배치 반영 |
 | requirements.md | R-02/R-06/R-07/R-12 등 반영 열에 후속 구현 전의 미실행/미구현이 현재처럼 남음 | 기존 요구 문장·ID를 보존하고 현재 근거와 잔여 범위 연결. R-14는 사용자 작성·검수 요청 이력으로 구분하며 전체 문안 승인을 새로 주장하지 않음. 공통 표 렌더링을 위해 동일 표 행을 연속 배치 |
 | verification.md | 여러 시점의 ‘현재 범위/최신’과 상단 최신 결과가 중첩 | 양쪽 문서에 현재 요약과 구분된 검증 이력 배치. 기존 결과·실패·수치·제한을 삭제하지 않으며 초기 ‘상단 표는 현재’ 표현만 당시 상태로 명확히 함 |
-| migration-status.md·provider-status.md | 과거 권장 순서와 당시 미구현 표가 현재 실행 대기처럼 보임 | 현재 후속 순서/근거와 이력 분리. BMAD 공식 수정본 보완·자동 update404 미지원·기존 운영 hook 차단을 구분. 원래 도입 구상/PTBMAF·Design Doc·Obsidian·NotebookLM 유지 |
+| migration-status.md·external-status.md | 과거 권장 순서와 당시 미구현 표가 현재 실행 대기처럼 보임 | 현재 후속 순서/근거와 이력 분리. BMAD 공식 수정본 보완·자동 update404 미지원·기존 운영 hook 차단을 구분. 원래 도입 구상/PTBMAF·Design Doc·Obsidian·NotebookLM 유지 |
 | private artifact-backup | SKILL과 연결된 transition reference 모두 ‘실패와 복구’가 ‘결과와 완료 판단’ 앞에 위치 | 두 파일의 해당 절 순서만 뒤바꿈. metadata·절별 내용·명령·보존/권한·보고 표·reference 경로 유지 |
 
 본문 보존과 현재 반영 위치의 상세는 개인 scratch의 `docs/decisions/20261123-backup-heading-order.md`에 연결한다. 상세 저작 기준을 docs에 복제하거나 새 실행 절차를 만들지 않았다.

@@ -33,7 +33,7 @@ Claude `/status`는 명령 전에 기존 `claude_permission` 문법으로 권한
 
 ### runtime 교체 뒤 현재 관리 helper 증명
 
-원래 배치의 runtime이 바뀌고 현재 호출자의 pane이 선택 대상과 같은 workspace에 있을 때만, native 대화가 아닌 자기 관리 Python helper를 별도로 증명할 수 있다. 명시 예외와 원래 native self의 보호를 먼저 적용하며, UUID가 없는 예외의 이동 가능성을 이 증명으로 무시하지 않는다. 후보 terminal 목록의 순서와 무관하게 첫 native 조회 전에 현재 self를 유일하게 찾고, 완전한 local list/ps·새 show/screen에서 fingerprint·접근·연결·대기 없음·draft 없음을 확인한다. 전체 ps의 관측된 `paneKey` 또는 `parentPaneKey`가 self와 연결된 agent/child가 없어야 한다. provider hint가 null이거나 화면이 비어 있다는 사실만으로는 충분하지 않으며, 실행 중인 helper에 빈 shell prompt가 보일 필요는 없다.
+원래 배치의 runtime이 바뀌고 현재 호출자의 pane이 선택 대상과 같은 workspace에 있을 때만, native 대화가 아닌 자기 관리 Python helper를 별도로 증명할 수 있다. 명시 예외와 원래 native self의 보호를 먼저 적용하며, UUID가 없는 예외의 이동 가능성을 이 증명으로 무시하지 않는다. 후보 terminal 목록의 순서와 무관하게 첫 native 조회 전에 현재 self를 유일하게 찾고, 완전한 local list/ps·새 show/screen에서 fingerprint·접근·연결·대기 없음·draft 없음을 확인한다. 전체 ps의 관측된 `paneKey` 또는 `parentPaneKey`가 self와 연결된 agent/child가 없어야 한다. 외부 연결 hint가 null이거나 화면이 비어 있다는 사실만으로는 충분하지 않으며, 실행 중인 helper에 빈 shell prompt가 보일 필요는 없다.
 
 독립 증거는 Linux `/proc/<pid>/stat`와 실행 파일 metadata다. 현재 Python3 실행 파일의 helper가 자기 process group의 leader이자 controlling TTY의 foreground group이어야 하고, 그 group에는 helper 하나만 있어야 한다. 직접 부모는 같은 계정·같은 TTY의 session leader인 system bash/zsh/dash 실행 파일이어야 한다. `/bin` 또는 `/usr/bin`의 해당 shell로 해석되는 root 소유·group/other 쓰기 불가 실행 파일만 지원하며 comm 표시로 shell을 판단하지 않는다. helper/부모 PID와 starttime·pgrp/sid/TTY/foreground 및 실행 파일 identity를 고정한다. stdin이 heredoc이어도 controlling TTY로 증명할 수 있지만, controlling TTY 없는 native agent tool subprocess·추가 foreground group 구성원·다른 부모·미지원 OS/shell·proc 권한 거부나 잘못된 자료는 보류한다. 스캔 중 사라진 다른 PID만 별도로 취급한다. 같은 TTY를 쓰는 별도 background group은 있을 수 있으며, foreground 소유 증명은 모든 background 작업 부재를 증명하지 않는다.
 
@@ -43,7 +43,7 @@ Claude `/status`는 명령 전에 기존 `claude_permission` 문법으로 권한
 
 관측 `terminal.agentIdentity`가 생략됐거나 명시적 null이고 complete local ps가 그 pane을 명시 Claude로 보고할 때만, signed 선택 행의 `restart/claude`·cwd·fingerprint에 한정해 기존 공식332 agents API와 Linux process proof를 얻을 수 있다. native 준비 전에는 선택 pane의 고유 API UUID를 발견하고, 준비된 행은 기존 UUID를 요구한다. query332·지원된 source319/329/332·pane/cwd/PID와 source 실행체를 검증하며, terminal/ps 원문은 바꾸지 않는다.
 
-고정 runtime/fingerprint/proof는 mutable target/row와 독립된 snapshot으로 유지한다. callback은 모든 full/passive guard와 status/모달 키의 durable 전후에서 fixed query/process를 로컬 재검사하고, terminal fingerprint에 고정된 immutable typed authority만 `eligible`에 전달한다. 이 authority와 ps의 명시 Claude가 함께 있어야 optional hint를 해석할 수 있다. 생략/null만으로 provider를 추론하지 않는다. 다른 명시 provider·증명 없는 생략/null·빈 문자열·manual/self/미선택·일반 refresh·Codex에는 적용하지 않는다. busy/draft/approval/child/mode 등 기존 가드는 그대로다. fresh native status는 API UUID/cwd와 process executable 버전까지 같아야 준비 결과로 저장하며, 같은 PID에서 `/clear` 등으로 UUID가 달라도 재기준화하지 않는다.
+고정 runtime/fingerprint/proof는 mutable target/row와 독립된 snapshot으로 유지한다. callback은 모든 full/passive guard와 status/모달 키의 durable 전후에서 fixed query/process를 로컬 재검사하고, terminal fingerprint에 고정된 immutable typed authority만 `eligible`에 전달한다. 이 authority와 ps의 명시 Claude가 함께 있어야 optional hint를 해석할 수 있다. 생략/null만으로 외부 연결을 추론하지 않는다. 다른 명시 외부 연결·증명 없는 생략/null·빈 문자열·manual/self/미선택·일반 refresh·Codex에는 적용하지 않는다. busy/draft/approval/child/mode 등 기존 가드는 그대로다. fresh native status는 API UUID/cwd와 process executable 버전까지 같아야 준비 결과로 저장하며, 같은 PID에서 `/clear` 등으로 UUID가 달라도 재기준화하지 않는다.
 
 정상 종료 뒤 원 PID authority는 새 process에 재사용하지 않는다. exact resume 뒤 fresh exact UUID/newPID/pinned332 proof를 얻은 경우에만 authority를 명시 재결합하며, 그 증명이 없으면 status 없이 중단한다. hint가 다시 Claude로 복원돼도 살아 있는 authority의 fixed process 재검사는 계속 적용한다. 이 지원은 native 권한/모드/flags를 늘리지 않는다.
 

@@ -22,19 +22,19 @@
 
 ### BMAD — 작업 정본
 
-- 현재 작업 상태·계획·요구·검증은 기존 BMAD 또는 이미 채택한 작업 정본에서 확인한다. 필요한 [BMAD 연결](../../../bmad/SKILL.md)에 진입하고 정확한 ticket/initiative/산출물을 전달한다.
+- 현재 작업 상태·계획·요구·검증은 기존 BMAD 또는 이미 채택한 작업 정본에서 확인한다. 필요한 [BMAD 연결](../../../ext-bmad/SKILL.md)에 진입하고 정확한 ticket/initiative/산출물을 전달한다.
 - 상태 조회를 build·재계획·새 initiative 생성으로 확대하지 않는다. 경험·Wiki와 다른 결과가 나오면 현재 정본·적용 시점·미결을 비교하며 동일 내용을 세 도구에 복제하지 않는다.
 
 ### Claude-Mem — 경험 후보와 상세
 
-- 경험 검색은 [mem-search](../../../mem-search/SKILL.md)를 통해 공식 설치본을 선택한다. 후보 search → 필요한 timeline → 선택 ID의 상세 순서와 실제 schema는 공식 skill이 소유한다. 대화/DB 전체 export나 worker 자동 시작을 하지 않는다.
+- 경험 검색은 [ext-mem-search](../../../ext-mem-search/SKILL.md)를 통해 공식 설치본을 선택한다. 후보 search → 필요한 timeline → 선택 ID의 상세 순서와 실제 schema는 공식 skill이 소유한다. 대화/DB 전체 export나 worker 자동 시작을 하지 않는다.
 - 사용자가 경험 저장을 요청한 경우만 현재 공식 save_memory 도구의 project/server·입력 schema·반환 ID를 확인한다. 실제 API가 sourceFingerprint를 지원하면 동일 요청 재전송에 같은 fingerprint를 재사용하고 정정은 새 근거로 구별한다. 미지원 필드를 만들어 넣지 않는다. 경험 관측을 확정 사실·작업 정본으로 승격하지 않는다.
 - worker 시작/업데이트/백업은 여기서 하지 않는다. 연결 부재면 검색·저장을 미실행으로 알리고 사용자가 제공한 기존 자료만 활용한다.
 - 별도로 MCP 준비·진단·worker 관리가 요청된 경우만 [Claude-Mem 실행기 연결](../../../../references/claude-mem.md)을 적용한다. 검색 연결과 수명 관리의 수행·완료를 구분한다.
 
 ### Wiki — 지식 조회와 변경
 
-- 명시 Wiki 업무는 [wiki](../../../wiki/SKILL.md)에 연결한다. 단순 읽기는 공식 wiki-query, 수집·compile·수정·점검 실행은 선택 제품의 공식 관리 skill로 나눈다. 원본 보관·ingest·compile·검증은 각각의 결과를 확인한다.
+- 명시 Wiki 업무는 [ext-wiki](../../../ext-wiki/SKILL.md)에 연결한다. 단순 읽기는 공식 wiki-query, 수집·compile·수정·점검 실행은 선택 제품의 공식 관리 skill로 나눈다. 원본 보관·ingest·compile·검증은 각각의 결과를 확인한다.
 - 조회 중 stale index를 발견해도 자동 재생성하거나 query log를 쓰지 않는다. 관리 기능에서 변경 효과가 필요하면 기존 승인과 대조한다.
 - 실제 hub/topic·자료 소속·공유 범위를 확인한다. 회사 자료를 개인 hub에 저장하거나 로컬 미색인을 NAS fallback으로 처리하지 않는다. 자동 capture·feedback·초기 맥락 주입·private adapter 활성화는 별도 설정 작업이며 이 연결로 켜지지 않는다.
 - 도구 부재 시 기존 허용 원본의 직접 조회와 미연결 상태를 제공한다. Wiki 정본을 대체하는 새 로컬 DB/카탈로그를 만들지 않는다.

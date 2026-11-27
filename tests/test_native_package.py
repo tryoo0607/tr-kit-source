@@ -42,14 +42,14 @@ class NativePackage(unittest.TestCase):
         for product in ('codex','claude'):
             out=self.build(product,name=product);report=package.verify(out,product)
             payload=Path(report['payload']);self.assertFalse(report['operational_ready']);self.assertFalse(report['mcp_registered'])
-            self.assertTrue((payload/'skills/mem-search/SKILL.md').is_file())
+            self.assertTrue((payload/'skills/ext-mem-search/SKILL.md').is_file())
             self.assertFalse((payload/'common').exists())
             self.assertFalse((payload/'adapters').exists())
             self.assertFalse((payload/'CLAUDE.md').exists())
             self.assertFalse((payload/'.mcp.json').exists())
             self.assertTrue((payload/'scripts/mcp'/product).is_dir())
-            wiki = payload/'skills/wiki/SKILL.md'
-            link = f'../../references/products/{product}/skills/wiki/references/provider.md'
+            wiki = payload/'skills/ext-wiki/SKILL.md'
+            link = f'../../references/products/{product}/skills/ext-wiki/references/external.md'
             self.assertIn(link, wiki.read_text())
             self.assertTrue((wiki.parent/link).is_file())
 
@@ -69,7 +69,7 @@ class NativePackage(unittest.TestCase):
                 manifest = '.codex-plugin' if product == 'codex' else '.claude-plugin'
                 self.assertEqual({p.name for p in payload.iterdir() if p.is_dir()},
                                  {manifest, 'skills', 'references', 'hooks', 'scripts'})
-                self.assertTrue((payload/'skills/wiki/SKILL.md').is_file())
+                self.assertTrue((payload/'skills/ext-wiki/SKILL.md').is_file())
                 self.assertTrue((payload/'INSTALL.md').is_file())
                 readme = (output/'README.md').read_text()
                 install = 'add' if product == 'codex' else 'install'
