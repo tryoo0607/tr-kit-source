@@ -2,12 +2,16 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 
 from provider_links import LinkError, resolve
 
 MAX_FILES = 8192
 MAX_BYTES = 256 * 1024 * 1024
+MAX_RELEASE_BYTES = 1024 * 1024 * 1024
+LAYOUTS = ('directory', 'standalone-cli', 'appimage')
 METHODS = ('native-plugin', 'system-skill', 'npm', 'uv', 'official-release', 'skills-cli')
 
 
@@ -32,29 +36,60 @@ def bounded(path, limit=4_000_000):
     return data
 
 
-def tree(path):
-    """Record every regular file. Never follow links or silently omit resources."""
+def file_record(item, root, limit):
+    fd = os.open(item, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+            raise LinkError('installation exceeds review limits')
+        remaining = before.st_size
+        pin = hashlib.sha256()
+        while remaining:
+            chunk = stream.read(min(remaining, 1024 * 1024))
+            if not chunk:
+                raise LinkError('installation changed during review')
+            pin.update(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(stream.fileno())
+        signature = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        if stream.read(1) or signature(before) != signature(after) or signature(after) != signature(item.lstat()):
+            raise LinkError('installation changed during review')
+    return {'path': str(item.relative_to(root)), 'size': before.st_size, 'sha256': pin.hexdigest()}
+
+
+def tree(path, layout='directory', entry=None):
+    """Inventory a reviewed installation, including bounded internal AppImage links."""
     path = canonical(path)
     if not path.is_dir():
         raise LinkError('installation directory required')
+    if layout == 'standalone-cli':
+        if entry is None or entry.parent != path:
+            raise LinkError('standalone CLI must be in the declared installation directory')
+        return [file_record(entry, path, 64_000_000)]
+    byte_limit = MAX_RELEASE_BYTES if layout == 'appimage' else MAX_BYTES
+    file_limit = byte_limit if layout == 'appimage' else 64_000_000
     result = []
     total = nodes = 0
     for item in sorted(path.rglob('*')):
         nodes += 1
-        if nodes > MAX_FILES * 2 or item.is_symlink():
+        if nodes > MAX_FILES * 2:
             raise LinkError('unsupported installation tree')
+        if item.is_symlink():
+            target = os.readlink(item)
+            lexical_target = Path(os.path.normpath(item.parent / target))
+            if (layout != 'appimage' or Path(target).is_absolute()
+                    or not lexical_target.is_relative_to(path)
+                    or not item.resolve(strict=True).is_relative_to(path) or len(result) >= MAX_FILES):
+                raise LinkError('unsupported installation link')
+            result.append({'path': str(item.relative_to(path)), 'symlink': target})
+            continue
         if item.is_dir():
             continue
         if not item.is_file() or len(result) >= MAX_FILES:
             raise LinkError('unsupported installation node')
-        size = item.stat().st_size
-        if size > 64_000_000 or total + size > MAX_BYTES:
-            raise LinkError('installation exceeds review limits')
-        data = item.read_bytes()
-        if len(data) != size:
-            raise LinkError('installation changed during review')
-        total += size
-        result.append({'path': str(item.relative_to(path)), 'size': size, 'sha256': digest(data)})
+        record = file_record(item, path, min(file_limit, byte_limit - total))
+        total += record['size']
+        result.append(record)
     if not result:
         raise LinkError('empty installation')
     return result
@@ -64,7 +99,7 @@ def identity(entry):
     return {k: entry[k] for k in ('id', 'kind', 'entry', 'sha256', 'version')}
 
 
-def snapshot(root, declaration, product, provider_id, kind, installation, method, source, evidence):
+def snapshot(root, declaration, product, provider_id, kind, installation, method, source, evidence, layout='directory'):
     selected = resolve(root, declaration, product, provider_id, kind)
     installation = canonical(installation)
     root = Path(root).resolve(strict=True)
@@ -72,18 +107,27 @@ def snapshot(root, declaration, product, provider_id, kind, installation, method
         raise LinkError('external installation must contain selected entry')
     if method not in METHODS or not source.startswith('https://') or not evidence:
         raise LinkError('explicit official source, method and installation evidence required')
+    if layout not in LAYOUTS or (layout != 'directory' and (kind, method) != ('cli', 'official-release')):
+        raise LinkError('explicit release CLI layout required')
     receipts = []
     for p in evidence:
         p = canonical(p)
         if p == root or root in p.parents or str(p) in [x['path'] for x in receipts]:
             raise LinkError('distinct external installation evidence required')
         receipts.append({'path': str(p), 'sha256': digest(bounded(p))})
-    files = tree(installation)
+    entry = Path(selected['entry'])
+    files = tree(installation, layout, entry)
+    if not any(record['path'] == str(entry.relative_to(installation))
+               and record.get('sha256') == selected['sha256'] for record in files):
+        raise LinkError('review inventory does not contain pinned entry')
     # Recheck identity and resource bytes. This is drift detection, not OS locking.
-    if resolve(root, declaration, product, provider_id, kind) != selected or tree(installation) != files:
+    if resolve(root, declaration, product, provider_id, kind) != selected or tree(installation, layout, entry) != files:
         raise LinkError('installation changed during review')
+    install = {'root': str(installation), 'method': method, 'source': source}
+    if layout != 'directory':
+        install['layout'] = layout
     return {'schema_version': 1, 'provider': identity(selected),
-            'installation': {'root': str(installation), 'method': method, 'source': source},
+            'installation': install,
             'files': files, 'evidence': receipts, 'review_status': 'pending',
             'products': {product: {'status': 'unverified', 'basis': ''}},
             'unresolved': ['Review official installation evidence, required external resources and product contract.']}
@@ -106,9 +150,12 @@ def read_review(path):
                 value['status'] not in ('unverified', 'supported', 'unsupported') or not isinstance(value['basis'], str)):
             raise LinkError('invalid product review')
     install = doc['installation']
-    if (not isinstance(install, dict) or set(install) != {'root', 'method', 'source'} or
+    if (not isinstance(install, dict) or set(install) - {'layout'} != {'root', 'method', 'source'} or
             install['method'] not in METHODS or not isinstance(install['source'], str) or not install['source'].startswith('https://')):
         raise LinkError('invalid installation identity')
+    layout = install.get('layout', 'directory')
+    if layout not in LAYOUTS:
+        raise LinkError('invalid installation layout')
     canonical(install['root'])
     if not isinstance(doc['provider'], dict) or set(doc['provider']) != {'id', 'kind', 'entry', 'sha256', 'version'}:
         raise LinkError('invalid provider identity')
@@ -116,16 +163,21 @@ def read_review(path):
         raise LinkError('invalid closure')
     paths = []
     for item in doc['files']:
-        if not isinstance(item, dict) or set(item) != {'path', 'size', 'sha256'}:
+        if not isinstance(item, dict) or set(item) not in ({'path', 'size', 'sha256'}, {'path', 'symlink'}):
             raise LinkError('invalid closure entry')
         p = Path(item['path'])
         if p.is_absolute() or '..' in p.parts or not p.parts or str(p) != item['path'] or item['path'] in paths:
             raise LinkError('invalid closure path')
-        if type(item['size']) is not int or not 0 <= item['size'] <= 64_000_000:
+        paths.append(item['path'])
+        if 'symlink' in item:
+            if layout != 'appimage' or not isinstance(item['symlink'], str) or not item['symlink'] or Path(item['symlink']).is_absolute():
+                raise LinkError('invalid closure link')
+            continue
+        file_limit = MAX_RELEASE_BYTES if layout == 'appimage' else 64_000_000
+        if type(item['size']) is not int or not 0 <= item['size'] <= file_limit:
             raise LinkError('invalid closure size')
         if not isinstance(item['sha256'], str) or len(item['sha256']) != 64 or any(c not in '0123456789abcdef' for c in item['sha256']):
             raise LinkError('invalid closure pin')
-        paths.append(item['path'])
     if not isinstance(doc['evidence'], list) or not doc['evidence']:
         raise LinkError('installation evidence missing')
     for item in doc['evidence']:
@@ -145,7 +197,7 @@ def verify(root, declaration, product, provider_id, kind, review):
         raise LinkError('official installation or product resources remain unreviewed')
     current = snapshot(root, declaration, product, provider_id, kind,
                        doc['installation']['root'], doc['installation']['method'], doc['installation']['source'],
-                       [x['path'] for x in doc['evidence']])
+                       [x['path'] for x in doc['evidence']], doc['installation'].get('layout', 'directory'))
     if current['files'] != doc['files'] or current['evidence'] != doc['evidence']:
         raise LinkError('installation resources or evidence changed; review update')
     return {'status': 'review-record-verified', 'id': provider_id, 'product': product,
@@ -184,6 +236,7 @@ def main(argv=None):
             p.add_argument('--review', type=Path, required=True)
         else:
             p.add_argument('--installation', type=Path, required=True)
+            p.add_argument('--layout', choices=LAYOUTS, default='directory')
             p.add_argument('--method', choices=METHODS, required=True)
             p.add_argument('--source', required=True)
             p.add_argument('--evidence', type=Path, action='append', required=True)
@@ -197,7 +250,8 @@ def main(argv=None):
         elif a.action == 'verify':
             result = verify(a.root, a.declaration, a.product, a.id, a.kind, a.review)
         else:
-            result = snapshot(a.root, a.declaration, a.product, a.id, a.kind, a.installation, a.method, a.source, a.evidence)
+            result = snapshot(a.root, a.declaration, a.product, a.id, a.kind, a.installation, a.method, a.source,
+                              a.evidence, a.layout)
     except Exception:
         print(json.dumps({'status': 'unavailable', 'message': 'selected installation review is incomplete'}))
         return 2

@@ -108,6 +108,27 @@ class Review(unittest.TestCase):
         with mock.patch.object(review, 'MAX_BYTES', 1):
             with self.assertRaises(ValueError): self.snapshot()
 
+    def test_release_cli_layouts_verify_and_reject_drift(self):
+        self.provider['kind'] = 'cli'
+        self.declaration.write_text(json.dumps({'version': 1, 'providers': [self.provider]}))
+        for layout in ('standalone-cli', 'appimage'):
+            with self.subTest(layout=layout):
+                link = self.install / 'alias'
+                if layout == 'appimage':
+                    link.symlink_to(self.resource.name)
+                doc = review.snapshot(self.kit, self.declaration, 'codex', 'example', 'cli', self.install,
+                                      'official-release', 'https://example.invalid/release', [self.receipt], layout)
+                self.assertEqual(1 if layout == 'standalone-cli' else 3, len(doc['files']))
+                doc.update(review_status='reviewed', unresolved=[],
+                           products={'codex': {'status': 'supported', 'basis': 'Synthetic fixture.'}})
+                self.path.write_text(json.dumps(doc))
+                review.verify(self.kit, self.declaration, 'codex', 'example', 'cli', self.path)
+                if layout == 'appimage':
+                    link.unlink()
+                    link.symlink_to('../' + self.receipt.name)
+                    with self.assertRaisesRegex(ValueError, 'unsupported installation link'):
+                        review.verify(self.kit, self.declaration, 'codex', 'example', 'cli', self.path)
+
     def test_own_root_and_unrelated_installation_rejected(self):
         for path in (self.kit, self.base / 'missing'):
             with self.assertRaises(ValueError):

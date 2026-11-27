@@ -35,7 +35,7 @@
 
 ### 스킬 이름
 
-설치본의 `ext-*` 스킬은 외부 기능의 연결을 담당한다. `session`, `document`, `security-scan` 같은 자체 업무 스킬은 업무 이름을 사용한다. 호스트 설정의 `providers`, `provider_reviews` 키와 공식 외부 기능 ID는 기존 값을 사용한다.
+설치본의 `ext-*`는 외부 기능에 수행을 연결하는 **wrapping 스킬**이다. **kit 자체스킬**은 업무 이름을 쓰고, 필요한 단계에서 wrapping 스킬을 호출할 수 있다. 호스트 설정의 `providers`, `provider_reviews` 키와 공식 외부 기능 ID는 기존 값을 사용한다.
 
 ### 대화 단축 입력
 
