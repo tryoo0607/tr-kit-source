@@ -1,0 +1,26 @@
+# {{NAME}}
+
+{{PRODUCT}}용 tr-kit 플러그인입니다. 작업 지침, 에이전트 스킬, 세션 관리 절차를 제공합니다.
+
+## 설치
+
+{{PRODUCT}} CLI가 설치된 터미널에서 마켓플레이스를 등록하고 플러그인을 설치합니다.
+
+```sh
+{{REGISTER}}
+{{INSTALL}}
+```
+
+설치 목록에 `{{NAME}}@{{NAME}}` 항목이 있는지 확인합니다.
+
+```sh
+{{LIST}}
+```
+
+## 사용 준비
+
+가드가 포함된 배포본은 호스트의 runtime 설정, 원문 보호 설정과 Gitleaks가 필요합니다. [설치 및 가드 설정 안내](plugins/{{NAME}}/INSTALL.md#호스트-runtime-연결)를 따라 설정과 훅 신뢰 상태를 확인한 뒤 새 세션을 엽니다.
+
+## 소스와 배포
+
+[tr-kit-source](https://github.com/tryoo0607/tr-kit-source)가 편집 원본입니다. 수정은 소스 저장소에서 진행하고, `main`에 반영되면 CI가 이 설치본을 갱신합니다. 설치 파일은 [plugins/{{NAME}}](plugins/{{NAME}}/)에 있고 현재 패키지 버전은 [release.json](release.json)에 기록됩니다.

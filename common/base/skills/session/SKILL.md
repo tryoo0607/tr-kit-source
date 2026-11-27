@@ -19,7 +19,7 @@ description: 세션 재개, 재시작 목록·선택 복원과 세션 보존을 
 
 | 요청 | 선택 조건 | 읽을 reference |
 |---|---|---|
-| 재시작 목록 준비·조회, 선택 재시작·복원·검증 또는 세션 보존을 포함한 native CLI 업데이트 연결 | 해당 요청이 포함됨 | [session-restart.md](references/session-restart.md) |
+| 재시작 목록 준비·조회, 선택 재시작·복원·검증 또는 세션 보존을 포함한 native CLI 업데이트 연결 | 해당 요청 또는 `tr:save`, `tr:restore` | [session-restart.md](references/session-restart.md) |
 | 같은 작업의 세션 전환·재개 또는 이전 대화 원문 조회 | 진단을 요청한 재개 실패가 아님 | [continuity.md](references/continuity.md) |
 | 다른 세션, 에이전트, 사람에게 작업 위임 | 해당 요청이 포함됨 | [delegation.md](references/delegation.md) |
 | 열린 세션 플러그인 반영 조회, 보류 목록 또는 갱신 | 해당 요청이 포함됨 | [runtime-refresh.md](references/runtime-refresh.md) |

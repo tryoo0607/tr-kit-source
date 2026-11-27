@@ -12,6 +12,11 @@
 
 ## 수행 방법과 절차
 
+### 단축 입력
+
+- `tr:save`는 현재 호스트에서 후보를 확인하고 사용자에게 기록할 세션과 예외를 선택받는다. 이미 명확히 고른 대상이 있으면 그 선택을 사용한다. 아래 `prepare`가 반환한 배치 ID와 준비 결과를 공유한다. 이 입력의 범위는 준비와 기록까지다.
+- `tr:restore`는 먼저 `list`로 저장된 배치와 각 행의 `targetId`를 조회한다. 사용자가 배치와 복원할 세션을 지정하면 `restore --batch <UUID> --target <targetId>`를 사용한다. 여러 세션은 `--target`을 반복한다. 배치 전체를 명시적으로 선택한 경우에만 `--target`을 생략한다. 대상 선택이 비어 있거나 모호하면 목록과 함께 선택을 요청한다. 실행과 검증은 아래 기존 복원 절차를 따른다. 미선택 pane에 입력해야만 같은 workspace의 세션 신원을 구분할 수 있으면 복원을 보류한다.
+
 1. 현재 skill의 `scripts/session_restart.py`를 Python 3으로 실행한다. `prepare --target <handle> [--target <handle> ...] [--exclude <handle> ...]`는 선택 목록·예외와 호출자의 native 세션을 먼저 저장하고, 안전한 선택 대상에만 새 `/status`를 보내 UUID/cwd/권한을 채운다. `/exit`·resume은 보내지 않는다. 명시 예외와 self는 상태 입력도 받지 않는다. 관리용 shell은 native 수동 재시작 대상으로 표시하지 않는다. 준비 중 첫 실패 뒤 나머지 상태 입력도 멈춘다.
 2. 출력 `batchId`를 보존한다. `list [--batch <UUID>]`는 runtime 또는 대화를 열지 않고 저장 목록을 읽는다. 기록이 없으면 빈 목록이며 디렉터리·key를 만들지 않는다. 준비된 UUID, ready/deferred 및 수동 대상의 host/workspace/provider/tab/leaf/가능한 sessionId/사유를 확인한다. 예외의 UUID가 불명이면 null을 유지하고 추측하지 않는다. 업데이트 전에 전체 선택과 UUID가 보존된 배치를 확보하고 미확인 대상을 해소하거나 명시 예외로 둔다.
 3. native CLI 업데이트가 승인된 경우에만 아래 제품 관리자 연결을 적용한다. 준비한 batchId/UUID/예외를 보존하고, 대상 호스트의 실제 실행 파일·버전·설치 방식·계정·채널을 확인해 같은 공식 관리자와 승인 범위를 사용한다. 이미 승인된 대상·효과는 다시 묻지 않으며, 목록 준비나 Orca 업데이트 요청만으로 native CLI 자동 업데이트를 시작하지 않는다. 실행 중인 기존 세션을 종료하거나 config·계정·권한을 바꿔 설치를 통과시키지 않는다. 설치 뒤 실제 실행 버전과 원 workspace의 소유 resume canary를 확인하고, 설치 성공과 기존 세션의 실행 버전·재개 성공을 구분한다. 이 Python helper는 제품 설치를 실행하지 않는다.

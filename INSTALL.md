@@ -33,6 +33,12 @@
 - Claude: [공식 plugin CLI](https://code.claude.com/docs/en/plugins/cli-reference)의 `plugin marketplace add <package>`, `plugin install tr-claude@tr-claude --scope user`를 따른다. 제거 시 `plugin uninstall ... --scope user --keep-data`로 data 보존을 명시한다. marketplace 제거와 runtime/data 제거는 다르다.
 - 설치/갱신한 파일·등록 상태, hook trust, 새 세션의 초기 지침·실제 native callback/차단과 공식 업무 실행은 별도로 확인한다. root CLAUDE.md/AGENTS.md 파일 존재를 초기 주입 근거로 사용하지 않는다.
 
+### 대화 단축 입력
+
+플러그인의 SessionStart 지침을 받은 대화에서 `tr:now`, `tr:short`, `tr:save`, `tr:restore`를 일반 메시지로 보낸다. 작업 중 `tr:now`를 보낼 때는 클라이언트가 현재 작업에 메시지를 전달하는 방식으로 보낸다. 대기열로 보낸 입력은 현재 작업이 끝난 뒤 처리될 수 있다.
+
+`tr:ask`나 “이 흐름을 같이 논의하자”로 Ask me를 시작할 수 있다. 질문과 답을 주고받으며 시나리오와 전체 흐름을 갱신하고, 시작과 종료를 각각 한 줄로 알린다. 사용하려면 현재 제품에 Matt Pocock의 `grilling` provider가 연결되어 있어야 한다.
+
 ## 이번 G5의 격리 실행기
 
 `scripts/plugin-lifecycle.py`는 새 임시 prefix의 독립 home/제품 설정만 관리한다. 기존 사용자 home/config에 설치하는 기능이 아니다. `install/update/remove/rollback`의 기본 동작은 계획 출력이다. 현재 package/CLI/receipt 파일·hash만 조회하며 scanner·native CLI 실행이나 임시 파일 생성은 하지 않는다. 계획에는 비밀 검사가 미실행임을 표시한다. 실제 실행은 `--apply --expect-plan <plan_id>`로 한정하고, prefix 생성/설정 변경 전에 Gitleaks를 반드시 실행한다. 검사 실패를 정적 확인으로 대체하지 않는다.

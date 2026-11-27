@@ -243,6 +243,18 @@ class RuntimeRefreshTests(unittest.TestCase):
                 self.assertEqual(reason, report['targets'][1]['reason'])
                 self.assertEqual([], client.sent)
 
+    def test_inspect_reports_invalid_program_status_without_raw_value(self):
+        for value, actual in ((None, 'null'), ('PRIVATE_VALUE', 'non-object')):
+            with self.subTest(actual=actual):
+                client = Fake()
+                client.agents[1]['programStatus'] = value
+                row = m.inspect(client, self.self_pane)['targets'][1]
+                self.assertEqual('invalid-json-shape', row['reason'])
+                self.assertEqual('programStatus', row['diagnostic']['field'])
+                self.assertEqual(actual, row['diagnostic']['actual'])
+                self.assertNotIn('PRIVATE_VALUE', json.dumps(row))
+                self.assertEqual([], client.sent)
+
     def test_explicit_unique_selection_only(self):
         for selected in ([], ['term_target', 'term_target'], ['term_self'], ['missing']):
             with self.assertRaises(m.Deferred):
@@ -1573,6 +1585,11 @@ class RuntimeRefreshTests(unittest.TestCase):
                 result=m.apply(client,plan,self.self_pane,directory)
                 self.assertTrue(result.get('stopped'),result)
                 self.assertFalse(any(a[a.index('--text')+1]=='/reload-plugins' for a in client.sent))
+                if body == good+'\n  ◐ medium · /effort':
+                    self.assertEqual({
+                        'stage': 'plugin-list', 'line': 2,
+                        'expected': 'plugin row or recognized footer', 'actual': 'unrecognized line',
+                    }, result['diagnostic'])
         ambiguous=dict(self.installation,plugins=[self.installation['plugins'][0],dict(self.installation['plugins'][0],scope='project')])
         with self.assertRaisesRegex(m.Deferred,'ambiguous'):
             m.claude_plugin_listing(good,ambiguous)

@@ -166,5 +166,9 @@
   {
     "url": "https://raw.githubusercontent.com/nvk/llm-wiki/d60674ff785e5c6d35322657d7839a7c0bdd3ca7/plugins/llm-wiki/skills/wiki-query/SKILL.md",
     "sha256": "d0c64afbe70e752548adf014a59c9e9977d8bce07df4a7d4510fd0ad0438a6e3"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/blader/humanizer/a32f24407364c74c812b43c15926d638bee1e072/SKILL.md",
+    "sha256": "3013910ef5433dab12f0d2b86d9cf9e3421a253ef986518a68ef07aa29629bdc"
   }
 ]
