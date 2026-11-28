@@ -31,7 +31,7 @@
 
 - Codex: [공식 패키징 문서](https://developers.openai.com/plugins/build/plugins)와 현재 `codex plugin --help`를 따른다. `plugin marketplace add <package>` 후 `plugin add tr-codex@tr-codex`; 제거는 `plugin remove tr-codex@tr-codex`와 해당 `plugin marketplace remove tr-codex`다. hook trust는 native UI에서 검토한다. 신뢰 DB 편집·Trust all 자동 수행은 하지 않는다.
 - Claude: [공식 plugin CLI](https://code.claude.com/docs/en/plugins/cli-reference)의 `plugin marketplace add <package>`, `plugin install tr-claude@tr-claude --scope user`를 따른다. 제거 시 `plugin uninstall ... --scope user --keep-data`로 data 보존을 명시한다. marketplace 제거와 runtime/data 제거는 다르다.
-- 설치/갱신한 파일·등록 상태, hook trust, 새 세션의 초기 지침·실제 native callback/차단과 공식 업무 실행은 별도로 확인한다. root CLAUDE.md/AGENTS.md 파일 존재를 초기 주입 근거로 사용하지 않는다.
+- 설치/갱신한 파일·등록 상태, hook trust, 새 세션의 초기 지침·실제 native callback/차단과 공식 업무 실행은 별도로 확인한다. Codex 설치 뒤 세션을 재시작하기 전 [훅 승인 확인](common/base/skills/session/references/runtime-refresh.md#codex-훅-승인-확인)을 실행한다. root CLAUDE.md/AGENTS.md 파일 존재를 초기 주입 근거로 사용하지 않는다.
 
 ### 스킬 이름
 

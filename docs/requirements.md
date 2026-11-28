@@ -67,5 +67,6 @@
 | R-59 | PTBMAF를 착수 여부와 지속 기준의 판단 근거 정리에 적용하고, 다시 쓸 근거는 기존 프로젝트 문서에 남겨 새 관측으로 갱신 | 2026-11-27 사용자 진행 승인 | [PTBMAF 스킬](../common/base/skills/ptbmaf/SKILL.md). 재검토에 필요한 질문·근거·판단·조건을 보관하고, 간단한 판단은 대화로 끝낼 수 있다. |
 | R-60 | `tr:poc`로 기술 조사, 합의 범위의 실측, 채택 판단용 보고를 연결하고 기존 실측 보고 요청은 보고 단계로 진입 | 2026-11-27 사용자 진행 승인과 단축 입력 범위 정정 | [기술 PoC](../common/base/skills/poc/SKILL.md) · [보고서 작성 연결](../common/base/skills/ext-write-design-docs/SKILL.md). 기존 보고서를 우선 갱신하고 관측·미확인·권고를 구분한다. |
 | R-61 | Git guard 등록은 같은 Git common dir에 연결하고 실제 커밋·푸시를 호출한 worktree의 범위만 검사 | 2026-11-27 사용자 진행 승인 | [Git guard 등록과 갱신](../common/base/skills/security-scan/references/gitleaks.md#등록상태복귀). 기존 훅의 argv·stdin과 실패를 유지하고 별도 훅 경로나 등록 범위 밖 저장소를 검사 완료로 보고하지 않는다. |
+| R-62 | 공식 관리형 Orca 서버 설치를 검수하고 Codex의 공개 플러그인 훅 승인 대기를 세션 재시작 전에 식별 | public 0.8.12 호스트 재시작에서 확인한 장애와 2026-11-28 사용자 수정 요청 | [Orca 설치본 검수](../common/base/references/external-review.md#기록과-재검수) · [Codex 훅 승인 확인](../common/base/skills/session/references/runtime-refresh.md#codex-훅-승인-확인). [검증 상태](verification.md#public-세션-재시작-사전-검수--2026-11-28) |
 
 번호는 이 작업 공간의 추적용이다. 요구 추가·정정 시 기존 번호를 다른 의미로 재사용하지 않는다. 미작성·미구현·미검증을 완료로 처리하지 않는다. 상세 기준 본문은 담당 지침 한 곳에서 관리한다.

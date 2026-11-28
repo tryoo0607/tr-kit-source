@@ -344,7 +344,8 @@ def target_from(client, item, ps, self_pane, *, selected_row=None):
     verified = rr.native_provider_check(client, target, t)
     rr.eligible(t, frame, ps, self_pane, True, tui_idle=True, verified_provider=verified)
     target['installation'] = rr.plugin_inventory(provider, t['worktreePath'])
-    rr.installation_guard(target)
+    installation = rr.installation_guard(target)
+    rr.codex_hook_readiness(installation)
     return target
 
 
@@ -1534,6 +1535,8 @@ def execute(client, store, batch_id, self_pane, mode, *, target_ids=()):
                                     else found[0]['installation'])
                     if installation.get('state') != 'observed':
                         raise Deferred('installed-versions-unverified')
+                    if found is None:
+                        rr.codex_hook_readiness(installation)
                     command = rr.resume_command(row['provider'], native,
                                                 installed_version=installation.get('nativeVersion'))
                     if found is not None and row['provider'] == 'claude':

@@ -166,6 +166,58 @@ class Review(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'launcher target changed'):
                 connection.checked_entry()
 
+    def test_managed_orca_requires_reviewed_launcher_node_and_server_tree(self):
+        cli = self.install / 'out/cli/index.js'
+        cli.parent.mkdir(parents=True)
+        cli.write_text('// synthetic Orca CLI')
+        launcher = self.base / 'profile/cli/bin/orca'
+        node = self.base / 'runtimes/node-fixture/bin/node'
+        for path in (launcher, node):
+            path.parent.mkdir(parents=True)
+        node.write_text('#!/bin/sh\nprintf "%s\\n" "$ORCA_USER_DATA_PATH" "${NODE_OPTIONS-}" "$@"\n')
+        scenario = ('#!/usr/bin/env sh\nset -eu\n'
+                    f"export ORCA_USER_DATA_PATH='{launcher.parents[2]}'\n"
+                    'unset NODE_OPTIONS NODE_REPL_EXTERNAL_MODULE ELECTRON_RUN_AS_NODE\n'
+                    f"exec '{node}' '{cli}' \"$@\"\n")
+        launcher.write_text(scenario)
+        for path in (launcher, node):
+            path.chmod(0o700)
+        self.declaration.write_text(json.dumps({'version': 1, 'providers': [{
+            **self.provider, 'id': 'orca-cli', 'kind': 'cli', 'entry': str(cli),
+            'sha256': review.digest(cli.read_bytes())}]}))
+        binding = self.base / review.ORCA_SERVER_BINDING
+
+        def snapshot():
+            binding.write_text(json.dumps({
+                'launcher': str(launcher), 'launcher_sha256': review.digest(launcher.read_bytes()),
+                'node': str(node), 'node_sha256': review.digest(node.read_bytes())}))
+            return review.snapshot(self.kit, self.declaration, 'claude', 'orca-cli', 'cli', self.install,
+                                   'official-release', 'https://example.invalid/orca', [binding, self.receipt],
+                                   review.ORCA_SERVER_LAYOUT)
+
+        doc = snapshot()
+        doc.update(review_status='reviewed', unresolved=[],
+                   products={'claude': {'status': 'supported', 'basis': 'Synthetic fixture.'}})
+        self.path.write_text(json.dumps(doc))
+        config = {'providers': str(self.declaration), 'provider_reviews': {'orca-cli': str(self.path)}}
+        with mock.patch.object(orca_connection, 'ROOT', self.kit), \
+                mock.patch.object(orca_connection.runtime_config, 'load', return_value=(None, config)):
+            connection = orca_connection.OrcaConnection(str(launcher), 'claude')
+            self.assertEqual(str(launcher), connection.checked_entry())
+            launched = subprocess.run([connection.checked_entry(), 'status', '--json'], check=True,
+                                      capture_output=True, text=True, env={'PATH': '/usr/bin:/bin',
+                                                                          'NODE_OPTIONS': 'fixture override'})
+            self.assertEqual([str(launcher.parents[2]), '', str(cli), 'status', '--json'], launched.stdout.splitlines())
+            node.write_text('replacement runtime')
+            with self.assertRaisesRegex(ValueError, 'launcher or Node changed'):
+                connection.checked_entry()
+            with self.assertRaisesRegex(ValueError, 'launcher or Node changed'):
+                orca_connection.OrcaConnection(str(launcher), 'claude')
+
+        launcher.write_text(scenario.replace(str(cli), str(self.resource)))
+        with self.assertRaisesRegex(ValueError, 'does not bind reviewed Node and CLI'):
+            snapshot()
+
     def test_cli_package_tracks_nested_binary_and_internal_links(self):
         self.provider['kind'] = 'cli'
         self.declaration.write_text(json.dumps({'version': 1, 'providers': [self.provider]}))

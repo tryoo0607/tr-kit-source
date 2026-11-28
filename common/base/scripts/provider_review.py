@@ -16,10 +16,12 @@ MAX_PACKAGE_FILES = 32768
 MAX_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_REVIEW_BYTES = 12 * 1024 * 1024
 LAYOUT_METHODS = {'standalone-cli': ('official-release',), 'appimage': ('official-release',),
-                  'cli-package': ('npm', 'uv')}
+                  'cli-package': ('npm', 'uv'), 'orca-managed-server': ('official-release',)}
 LAYOUTS = ('directory', *LAYOUT_METHODS)
-INTERNAL_LINK_LAYOUTS = ('appimage', 'cli-package')
+INTERNAL_LINK_LAYOUTS = ('appimage', 'cli-package', 'orca-managed-server')
 METHODS = ('native-plugin', 'system-skill', 'npm', 'uv', 'official-release', 'skills-cli')
+ORCA_SERVER_LAYOUT = 'orca-managed-server'
+ORCA_SERVER_BINDING = 'orca-managed-launcher.json'
 
 
 def digest(data):
@@ -43,6 +45,10 @@ def bounded(path, limit=4_000_000):
     return data
 
 
+def file_signature(info):
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
 def file_record(item, root, limit):
     fd = os.open(item, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, 'rb') as stream:
@@ -58,8 +64,8 @@ def file_record(item, root, limit):
             pin.update(chunk)
             remaining -= len(chunk)
         after = os.fstat(stream.fileno())
-        signature = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-        if stream.read(1) or signature(before) != signature(after) or signature(after) != signature(item.lstat()):
+        if (stream.read(1) or file_signature(before) != file_signature(after)
+                or file_signature(after) != file_signature(item.lstat())):
             raise LinkError('installation changed during review')
     return {'path': str(item.relative_to(root)), 'size': before.st_size, 'sha256': pin.hexdigest()}
 
@@ -121,6 +127,42 @@ def identity(entry):
     return {k: entry[k] for k in ('id', 'kind', 'entry', 'sha256', 'version')}
 
 
+def managed_orca_launcher(installation, entry, receipts):
+    bindings = [item for item in receipts if Path(item['path']).name == ORCA_SERVER_BINDING]
+    if len(bindings) != 1 or len(receipts) < 2 or entry != installation / 'out/cli/index.js':
+        raise LinkError('Orca managed server binding or CLI entry missing')
+    binding = bindings[0]
+    raw = bounded(binding['path'])
+    if digest(raw) != binding['sha256']:
+        raise LinkError('Orca managed server binding changed')
+    data = json.loads(raw)
+    if not isinstance(data, dict) or set(data) != {'launcher', 'launcher_sha256', 'node', 'node_sha256'}:
+        raise LinkError('invalid Orca managed server binding')
+    launcher, node = (canonical(data[key]) for key in ('launcher', 'node'))
+    if (launcher.name not in ('orca', 'orca-ide') or launcher.parent.parent.name != 'cli'
+            or launcher.parent.name != 'bin' or node.name != 'node' or node.parent.name != 'bin'
+            or not node.parent.parent.name.startswith('node-') or node.parent.parent.parent.name != 'runtimes'):
+        raise LinkError('unsupported Orca managed launcher or Node path')
+    files = (launcher, node)
+    identities = {path: file_signature(path.lstat()) for path in files}
+    script = bounded(launcher, 64_000)
+    if (digest(script) != data['launcher_sha256']
+            or file_record(node, node.parent, MAX_CLI_BYTES)['sha256'] != data['node_sha256']
+            or not (launcher.stat().st_mode & 0o111 and node.stat().st_mode & 0o111)):
+        raise LinkError('Orca managed launcher or Node changed')
+    def quote(path):
+        return "'" + str(path).replace("'", "'\"'\"'") + "'"
+
+    lines = ['#!/usr/bin/env sh', 'set -eu', f'export ORCA_USER_DATA_PATH={quote(launcher.parents[2])}',
+             'unset NODE_OPTIONS NODE_REPL_EXTERNAL_MODULE ELECTRON_RUN_AS_NODE',
+             f'exec {quote(node)} {quote(entry)} "$@"']
+    if script != ('\n'.join(lines) + '\n').encode():
+        raise LinkError('Orca managed launcher does not bind reviewed Node and CLI')
+    if any(path.resolve(strict=True) != path or file_signature(path.lstat()) != identities[path] for path in files):
+        raise LinkError('Orca managed launcher or Node changed')
+    return launcher, identities
+
+
 def snapshot(root, declaration, product, provider_id, kind, installation, method, source, evidence, layout='directory'):
     selected = resolve(root, declaration, product, provider_id, kind)
     installation = canonical(installation)
@@ -139,6 +181,10 @@ def snapshot(root, declaration, product, provider_id, kind, installation, method
             raise LinkError('distinct external installation evidence required')
         receipts.append({'path': str(p), 'sha256': digest(bounded(p))})
     entry = Path(selected['entry'])
+    if layout == ORCA_SERVER_LAYOUT:
+        if provider_id not in ('orca-cli', 'orca-ide-cli'):
+            raise LinkError('Orca managed server layout requires an Orca connection')
+        managed_orca_launcher(installation, entry, receipts)
     files = tree(installation, layout, entry)
     if not any(record['path'] == str(entry.relative_to(installation))
                and record.get('sha256') == selected['sha256'] for record in files):

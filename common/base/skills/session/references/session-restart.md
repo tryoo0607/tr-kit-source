@@ -135,6 +135,8 @@ PC 재부팅·강제 종료·기존 대화 fork/대체·`--last`·저장된 comm
 
 ## 실패와 복구
 
+Codex의 `codex-hook-approval-required`과 `codex-hook-trust-unverified`는 [Codex 훅 승인 확인](runtime-refresh.md#codex-훅-승인-확인)으로 해소한다. 훅을 사용자가 검토한 뒤 안전한 준비 상태를 다시 확인한다.
+
 기본 저장 위치는 `~/.local/state/tr-kit/session-restart`, 선택 override는 `--state <호스트 로컬 경로>`다. 배치·진행 기록·integrity key는 Git/동기화/배포물에 넣지 않는다. 대화·화면·프롬프트·native 출력 원문과 실행 command를 저장하지 않는다. 디렉터리 0700, 파일 0600, symlink/hardlink 거부, descriptor 고정, atomic replace/fsync와 host-local lock을 사용한다. signature는 우발 수정 검출이며 같은 계정 소유자의 악의적 변경 방지는 아니다.
 
 모든 입력/launch 전에 metadata 기록을 fsync하고 이후 실제 receipt를 기록한다. timeout·crash·저장 실패는 같은 command 재전송이나 새 terminal 생성으로 복구하지 않는다. `list`와 현재 read-only 상태로 마지막 시도/정상 종료/소유 terminal 증거를 대조하고, 후속 명시 `verify` 요청에서 검증한다. 미해결 배치가 있으면 다른 배치 실행도 보류한다. 준비 중 불명확한 접수는 `prepareState: uncertain`으로 보존하며 자동 재준비하지 않는다. 재개 중 update 메뉴나 권한 drift도 성공이 아니다. 기존 실패와 같은 배치를 보존한다. 승인된 같은 모드 보존과 권한 증가·임의 flags 재생을 구분하고, 신뢰/전역 설정을 바꿔 통과시키거나 새 배치의 성공으로 덮지 않는다. 별도 기본 launch 조건의 소유 canary는 원래 실패와 구분해 기록한다. 과거 header scroll-out 보류 기록은 유지한다. 후속 관측에 따라 header가 전혀 없고 정확한 기본 placeholder·빈 draft인 frame은 조회/status까지 허용하되, 보이는 미지원 version header와 typed draft는 계속 거부한다. 화면 header 부재를 버전 지원 근거로 삼지 않고 fresh status의 nativeVersion·현재 CLI 버전이 미확인이면 exit/create 전에 수동 처리한다. 소유 canary에서 수행한 수동 status 보정은 자동 prepare의 단독 성공 증거가 아니다. 기록·key·잠금 파일을 지워 우회하지 않는다. CLI는 원자적 idle-종료/부재-launch 계약이 없으므로 직전 재확인 사이의 외부 조작 경합까지 제거하지는 못한다.

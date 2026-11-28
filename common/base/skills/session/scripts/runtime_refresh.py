@@ -565,10 +565,12 @@ def inventory_progress(provider, elapsed, timeout):
             os.close(descriptor)
 
 
-def native_command(provider, args, cwd, *, executable=None):
+def native_command(provider, args, cwd, *, executable=None, rpc=None):
     """Capture complete output within time/byte bounds and own the child group."""
     if provider not in ('codex', 'claude'):
         raise Deferred('provider-unsupported')
+    if rpc and any(len(frame) > 4096 for frame in rpc):
+        raise Deferred('native-cli-request-limit')
     command = provider
     if executable is not None:
         # Internal producer-bound calls must never resolve a bare command again
@@ -590,15 +592,22 @@ def native_command(provider, args, cwd, *, executable=None):
     captured = {'stdout': bytearray(), 'stderr': bytearray()}
     limits = {'stdout': NATIVE_STDOUT_LIMIT, 'stderr': NATIVE_STDERR_LIMIT}
     child = None
+    response = None
+    rpc_offset = 0
+    initialized = False
     try:
-        child = subprocess.Popen([command, *args], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        child = subprocess.Popen([command, *args], cwd=cwd,
+                                 stdin=subprocess.PIPE if rpc else subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, start_new_session=True)
+        if rpc:
+            child.stdin.write(rpc[0])
+            child.stdin.flush()
         with selectors.DefaultSelector() as selector:
             for name in captured:
                 pipe = getattr(child, name)
                 os.set_blocking(pipe.fileno(), False)
                 selector.register(pipe, selectors.EVENT_READ, name)
-            while selector.get_map() or child.poll() is None:
+            while response is None and (selector.get_map() or child.poll() is None):
                 now = time.monotonic()
                 if now >= deadline:
                     raise Deferred('native-cli-unavailable-or-timeout')
@@ -613,6 +622,18 @@ def native_command(provider, args, cwd, *, executable=None):
                         captured[name].extend(data)
                         if len(captured[name]) > limits[name]:
                             raise Deferred('native-cli-output-limit')
+                        if rpc and name == 'stdout':
+                            while (end := captured[name].find(b'\n', rpc_offset)) != -1:
+                                message = obj(json.loads(captured[name][rpc_offset:end]))
+                                rpc_offset = end + 1
+                                if message.get('id') == 1 and not initialized:
+                                    obj(message.get('result'))
+                                    child.stdin.write(rpc[1])
+                                    child.stdin.flush()
+                                    initialized = True
+                                if message.get('id') == 2 and initialized:
+                                    response = obj(message.get('result'))
+                                    break
                     else:
                         selector.unregister(key.fileobj)
         if child.returncode:
@@ -624,6 +645,10 @@ def native_command(provider, args, cwd, *, executable=None):
             raise Deferred('native-cli-invalid-encoding') from None
         if diagnostics:
             raise Deferred('native-cli-diagnostics-unverified')
+        if rpc:
+            if response is None:
+                raise Deferred('native-cli-response-unverified')
+            return response
         return output
     except OSError:
         raise Deferred('native-cli-unavailable-or-timeout') from None
@@ -641,6 +666,8 @@ def native_command(provider, args, cwd, *, executable=None):
             finally:
                 child.stdout.close()
                 child.stderr.close()
+                if child.stdin is not None:
+                    child.stdin.close()
 
 
 def manifest_metadata(path, plugin_id):
@@ -794,6 +821,42 @@ def installed_versions(inventory):
     return {':'.join(part for part in plugin_identity(p) if part): p['version'] for p in inventory['plugins']}
 
 
+def codex_hook_readiness(installation):
+    """Check the public kit's native hook trust without trusting or changing hooks."""
+    plugin_id = 'tr-codex@tr-codex'
+    if (installation.get('provider') != 'codex' or installation.get('nativeVersion') != '0.172.0'
+            or not any(p['id'] == plugin_id and p['enabled'] for p in installation.get('plugins', []))):
+        return False
+    try:
+        cwd = installation['cwd']
+        def request(*messages):
+            return b''.join(json.dumps(m).encode() + b'\n' for m in messages)
+
+        rpc = (request({'id': 1, 'method': 'initialize', 'params': {
+            'clientInfo': {'name': 'tr-kit-session', 'version': '1'},
+            'capabilities': {'experimentalApi': True}}}),
+            request({'method': 'initialized'}, {'id': 2, 'method': 'hooks/list', 'params': {'cwds': [cwd]}}))
+        result = native_command('codex', ['app-server'], cwd, executable=inventory_executable('codex'), rpc=rpc)
+        entry, = array(result['data'])
+        if entry.get('cwd') != cwd:
+            raise Deferred('codex-hook-trust-unverified')
+        hooks = [h for h in array(entry.get('hooks')) if h.get('pluginId') == plugin_id]
+        required_events = {'postToolUse', 'preToolUse', 'sessionStart'}
+        if (not required_events <= {h.get('eventName') for h in hooks}
+                or len({h.get('key') for h in hooks}) != len(hooks)
+                or any(not token(h.get('key')) or h.get('source') != 'plugin' or h.get('enabled') is not True
+                       or h.get('isManaged') is not False
+                       or h.get('trustStatus') not in ('trusted', 'untrusted', 'modified') for h in hooks)):
+            raise Deferred('codex-hook-trust-unverified')
+    except (Deferred, OSError, ValueError, TypeError, KeyError, RecursionError):
+        raise Deferred('codex-hook-trust-unverified') from None
+    pending = sum(h['trustStatus'] != 'trusted' for h in hooks)
+    if pending:
+        raise Deferred('codex-hook-approval-required', diagnostic={
+            'pluginId': plugin_id, 'pendingHooks': pending, 'action': '/hooks'})
+    return True
+
+
 def inspect(client, self_pane):
     ts, ps = client.inventory()
     terms = array(ts.get('terminals'))
@@ -803,6 +866,7 @@ def inspect(client, self_pane):
     self_found = bool(self_pane) and sum(pane(t) == self_pane for t in terms) == 1
     rows = []
     installations = {}
+    hook_checks = {}
     for item in terms:
         row = {k: item.get(k) for k in ('handle', 'incarnationId', 'worktreePath', 'executionHostId')}
         try:
@@ -818,6 +882,16 @@ def inspect(client, self_pane):
                     installations[key] = (plugin_inventory(*key) if not getattr(client, 'remote_configured', False) and t['executionHostId'] == 'local' else
                                           {'state': 'unverified', 'reason': 'remote-installation-delegate-to-host-session'})
                 row['installation'] = installations[key]
+                if (provider == 'codex' and pane(t) != self_pane and self_found
+                        and row['installation'].get('state') == 'observed'):
+                    if key not in hook_checks:
+                        try:
+                            codex_hook_readiness(row['installation'])
+                            hook_checks[key] = None
+                        except Deferred as error:
+                            hook_checks[key] = error
+                    if hook_checks[key] is not None:
+                        raise hook_checks[key]
             observed_idle = False
             if provider == 'claude' and pane(t) != self_pane and self_found and agent_for(ps, t).get('programStatus') is None:
                 wait_idle(client, {'handle': t['handle']})
@@ -852,6 +926,10 @@ def make_plan(report, selected):
     rows = {r['handle']: r for r in report['targets']}
     if any(h not in rows for h in selected):
         raise Deferred('unknown-selection')
+    for handle in selected:
+        row = rows[handle]
+        if row.get('reason') in ('codex-hook-approval-required', 'codex-hook-trust-unverified'):
+            raise Deferred(row['reason'], diagnostic=row.get('diagnostic'))
     if any(rows[h]['state'] != 'idle' or rows[h].get('installation', {}).get('state') != 'observed' for h in selected):
         raise Deferred('selection-deferred')
     return {'schema': 1, 'operationId': str(uuid.uuid4()), 'createdAt': time.time(),
@@ -1936,6 +2014,7 @@ def refresh(client, plan, target, self_pane, journal):
     if target['provider'] == 'claude':
         return refresh_claude(client, plan, target, self_pane, journal)
     installation_before = installation_guard(target)
+    codex_hook_readiness(installation_before)
     journal.record('installation-before', handle=target['handle'], installation=installation_before)
     before = native_status(client, plan, target, self_pane, journal)
     journal.record('identity-before', handle=target['handle'], **before)
@@ -2035,15 +2114,25 @@ def apply(client, plan, self_pane, journal_root):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=('inspect', 'plan', 'apply'), nargs='?', default='inspect')
+    p.add_argument('mode', choices=('inspect', 'plan', 'apply', 'hook-check'), nargs='?', default='inspect')
     p.add_argument('--environment')
     p.add_argument('--target', action='append', default=[])
     p.add_argument('--plan', type=Path)
     p.add_argument('--journal', type=Path, default=Path.home() / '.local/state/tr-kit/runtime-refresh')
     args = p.parse_args(argv)
-    client = Orca(args.environment)
     try:
         self_pane = os.environ.get('ORCA_PANE_KEY')
+        if args.mode == 'hook-check':
+            if args.environment or args.target or args.plan:
+                raise Deferred('hook-check-requires-local-cwd')
+            installation = plugin_inventory('codex', str(Path.cwd()))
+            if installation.get('state') != 'observed':
+                raise Deferred('installed-versions-unverified')
+            checked = codex_hook_readiness(installation)
+            print(json.dumps({'state': 'observed', 'hookTrust': 'trusted' if checked else 'not-applicable',
+                              'nativeVersion': installation['nativeVersion']}))
+            return 0
+        client = Orca(args.environment)
         if args.mode == 'apply':
             if not args.plan or args.target:
                 raise Deferred('apply-requires-plan-only')
@@ -2062,7 +2151,10 @@ def main(argv=None):
     except (Deferred, OSError, ValueError, TypeError, KeyError):
         # Do not echo hostile file/CLI contents, even in an exception message.
         error = sys.exc_info()[1]
-        print(json.dumps({'state': 'deferred', 'reason': str(error) if isinstance(error, Deferred) else 'invalid-input-or-local-io'}))
+        result = {'state': 'deferred', 'reason': str(error) if isinstance(error, Deferred) else 'invalid-input-or-local-io'}
+        if isinstance(error, Deferred) and error.diagnostic is not None:
+            result['diagnostic'] = error.diagnostic
+        print(json.dumps(result))
         return 2
 
 
