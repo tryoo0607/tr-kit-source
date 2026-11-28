@@ -1,5 +1,11 @@
 # 검증 상태
 
+## Public 세션 재시작 사전 검수 — 2026-11-28
+
+- 공식 배포의 Gitleaks 8.30.1을 사용해 로컬 CI 전체 회귀 868개를 실행했다. 실패와 건너뜀이 없었다.
+- 관리형 Orca 서버는 버전 고정 배포 디렉터리의 CLI 및 리소스, 공식 생성 형식의 셸 런처와 연결된 Node를 검수한다. 런처 형식과 진입점은 Orca v1.4.274 소스와 대조했다. 합성 설치에서 검수된 런처의 인자 전달과 Node 옵션 제거, 런처의 다른 CLI 지정과 Node 변경 거부를 확인했다. 대상 호스트의 검수 등록, 원래 세션 재시작과 새 버전 사용은 남아 있다. [검수 기준](../common/base/references/external-review.md#기록과-재검수) · [Orca 런처 생성](https://github.com/stablyai/orca/blob/v1.4.274/src/main/orcad/serve-startup/orcad-cli-launcher.ts) · [Orca 진입점](https://github.com/stablyai/orca/blob/v1.4.274/src/shared/remote-runtime/orcad-distribution/orcad-artifacts.ts)
+- 공통 소스로 `0.8.13` 후보를 두 제품에 조립·내보내고 공식 CLI의 격리 설치 결과를 대조했다. 격리 Codex `0.172.0`에서 설치된 후보의 `hook-check`는 `tr-codex@tr-codex` 훅 5개에 대해 `/hooks`를 안내하고 종료 코드 2를 반환했다. 재시작 전 출력이며 실호스트 승인 및 재시작은 미실행이다. [훅 승인 확인](../common/base/skills/session/references/runtime-refresh.md#codex-훅-승인-확인)
+
 ## Claude319/329/332 guarded restart source 재도출 — 2026-11-25
 
 Loop2는 data metadata freeze 설계를 교정한 source-only Build다. 이전 own10 diff를 `/tmp/tr-kit-332-before-legacy-profile-refinement.diff`에 보존하고 baseline에 positive patch를 재적용한 뒤 같은10개 파일만 보완했다. index·commit·push·설치 candidate·원격은 변경하지 않았다. frozen intent와 기존 guards/one-use receipts/원본 signed history는 유지한다.

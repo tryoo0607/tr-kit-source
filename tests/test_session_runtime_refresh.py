@@ -26,6 +26,46 @@ spec.loader.exec_module(m)
 REAL_PLUGIN_INVENTORY = m.plugin_inventory
 
 
+class CodexHookReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.plugin = 'tr-codex@tr-codex'
+        self.inventory = {'provider': 'codex', 'nativeVersion': '0.172.0', 'cwd': '/work',
+                          'plugins': [{'id': self.plugin, 'enabled': True}]}
+        self.hooks = [dict(pluginId=self.plugin, eventName=event, key=event, source='plugin',
+                           enabled=True, isManaged=False, trustStatus='trusted')
+                      for event in ('sessionStart', 'preToolUse', 'postToolUse')]
+        self.response = {'data': [{'cwd': '/work', 'hooks': self.hooks}]}
+        self.command = self.enterContext(patch.object(m, 'native_command', return_value=self.response))
+        self.enterContext(patch.object(m, 'inventory_executable', return_value=None))
+
+    def test_only_selected_public_hooks_affect_readiness(self):
+        self.hooks.append(dict(pluginId='unrelated@store', trustStatus='modified'))
+        m.codex_hook_readiness(self.inventory)
+        self.assertEqual(('codex', ['app-server'], '/work'), self.command.call_args.args)
+        request = self.command.call_args.kwargs['rpc'][1].splitlines()[-1]
+        self.assertEqual({'id': 2, 'method': 'hooks/list', 'params': {'cwds': ['/work']}}, json.loads(request))
+
+    def test_modified_and_untrusted_hooks_request_user_review(self):
+        self.hooks[0]['trustStatus'] = 'modified'
+        self.hooks[1]['trustStatus'] = 'untrusted'
+        with self.assertRaisesRegex(m.Deferred, 'codex-hook-approval-required') as result:
+            m.codex_hook_readiness(self.inventory)
+        self.assertEqual({'pluginId': self.plugin, 'pendingHooks': 2, 'action': '/hooks'}, result.exception.diagnostic)
+
+    def test_missing_native_hook_is_unverified(self):
+        self.hooks.pop(0)
+        with self.assertRaisesRegex(m.Deferred, 'codex-hook-trust-unverified'):
+            m.codex_hook_readiness(self.inventory)
+
+    def test_refresh_stops_before_sending_native_input(self):
+        self.hooks[0]['trustStatus'] = 'untrusted'
+        with patch.object(m, 'installation_guard', return_value=self.inventory), \
+                patch.object(m, 'native_status') as status:
+            with self.assertRaisesRegex(m.Deferred, 'codex-hook-approval-required'):
+                m.refresh(Mock(), {}, {'provider': 'codex'}, None, Mock())
+            status.assert_not_called()
+
+
 def terminal(handle='term_target', leaf='target'):
     return dict(handle=handle, ptyId='pty-'+leaf, incarnationId='inc-'+leaf,
                 worktreeId='workspace', worktreePath='/work', executionHostId='local',

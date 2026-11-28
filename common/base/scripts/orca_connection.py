@@ -54,8 +54,12 @@ class OrcaConnection:
             raise LinkError('Orca executable changed')
         self.selector = None
         self.launchers = {}
+        self.managed_files = {}
         selected = self.current_command()
-        if selected != self.entry:
+        if record['installation'].get('layout') == provider_review.ORCA_SERVER_LAYOUT:
+            self.managed_launcher, self.managed_files = provider_review.managed_orca_launcher(
+                Path(record['installation']['root']), self.entry, record['evidence'])
+        elif selected != self.entry:
             self.read_launcher_binding(record, selected)
         self.checked_entry()
 
@@ -96,6 +100,14 @@ class OrcaConnection:
                 or file_identity(self.review) != self.review_identity):
             raise LinkError('Orca executable or review changed')
         selected = self.current_command()
+        if self.managed_files:
+            shell = shutil.which('sh')
+            if (selected != self.managed_launcher or shell is None
+                    or Path(shell).resolve(strict=True) != Path('/bin/sh').resolve(strict=True)
+                    or any(path.resolve(strict=True) != path or file_identity(path) != identity
+                           for path, identity in self.managed_files.items())):
+                raise LinkError('Orca managed launcher or Node changed')
+            return str(selected)
         if self.selector is None:
             if selected != self.entry:
                 raise LinkError('selected Orca executable changed')
